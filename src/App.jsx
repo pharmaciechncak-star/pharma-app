@@ -59,9 +59,9 @@ const db   = getFirestore(_app);
 //    {{to_email}}, {{to_name}}, {{from_name}}, {{subject}},
 //    {{message}}, {{invoice_details}}, {{extra_recipients}}
 // 4. Remplir les 3 constantes ci-dessous
-const EMAILJS_SERVICE_ID  = "VOTRE_SERVICE_ID";   // ex: "service_abc123"
-const EMAILJS_TEMPLATE_ID = "VOTRE_TEMPLATE_ID";  // ex: "template_xyz789"
-const EMAILJS_PUBLIC_KEY  = "VOTRE_PUBLIC_KEY";   // ex: "user_ABCDEFGH"
+const EMAILJS_SERVICE_ID  = "service_wmx81ms";   // ex: "service_abc123"
+const EMAILJS_TEMPLATE_ID = "template_h74zhzk";  // ex: "template_xyz789"
+const EMAILJS_PUBLIC_KEY  = "Nc8I8RFeVEBvmJbdk";   // ex: "user_ABCDEFGH"
 
 async function sendRealEmail({ to, toName, from, subject, body, invoiceDetails, extraRecipients }) {
   // Charger EmailJS dynamiquement si pas encore chargé
@@ -521,7 +521,7 @@ function useAI() {
     const dataCtx = ctx.fullData ? JSON.stringify(ctx.fullData, null, 1) : "{}";
     const pagesAccess = (ctx.fullData?.pagesAccessibles || []);
 
-    const system = "Tu es l'assistant IA intelligent de CHNCAK PharmaStock (Centre Hospitalier National Cheikh Ahmadoul Khadim).\n\nUTILISATEUR : " + (ctx.fullData?.utilisateur?.nom||"—") + " | Rôle : " + (ctx.fullData?.utilisateur?.role||"—") + "\n\nNAVIGATION : Utilise [NAVIGATE:nom-page] pour ouvrir une page.\nPages accessibles : " + pagesAccess.join(", ") + "\n\nDONNÉES EN TEMPS RÉEL :\n" + dataCtx + "\n\nINSTRUCTIONS :\n1. Réponds en français, de façon précise et professionnelle.\n2. Utilise les données ci-dessus pour répondre sur stocks, quantités, dates, historiques, situations.\n3. Pour naviguer vers une page accessible : [NAVIGATE:nom-page].\n4. Si l'utilisateur n'a pas accès à une page, explique poliment.\n5. Fais des calculs, comparaisons, résumés à partir des données.\n6. Signale proactivement les stocks bas ou anomalies.\n7. Exemples de questions auxquelles tu dois répondre : stock actuel d'un produit, total vendu ce mois, dernière facture, situation générale, etc.";
+    const system = "Tu es l'assistant IA intelligent de CHNCAK PharmaStock (Centre Hospitalier National Cheikh Ahmadoul Khadim).\n\nUTILISATEUR : " + (ctx.fullData?.utilisateur?.nom||"—") + " | Rôle : " + (ctx.fullData?.utilisateur?.role||"—") + "\n\nNAVIGATION : Utilise [NAVIGATE:nom-page] pour ouvrir une page.\nPages accessibles : " + pagesAccess.join(", ") + "\n\nGÉNÉRATION DE FICHIERS :\n- Pour générer un fichier Excel : [EXCEL:nom_fichier.xlsx]\n  Suivi d'un tableau JSON : [DATA:[{...},{...}]]\n- Pour générer un PDF : [PDF:nom_fichier]\n  Suivi du contenu HTML : [PDFCONTENT:<table>...</table>]\n- Pour générer un CSV : [CSV:nom_fichier.csv]\n  Suivi d'un tableau JSON : [DATA:[{...},{...}]]\n\nEXEMPLES :\n- Rapport stock : génère un Excel avec tous les produits et leurs quantités.\n- Factures du mois : génère un PDF ou Excel avec la liste des factures.\n- Produits en alerte : génère un fichier CSV des produits sous le seuil.\n\nDONNÉES EN TEMPS RÉEL :\n" + dataCtx + "\n\nINSTRUCTIONS :\n1. Réponds en français, de façon précise et professionnelle.\n2. Utilise les données ci-dessus pour répondre sur stocks, quantités, dates, historiques, situations.\n3. Pour naviguer vers une page accessible : [NAVIGATE:nom-page].\n4. Si l'utilisateur demande un fichier, génère-le avec les balises appropriées.\n5. Fais des calculs, comparaisons, résumés à partir des données.\n6. Signale proactivement les stocks bas ou anomalies.";
 
     try {
       const res = await fetch("/api/chat", {
@@ -533,12 +533,83 @@ function useAI() {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       const aiText = data.reply || "Désolé, je n'ai pas pu répondre.";
+
+      // ── Navigation ──
       const navMatch = aiText.match(/\[NAVIGATE:([^\]]+)\]/);
       if (navMatch && onNav) {
         const tp = navMatch[1].trim();
         if (pagesAccess.includes(tp) || tp === "dashboard") onNav(tp);
       }
-      setMsgs([...newMsgs, {role:"assistant", content:aiText.replace(/\[NAVIGATE:[^\]]+\]/g,"").trim()}]);
+
+      // ── Génération Excel ──
+      const excelMatch = aiText.match(/\[EXCEL:([^\]]+)\]/);
+      const dataMatch  = aiText.match(/\[DATA:(\[.*?\])\]/s);
+      if (excelMatch && dataMatch) {
+        try {
+          const fileName = excelMatch[1].trim();
+          const rows = JSON.parse(dataMatch[1]);
+          if (rows.length > 0) {
+            const headers = Object.keys(rows[0]);
+            const ws = XLSX.utils.aoa_to_sheet([headers, ...rows.map(r => headers.map(h => r[h] ?? ""))]);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Données");
+            XLSX.writeFile(wb, fileName);
+          }
+        } catch(e) { console.warn("Erreur génération Excel:", e); }
+      }
+
+      // ── Génération CSV ──
+      const csvMatch = aiText.match(/\[CSV:([^\]]+)\]/);
+      if (csvMatch && dataMatch) {
+        try {
+          const fileName = csvMatch[1].trim();
+          const rows = JSON.parse(dataMatch[1]);
+          if (rows.length > 0) {
+            const headers = Object.keys(rows[0]);
+            const csv = [headers.join(";"), ...rows.map(r => headers.map(h => String(r[h]??"")||"").join(";"))].join("\n");
+            const blob = new Blob([csv], { type:"text/csv;charset=utf-8;" });
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement("a"); a.href=url; a.download=fileName; a.click();
+            URL.revokeObjectURL(url);
+          }
+        } catch(e) { console.warn("Erreur génération CSV:", e); }
+      }
+
+      // ── Génération PDF ──
+      const pdfMatch     = aiText.match(/\[PDF:([^\]]+)\]/);
+      const pdfContent   = aiText.match(/\[PDFCONTENT:(.*?)\]/s);
+      if (pdfMatch) {
+        try {
+          const fileName = pdfMatch[1].trim();
+          const htmlBody = pdfContent ? pdfContent[1] : "<p>" + aiText.replace(/\[.*?\]/gs,"").trim() + "</p>";
+          const win = window.open("","_blank");
+          win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>\${fileName}</title>
+          <style>body{font-family:Arial,sans-serif;padding:24px;font-size:13px;}
+          table{width:100%;border-collapse:collapse;margin-top:12px;}
+          th,td{border:1px solid #cbd5e1;padding:6px 10px;text-align:left;}
+          th{background:#0f172a;color:white;}
+          tr:nth-child(even){background:#f8fafc;}
+          h2{color:#0f172a;}</style></head>
+          <body><h2>CHNCAK PharmaStock — ${fileName}</h2>
+          ${htmlBody}
+          <p style="margin-top:24px;font-size:11px;color:#64748b;">Généré le ${new Date().toLocaleDateString("fr-FR")}</p>
+          </body></html>`);
+          win.document.close();
+          win.print();
+        } catch(e) { console.warn("Erreur génération PDF:", e); }
+      }
+
+      // Nettoyer les balises du message affiché
+      const cleanText = aiText
+        .replace(/\[NAVIGATE:[^\]]+\]/g,"")
+        .replace(/\[EXCEL:[^\]]+\]/g,"✅ Fichier Excel généré et téléchargé.")
+        .replace(/\[CSV:[^\]]+\]/g,"✅ Fichier CSV généré et téléchargé.")
+        .replace(/\[PDF:[^\]]+\]/g,"✅ Fichier PDF ouvert pour impression/téléchargement.")
+        .replace(/\[DATA:\[.*?\]\]/gs,"")
+        .replace(/\[PDFCONTENT:.*?\]/gs,"")
+        .trim();
+
+      setMsgs([...newMsgs, {role:"assistant", content:cleanText}]);
     } catch(e) {
       setMsgs([...newMsgs, {role:"assistant", content:"❌ Erreur IA : " + e.message}]);
     } finally { setLoading(false); }
@@ -659,6 +730,7 @@ async function scanDocumentWithAI(file, products) {
       return { success: false, items: [], error: "Erreur lecture Excel : " + e.message };
     }
   }
+  
 
   // ── Image ou PDF : envoi à Claude ──
   const instruction = `Tu es un assistant d'extraction de données pharmaceutiques.
@@ -3620,7 +3692,7 @@ function UsersPage({store, currentUser}){
 
   const handleResetPassword = async () => {
     if(!newPw || newPw.length < 6) { setPwMsg("⚠️ Minimum 6 caractères."); return; }
-   
+    
     try {
       // sendPasswordResetEmail est disponible via firebase/auth importé au niveau module
       const fbAuth = auth; // auth initialisé en haut du fichier
