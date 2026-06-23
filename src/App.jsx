@@ -196,15 +196,16 @@ const PAGE_LABELS = {
 
 const NAV_ITEMS = [
   { id: "dashboard",    label: "Tableau de bord",        icon: "📊" },
-  { id: "entrees",      label: "Bons d'Entrée",          icon: "📥", perm: "entries" },
-  { id: "retours",      label: "Bons de Retour",         icon: "↩️", perm: "returns" },
-  { id: "inventaire",   label: "Inventaire",             icon: "🗂️", perm: "inventory" },
-  { id: "factures",     label: "Factures",               icon: "🧾", perm: "invoices" },
-  { id: "hist-inv",     label: "Historique Inventaires", icon: "📋", perm: "history" },
-  { id: "hist-fact",    label: "Historique Factures",    icon: "📁", perm: "history" },
+  { id: "entrees",      label: "Bons d'Entrée",          icon: "📥", perm: "entrees" },
+  { id: "retours",      label: "Bons de Retour",         icon: "↩️", perm: "retours" },
+  { id: "inventaire",   label: "Inventaire",             icon: "🗂️", perm: "inventaire" },
+  { id: "factures",     label: "Factures",               icon: "🧾", perm: "factures" },
+  { id: "hist-inv",     label: "Historique Inventaires", icon: "📋", perm: "hist-inv" },
+  { id: "hist-fact",    label: "Historique Factures",    icon: "📁", perm: "hist-fact" },
   { id: "messagerie",   label: "Messagerie",             icon: "✉️", perm: "messagerie" },
   { id: "produits",     label: "Produits",               icon: "💊", perm: "produits" },
   { id: "fournisseurs", label: "Fournisseurs",           icon: "🏢", perm: "fournisseurs" },
+  { id: "depots",       label: "Dépôts",                 icon: "🏭", perm: "depots" },
   { id: "utilisateurs", label: "Utilisateurs",           icon: "👥", adminOnly: true },
 ];
 
@@ -521,7 +522,7 @@ function useAI() {
     const dataCtx = ctx.fullData ? JSON.stringify(ctx.fullData, null, 1) : "{}";
     const pagesAccess = (ctx.fullData?.pagesAccessibles || []);
 
-    const system = "Tu es l'assistant IA intelligent de CHNCAK PharmaStock (Centre Hospitalier National Cheikh Ahmadoul Khadim).\n\nUTILISATEUR : " + (ctx.fullData?.utilisateur?.nom||"—") + " | Rôle : " + (ctx.fullData?.utilisateur?.role||"—") + "\n\nNAVIGATION : Utilise [NAVIGATE:nom-page] pour ouvrir une page.\nPages accessibles : " + pagesAccess.join(", ") + "\n\nGÉNÉRATION DE FICHIERS :\n- Pour générer un fichier Excel : [EXCEL:nom_fichier.xlsx]\n  Suivi d'un tableau JSON : [DATA:[{...},{...}]]\n- Pour générer un PDF : [PDF:nom_fichier]\n  Suivi du contenu HTML : [PDFCONTENT:<table>...</table>]\n- Pour générer un CSV : [CSV:nom_fichier.csv]\n  Suivi d'un tableau JSON : [DATA:[{...},{...}]]\n\nEXEMPLES :\n- Rapport stock : génère un Excel avec tous les produits et leurs quantités.\n- Factures du mois : génère un PDF ou Excel avec la liste des factures.\n- Produits en alerte : génère un fichier CSV des produits sous le seuil.\n\nDONNÉES EN TEMPS RÉEL :\n" + dataCtx + "\n\nINSTRUCTIONS :\n1. Réponds en français, de façon précise et professionnelle.\n2. Utilise les données ci-dessus pour répondre sur stocks, quantités, dates, historiques, situations.\n3. Pour naviguer vers une page accessible : [NAVIGATE:nom-page].\n4. Si l'utilisateur demande un fichier, génère-le avec les balises appropriées.\n5. Fais des calculs, comparaisons, résumés à partir des données.\n6. Signale proactivement les stocks bas ou anomalies.";
+    const system = "Tu es l'assistant IA intelligent de CHNCAK PharmaStock (Centre Hospitalier National Cheikh Ahmadoul Khadim).\n\nUTILISATEUR : " + (ctx.fullData?.utilisateur?.nom||"—") + " | Rôle : " + (ctx.fullData?.utilisateur?.role||"—") + "\n\nNAVIGATION : Utilise [NAVIGATE:nom-page] pour ouvrir une page.\nPages accessibles : " + pagesAccess.join(", ") + "\n\nGÉNÉRATION DE FICHIERS :\n- Pour générer un fichier Excel : [EXCEL:nom_fichier.xlsx]\n  Suivi d'un tableau JSON : [DATA:[{...},{...}]]\n- Pour générer un PDF : [PDF:nom_fichier]\n  Suivi du contenu HTML : [PDFCONTENT:<table>...</table>]\n- Pour générer un CSV : [CSV:nom_fichier.csv]\n  Suivi d'un tableau JSON : [DATA:[{...},{...}]]\n\nEXEMPLES :\n- Rapport stock : génère un Excel avec tous les produits et leurs quantités.\n- Factures du mois : génère un PDF ou Excel avec la liste des factures.\n- Produits en alerte : génère un fichier CSV des produits sous le seuil.\n\nDONNÉES EN TEMPS RÉEL :\n" + dataCtx + "\n\nINSTRUCTIONS :\n1. Réponds en français, de façon précise et professionnelle.\n2. Utilise les données ci-dessus pour répondre sur stocks, quantités, dates, historiques, situations.\n3. Pour naviguer vers une page accessible : [NAVIGATE:nom-page].\n4. Si l'utilisateur demande un fichier, génère-le avec les balises appropriées.\n5. Fais des calculs, comparaisons, résumés à partir des données.\n6. Signale proactivement les stocks bas ou anomalies.\\n7. IMPORTANT : quand tu génères un fichier, place TOUT le HTML dans [PDFCONTENT:...] et TOUT le JSON dans [DATA:[...]]. Ne répète JAMAIS le HTML ou JSON brut dans ta réponse. Écris uniquement un message de confirmation court.";
 
     try {
       const res = await fetch("/api/chat", {
@@ -583,30 +584,35 @@ function useAI() {
           const fileName = pdfMatch[1].trim();
           const htmlBody = pdfContent ? pdfContent[1] : "<p>" + aiText.replace(/\[.*?\]/gs,"").trim() + "</p>";
           const win = window.open("","_blank");
-          win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>\${fileName}</title>
-          <style>body{font-family:Arial,sans-serif;padding:24px;font-size:13px;}
-          table{width:100%;border-collapse:collapse;margin-top:12px;}
-          th,td{border:1px solid #cbd5e1;padding:6px 10px;text-align:left;}
-          th{background:#0f172a;color:white;}
-          tr:nth-child(even){background:#f8fafc;}
-          h2{color:#0f172a;}</style></head>
-          <body><h2>CHNCAK PharmaStock — ${fileName}</h2>
-          ${htmlBody}
-          <p style="margin-top:24px;font-size:11px;color:#64748b;">Généré le ${new Date().toLocaleDateString("fr-FR")}</p>
-          </body></html>`);
+          const html = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>" + fileName + "</title>"
+            + "<style>body{font-family:Arial,sans-serif;padding:24px;font-size:13px;}"
+            + "table{width:100%;border-collapse:collapse;margin-top:12px;}"
+            + "th,td{border:1px solid #cbd5e1;padding:6px 10px;text-align:left;}"
+            + "th{background:#0f172a;color:white;}"
+            + "tr:nth-child(even){background:#f8fafc;}"
+            + "h2{color:#0f172a;}</style></head>"
+            + "<body><h2>CHNCAK PharmaStock — " + fileName + "</h2>"
+            + htmlBody
+            + "<p style=\"margin-top:24px;font-size:11px;color:#64748b;\">Généré le " + new Date().toLocaleDateString("fr-FR") + "</p>"
+            + "</body></html>";
+          win.document.write(html);
           win.document.close();
           win.print();
         } catch(e) { console.warn("Erreur génération PDF:", e); }
       }
 
       // Nettoyer les balises du message affiché
-      const cleanText = aiText
+      let cleanText = aiText
         .replace(/\[NAVIGATE:[^\]]+\]/g,"")
         .replace(/\[EXCEL:[^\]]+\]/g,"✅ Fichier Excel généré et téléchargé.")
         .replace(/\[CSV:[^\]]+\]/g,"✅ Fichier CSV généré et téléchargé.")
         .replace(/\[PDF:[^\]]+\]/g,"✅ Fichier PDF ouvert pour impression/téléchargement.")
-        .replace(/\[DATA:\[.*?\]\]/gs,"")
-        .replace(/\[PDFCONTENT:.*?\]/gs,"")
+        .replace(/\[DATA:\[[\s\S]*?\]\]/g,"")
+        .replace(/\[PDFCONTENT:[\s\S]*?\]/g,"")
+        // Supprimer tout HTML brut que l'IA aurait généré en dehors des balises
+        .replace(/<[^>]+>/g,"")
+        .replace(/```html[\s\S]*?```/g,"")
+        .replace(/```[\s\S]*?```/g,"")
         .trim();
 
       setMsgs([...newMsgs, {role:"assistant", content:cleanText}]);
@@ -730,7 +736,6 @@ async function scanDocumentWithAI(file, products) {
       return { success: false, items: [], error: "Erreur lecture Excel : " + e.message };
     }
   }
-  
 
   // ── Image ou PDF : envoi à Claude ──
   const instruction = `Tu es un assistant d'extraction de données pharmaceutiques.
@@ -1538,74 +1543,74 @@ function AIPanel({open,onClose,ai,onNav,store,page,activeSupplier,currentUser}){
 // ─────────────────────────────────────────────
 // CARROUSEL D'IMAGES — Tableau de bord
 // ─────────────────────────────────────────────
-const CAROUSEL_SLIDES = [
+const DEFAULT_CAROUSEL_SLIDES = [
   {
-    // Slide 1 — Accueil CHNCAK
-    bg:    "linear-gradient(135deg,#0c4a6e 0%,#0f172a 100%)",
-    emoji: "🏥",
-    title: "Centre Hospitalier National Cheikh Ahmadoul Khadim",
-    sub:   "PharmaStock — Système de gestion des inventaires pharmaceutiques",
-    accent:"#38bdf8",
+    bg:"linear-gradient(135deg,#0c4a6e 0%,#0f172a 100%)",
+    emoji:"🏥", title:"Centre Hospitalier National Cheikh Ahmadoul Khadim",
+    sub:"PharmaStock — Système de gestion des inventaires pharmaceutiques", accent:"#38bdf8",
   },
   {
-    // Slide 2 — Inventaire
-    bg:    "linear-gradient(135deg,#312e81 0%,#1e1b4b 100%)",
-    emoji: "🗂️",
-    title: "Inventaires Mensuels Automatisés",
-    sub:   "Scannez vos documents, calculez vos ventes, générez vos factures en quelques clics",
-    accent:"#a5b4fc",
+    bg:"linear-gradient(135deg,#312e81 0%,#1e1b4b 100%)",
+    emoji:"🗂️", title:"Inventaires Mensuels Automatisés",
+    sub:"Scannez vos documents, calculez vos ventes, générez vos factures en quelques clics", accent:"#a5b4fc",
   },
   {
-    // Slide 3 — Stock
-    bg:    "linear-gradient(135deg,#064e3b 0%,#022c22 100%)",
-    emoji: "💊",
-    title: "Gestion du Stock en Temps Réel",
-    sub:   "Médicaments et consommables suivis en permanence, alertes de stock bas automatiques",
-    accent:"#34d399",
+    bg:"linear-gradient(135deg,#064e3b 0%,#022c22 100%)",
+    emoji:"💊", title:"Gestion du Stock en Temps Réel",
+    sub:"Médicaments et consommables suivis en permanence, alertes de stock bas automatiques", accent:"#34d399",
   },
   {
-    // Slide 4 — Fournisseurs
-    bg:    "linear-gradient(135deg,#78350f 0%,#431407 100%)",
-    emoji: "🤝",
-    title: "Collaboration Fournisseurs Simplifiée",
-    sub:   "Envoyez vos factures et bons directement par email depuis l'application",
-    accent:"#fbbf24",
+    bg:"linear-gradient(135deg,#78350f 0%,#431407 100%)",
+    emoji:"🤝", title:"Collaboration Fournisseurs Simplifiée",
+    sub:"Envoyez vos factures et bons directement par email depuis l'application", accent:"#fbbf24",
   },
   {
-    // Slide 5 — IA
-    bg:    "linear-gradient(135deg,#4c0519 0%,#1e0010 100%)",
-    emoji: "🤖",
-    title: "Assistant IA Intégré",
-    sub:   "Scannez vos documents Excel, PDF et images pour importer données automatiquement",
-    accent:"#f9a8d4",
+    bg:"linear-gradient(135deg,#4c0519 0%,#1e0010 100%)",
+    emoji:"🤖", title:"Assistant IA Intégré",
+    sub:"Scannez vos documents Excel, PDF et images pour importer données automatiquement", accent:"#f9a8d4",
   },
 ];
+// Charger les slides personnalisés depuis localStorage (admin peut les modifier)
+function loadSlides() {
+  try { const s = localStorage.getItem("carousel_slides"); return s ? JSON.parse(s) : DEFAULT_CAROUSEL_SLIDES; }
+  catch(e) { return DEFAULT_CAROUSEL_SLIDES; }
+}
+function saveSlides(slides) {
+  try { localStorage.setItem("carousel_slides", JSON.stringify(slides)); } catch(e){}
+}
 
 function ImageCarousel() {
+  const [slides, setSlides] = useState(loadSlides);
   const [current, setCurrent] = useState(0);
   const [paused,  setPaused]  = useState(false);
   const timerRef = useRef(null);
+
+  // Écouter les changements de slides (admin)
+  useEffect(() => {
+    const onStorage = () => setSlides(loadSlides());
+    window.addEventListener("pharma_slides_updated", onStorage);
+    return () => window.removeEventListener("pharma_slides_updated", onStorage);
+  }, []);
 
   // Auto-défilement toutes les 4 secondes
   useEffect(() => {
     if (paused) return;
     timerRef.current = setInterval(() => {
-      setCurrent(c => (c + 1) % CAROUSEL_SLIDES.length);
+      setCurrent(c => (c + 1) % slides.length);
     }, 4000);
     return () => clearInterval(timerRef.current);
-  }, [paused]);
+  }, [paused, slides.length]);
 
   const go = (idx) => {
     setCurrent(idx);
-    // Pause 6 secondes après clic manuel
     setPaused(true);
     clearInterval(timerRef.current);
     setTimeout(() => setPaused(false), 6000);
   };
-  const prev = () => go((current - 1 + CAROUSEL_SLIDES.length) % CAROUSEL_SLIDES.length);
-  const next = () => go((current + 1) % CAROUSEL_SLIDES.length);
+  const prev = () => go((current - 1 + slides.length) % slides.length);
+  const next = () => go((current + 1) % slides.length);
 
-  const slide = CAROUSEL_SLIDES[current];
+  const slide = slides[current] || slides[0];
 
   return (
     <div
@@ -1665,7 +1670,7 @@ function ImageCarousel() {
         position:"absolute", bottom:10, left:"50%", transform:"translateX(-50%)",
         display:"flex", gap:6,
       }}>
-        {CAROUSEL_SLIDES.map((_, i) => (
+        {slides.map((_, i) => (
           <div key={i} onClick={() => go(i)} style={{
             width: i === current ? 20 : 7,
             height:7, borderRadius:99,
@@ -1681,7 +1686,7 @@ function ImageCarousel() {
         position:"absolute", top:8, right:12,
         fontSize:10, color:"rgba(255,255,255,0.5)", fontWeight:600,
       }}>
-        {current+1}/{CAROUSEL_SLIDES.length}
+        {current+1}/{slides.length}
       </div>
     </div>
   );
@@ -1690,7 +1695,7 @@ function ImageCarousel() {
 // ─────────────────────────────────────────────
 // DASHBOARD
 // ─────────────────────────────────────────────
-function Dashboard({store,activeSupplier,activeDepot}){
+function Dashboard({store,activeSupplier,activeDepot,currentUser}){
   const {entries,returns,inventories,invoices,products,stock,depots,suppliers}=store;
   const supProds=activeSupplier ? products.filter(p=>p.supplierId===activeSupplier.id) : products;
   const totalStock=supProds.reduce((a,p)=>a+(stock[p.id]||0),0);
@@ -1698,6 +1703,58 @@ function Dashboard({store,activeSupplier,activeDepot}){
   const mEntries=entries.filter(e=>new Date(e.date).getMonth()===month&&new Date(e.date).getFullYear()===year&&(!activeSupplier||e.supplierId===activeSupplier.id));
   const mReturns=returns.filter(r=>new Date(r.date).getMonth()===month&&new Date(r.date).getFullYear()===year&&(!activeSupplier||r.supplierId===activeSupplier.id));
   const lowStock=supProds.filter(p=>(stock[p.id]||0)<30);
+  const isAdmin = currentUser?.role==="admin";
+
+  // ── État pour l'éditeur de slides ──
+  const [showSlideEditor, setShowSlideEditor] = useState(false);
+  const [slides, setSlides] = useState(loadSlides);
+  const [editSlide, setEditSlide] = useState(null); // {index, emoji, title, sub, bg, accent}
+  const ACCENT_COLORS = ["#38bdf8","#4ade80","#fb923c","#a78bfa","#f9a8d4","#fbbf24","#34d399","#f87171"];
+  const BG_GRADIENTS = [
+    "linear-gradient(135deg,#0c4a6e 0%,#0f172a 100%)",
+    "linear-gradient(135deg,#312e81 0%,#1e1b4b 100%)",
+    "linear-gradient(135deg,#064e3b 0%,#022c22 100%)",
+    "linear-gradient(135deg,#78350f 0%,#431407 100%)",
+    "linear-gradient(135deg,#4c0519 0%,#1e0010 100%)",
+    "linear-gradient(135deg,#1e3a5f 0%,#0f172a 100%)",
+    "linear-gradient(135deg,#1a1a2e 0%,#16213e 100%)",
+    "linear-gradient(135deg,#2d1b69 0%,#11998e 100%)",
+  ];
+
+  const saveAndDispatch = (newSlides) => {
+    saveSlides(newSlides);
+    setSlides(newSlides);
+    window.dispatchEvent(new Event("pharma_slides_updated"));
+  };
+
+  const handleSaveSlide = () => {
+    if(!editSlide) return;
+    const updated = slides.map((s,i)=> i===editSlide.index ? {
+      bg:editSlide.bg, emoji:editSlide.emoji,
+      title:editSlide.title, sub:editSlide.sub, accent:editSlide.accent
+    } : s);
+    saveAndDispatch(updated);
+    setEditSlide(null);
+  };
+
+  const handleAddSlide = () => {
+    const newSlide = {bg:BG_GRADIENTS[0],emoji:"✨",title:"Nouveau slide",sub:"Description du slide",accent:"#38bdf8"};
+    const updated = [...slides, newSlide];
+    saveAndDispatch(updated);
+    setEditSlide({index:updated.length-1, ...newSlide});
+  };
+
+  const handleDeleteSlide = (idx) => {
+    if(slides.length<=1) return;
+    const updated = slides.filter((_,i)=>i!==idx);
+    saveAndDispatch(updated);
+    setEditSlide(null);
+  };
+
+  const handleResetSlides = () => {
+    saveAndDispatch(DEFAULT_CAROUSEL_SLIDES);
+    setEditSlide(null);
+  };
 
   const kpis=[
     {label:"Stock Total",value:totalStock.toLocaleString(),icon:"📦",color:"#38bdf8"},
@@ -1712,6 +1769,110 @@ function Dashboard({store,activeSupplier,activeDepot}){
         subtitle={monthLabel() + " · " + (activeSupplier ? activeSupplier.name : "Tous fournisseurs")}/>
       <div style={{padding:16}}>
         <ImageCarousel/>
+
+        {/* ── Boutons Admin ── */}
+        {isAdmin&&(
+          <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+            {/* Recharge crédit Claude */}
+            <button onClick={()=>window.open("https://console.anthropic.com/settings/billing","_blank")}
+              style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",borderRadius:10,border:"1px solid #e879f9",background:"linear-gradient(135deg,#4c0519,#1e0010)",color:"white",cursor:"pointer",fontSize:12,fontWeight:700,flex:1}}>
+              <span style={{fontSize:16}}>🤖</span>
+              <div style={{textAlign:"left"}}>
+                <div>Recharger crédit Claude</div>
+                <div style={{fontSize:10,opacity:0.7,fontWeight:400}}>console.anthropic.com</div>
+              </div>
+              <span style={{marginLeft:"auto",fontSize:14}}>↗</span>
+            </button>
+            {/* Modifier slides */}
+            <button onClick={()=>setShowSlideEditor(v=>!v)}
+              style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",borderRadius:10,border:"1px solid #38bdf8",background:showSlideEditor?"#0c4a6e":"#f0f9ff",color:showSlideEditor?"white":"#0891b2",cursor:"pointer",fontSize:12,fontWeight:700,flex:1}}>
+              <span style={{fontSize:16}}>🖼️</span>
+              <div style={{textAlign:"left"}}>
+                <div>{showSlideEditor?"Fermer l'éditeur":"Modifier le carousel"}</div>
+                <div style={{fontSize:10,opacity:0.7,fontWeight:400}}>{slides.length} slide(s)</div>
+              </div>
+            </button>
+          </div>
+        )}
+
+        {/* ── Éditeur de slides (admin) ── */}
+        {isAdmin&&showSlideEditor&&(
+          <div style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:12,padding:14,marginBottom:16}}>
+            <div style={{fontWeight:700,fontSize:13,marginBottom:10,color:"#1e293b"}}>🖼️ Gestion des slides du carousel</div>
+            {/* Liste des slides */}
+            <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
+              {slides.map((s,i)=>(
+                <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:s.bg,borderRadius:8,cursor:"pointer",border:editSlide?.index===i?"2px solid white":"2px solid transparent"}}
+                  onClick={()=>setEditSlide({index:i,...s})}>
+                  <span style={{fontSize:20}}>{s.emoji}</span>
+                  <div style={{flex:1,color:"white"}}>
+                    <div style={{fontWeight:700,fontSize:12}}>{s.title}</div>
+                    <div style={{fontSize:10,opacity:0.7}}>{s.sub?.substring(0,50)}...</div>
+                  </div>
+                  <button onClick={e=>{e.stopPropagation();handleDeleteSlide(i);}}
+                    style={{background:"rgba(255,0,0,0.3)",border:"none",color:"white",borderRadius:6,padding:"2px 7px",cursor:"pointer",fontSize:11}}>🗑️</button>
+                </div>
+              ))}
+            </div>
+            <div style={{display:"flex",gap:6,marginBottom:editSlide?12:0}}>
+              <button onClick={handleAddSlide} style={{padding:"6px 12px",borderRadius:8,border:"1px dashed #94a3b8",background:"white",color:"#64748b",cursor:"pointer",fontSize:12,flex:1}}>+ Ajouter un slide</button>
+              <button onClick={handleResetSlides} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #fcd34d",background:"#fef9c3",color:"#92400e",cursor:"pointer",fontSize:12}}>↺ Réinitialiser</button>
+            </div>
+            {/* Formulaire d'édition */}
+            {editSlide&&(
+              <div style={{background:"white",border:"1px solid #e2e8f0",borderRadius:10,padding:12,marginTop:8}}>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:"#1e293b"}}>✏️ Modifier le slide {editSlide.index+1}</div>
+                <div style={{marginBottom:8}}>
+                  <div style={{fontSize:11,color:"#64748b",marginBottom:3}}>Emoji</div>
+                  <input value={editSlide.emoji} onChange={e=>setEditSlide(v=>({...v,emoji:e.target.value}))}
+                    style={{width:"100%",padding:"6px 8px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:20,boxSizing:"border-box"}}/>
+                </div>
+                <div style={{marginBottom:8}}>
+                  <div style={{fontSize:11,color:"#64748b",marginBottom:3}}>Titre</div>
+                  <input value={editSlide.title} onChange={e=>setEditSlide(v=>({...v,title:e.target.value}))}
+                    style={{width:"100%",padding:"6px 8px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,boxSizing:"border-box"}}/>
+                </div>
+                <div style={{marginBottom:8}}>
+                  <div style={{fontSize:11,color:"#64748b",marginBottom:3}}>Sous-titre</div>
+                  <textarea value={editSlide.sub} onChange={e=>setEditSlide(v=>({...v,sub:e.target.value}))}
+                    rows={2} style={{width:"100%",padding:"6px 8px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:11,resize:"vertical",boxSizing:"border-box"}}/>
+                </div>
+                <div style={{marginBottom:8}}>
+                  <div style={{fontSize:11,color:"#64748b",marginBottom:3}}>Couleur d'accentuation</div>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                    {ACCENT_COLORS.map(c=>(
+                      <div key={c} onClick={()=>setEditSlide(v=>({...v,accent:c}))}
+                        style={{width:24,height:24,borderRadius:"50%",background:c,cursor:"pointer",
+                          border:editSlide.accent===c?"3px solid #1e293b":"2px solid transparent"}}/>
+                    ))}
+                  </div>
+                </div>
+                <div style={{marginBottom:10}}>
+                  <div style={{fontSize:11,color:"#64748b",marginBottom:3}}>Dégradé de fond</div>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                    {BG_GRADIENTS.map(g=>(
+                      <div key={g} onClick={()=>setEditSlide(v=>({...v,bg:g}))}
+                        style={{width:32,height:24,borderRadius:4,background:g,cursor:"pointer",
+                          border:editSlide.bg===g?"3px solid #0891b2":"2px solid transparent"}}/>
+                    ))}
+                  </div>
+                </div>
+                {/* Aperçu */}
+                <div style={{background:editSlide.bg,borderRadius:8,padding:"10px 14px",marginBottom:10,textAlign:"center"}}>
+                  <div style={{fontSize:28}}>{editSlide.emoji}</div>
+                  <div style={{color:"white",fontWeight:700,fontSize:12}}>{editSlide.title}</div>
+                  <div style={{height:2,background:editSlide.accent,width:40,margin:"6px auto 0",borderRadius:99}}/>
+                </div>
+                <div style={{display:"flex",gap:6}}>
+                  <button onClick={handleSaveSlide}
+                    style={{flex:1,padding:"8px",borderRadius:8,border:"none",background:"#0891b2",color:"white",cursor:"pointer",fontWeight:700,fontSize:12}}>✅ Sauvegarder</button>
+                  <button onClick={()=>setEditSlide(null)}
+                    style={{padding:"8px 12px",borderRadius:8,border:"1px solid #e2e8f0",background:"white",color:"#64748b",cursor:"pointer",fontSize:12}}>Annuler</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       {/* KPIs */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
         {kpis.map(k=>(
@@ -2033,7 +2194,7 @@ function DocumentForm({type,store,activeSupplier,activeDepot,ai,onNav,currentUse
 // ─────────────────────────────────────────────
 // INVENTORY PAGE — par dépôt + consolidation fournisseur
 // ─────────────────────────────────────────────
-function InventoryPage({store,activeSupplier}){
+function InventoryPage({store,activeSupplier,currentUser}){
   // mode: "choose" | "by-depot" | "consolidated"
   const [mode,setMode]=useState("choose");
   const [depotId,setDepotId]=useState("");
@@ -2180,11 +2341,16 @@ function InventoryPage({store,activeSupplier}){
       totalSold:result.reduce((s,r)=>s+r.sold,0),
     };
     await store.addInventory(inv);
-    // Mettre à jour stockQty de chaque produit avec la quantité physique constatée
+    // Mettre à jour le stock UNIQUEMENT pour les produits qui ont été inventoriés
+    // (nw > 0 ou explicitement saisi), les autres restent inchangés
     for(const row of (result||[])){
-      if(row.product?.id && row.nw >= 0){
+      if(!row.product?.id) continue;
+      // Vérifier si ce produit a été saisi dans au moins un dépôt
+      const wasCounted = Object.values(depotPhysical).some(phys => phys[row.product.id] !== undefined);
+      if(wasCounted && row.nw >= 0){
         try { await store.setStockForProduct(row.product.id, row.nw); } catch(e){ console.warn("Stock update error:", e); }
       }
+      // Si non inventorié → stock inchangé
     }
     setStep(4);
   };
@@ -3473,7 +3639,7 @@ function ProductsPage({store,activeSupplier,currentUser}){
 function DepotsPage({store,activeSupplier,currentUser}){
   const [show,setShow]=useState(false);
   const [editing,setEditing]=useState(null);
-  const [form,setForm]=useState({name:"",location:"",supplierId:""});
+  const [form,setForm]=useState({name:"",location:"",supplierId:"",isPrincipal:false});
   const [deletingDepot,setDeletingDepot]=useState(null);
   const depots=activeSupplier ? store.depots.filter(d=>d.supplierId===activeSupplier.id) : store.depots;
   const getSupplierName=id=>store.suppliers.find(s=>s.id===id)?.name||"—";
@@ -3481,23 +3647,39 @@ function DepotsPage({store,activeSupplier,currentUser}){
   const open=(d=null)=>{
     setEditing(d?.id||null);
     if(d){
-      setForm({name:d.name||"",location:d.location||"",supplierId:d.supplierId||activeSupplier?.id||""});
+      setForm({name:d.name||"",location:d.location||"",supplierId:d.supplierId||activeSupplier?.id||"",isPrincipal:d.isPrincipal||false});
     } else {
-      setForm({name:"",location:"",supplierId:activeSupplier?.id||""});
+      setForm({name:"",location:"",supplierId:activeSupplier?.id||"",isPrincipal:false});
     }
     setShow(true);
   };
+
   const save=()=>{
     const suppId = form.supplierId || activeSupplier?.id || "";
     if(!form.name.trim()||!form.location.trim()||!suppId){
       alert("Veuillez remplir le nom, la localisation et sélectionner un fournisseur.");
       return;
     }
-    const data = { name:form.name.trim(), location:form.location.trim(), supplierId:suppId };
+    const data = { name:form.name.trim(), location:form.location.trim(), supplierId:suppId, isPrincipal:form.isPrincipal };
+    // Si on marque comme principal, retirer le flag des autres dépôts du même fournisseur
+    if(form.isPrincipal){
+      store.depots.filter(d=>d.supplierId===suppId && d.id!==(editing||"")).forEach(d=>{
+        if(d.isPrincipal) store.updateDepot(d.id,{...d,isPrincipal:false});
+      });
+    }
     if(editing) store.updateDepot(editing,data); else store.addDepot(data);
     setShow(false);
-    setForm({name:"",location:"",supplierId:activeSupplier?.id||""});
+    setForm({name:"",location:"",supplierId:activeSupplier?.id||"",isPrincipal:false});
   };
+
+  const setPrincipal=(d)=>{
+    const suppId=d.supplierId;
+    // Retirer principal des autres
+    store.depots.filter(dep=>dep.supplierId===suppId).forEach(dep=>{
+      store.updateDepot(dep.id,{...dep,isPrincipal:dep.id===d.id});
+    });
+  };
+
   const suppProdsCount=activeSupplier?store.products.filter(p=>p.supplierId===activeSupplier.id).length:0;
 
   return(
@@ -3522,7 +3704,7 @@ function DepotsPage({store,activeSupplier,currentUser}){
             onChange={e=>setForm(f=>({...f,location:e.target.value}))}
             placeholder="Ex: Rez-de-chaussée, salle 12"/>
         </div>
-        <div style={{marginBottom:16}}>
+        <div style={{marginBottom:12}}>
           <label style={label}>Fournisseur associé</label>
           {activeSupplier && !editing ? (
             <div style={{...input,background:"#f0f9ff",color:"#0891b2",fontWeight:600,display:"flex",alignItems:"center",gap:6}}>
@@ -3542,6 +3724,18 @@ function DepotsPage({store,activeSupplier,currentUser}){
             </div>
           )}
         </div>
+        {/* Dépôt principal */}
+        <div style={{marginBottom:16,background:"#f0f9ff",borderRadius:8,padding:"10px 12px",border:"1px solid #bae6fd"}}>
+          <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}>
+            <input type="checkbox" checked={form.isPrincipal}
+              onChange={e=>setForm(f=>({...f,isPrincipal:e.target.checked}))}
+              style={{width:16,height:16,cursor:"pointer"}}/>
+            <div>
+              <div style={{fontWeight:700,fontSize:12,color:"#0c4a6e"}}>⭐ Dépôt principal</div>
+              <div style={{fontSize:11,color:"#64748b"}}>Le stock global du fournisseur sera mis à jour depuis ce dépôt après inventaire</div>
+            </div>
+          </label>
+        </div>
         <button onClick={save}
           disabled={!form.name.trim()||!form.location.trim()||(!form.supplierId&&!activeSupplier?.id)}
           style={{...btn(),background:(!form.name.trim()||!form.location.trim()||(!form.supplierId&&!activeSupplier?.id))?"#cbd5e1":"#0891b2",color:"white",width:"100%",padding:11}}>
@@ -3553,17 +3747,24 @@ function DepotsPage({store,activeSupplier,currentUser}){
         {depots.map(d=>{
           const totalQty=store.products.filter(p=>p.supplierId===d.supplierId).reduce((s,p)=>s+(store.stock[p.id]||0),0);
           return(
-            <div key={d.id} style={{...card,padding:16}}>
+            <div key={d.id} style={{...card,padding:16,border:d.isPrincipal?"2px solid #0891b2":"1.5px solid #f1f5f9"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
                 <div style={{flex:1}}>
-                  <div style={{fontWeight:700,color:"#1e293b",fontSize:14}}>🏭 {d.name}</div>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <div style={{fontWeight:700,color:"#1e293b",fontSize:14}}>🏭 {d.name}</div>
+                    {d.isPrincipal&&<span style={{background:"#0891b2",color:"white",fontSize:10,fontWeight:700,borderRadius:99,padding:"2px 8px"}}>⭐ Principal</span>}
+                  </div>
                   <div style={{fontSize:12,color:"#64748b",marginTop:2}}>{d.location}</div>
                   <div style={{fontSize:11,color:"#94a3b8"}}>Fournisseur : {getSupplierName(d.supplierId)}</div>
                   <div style={{fontSize:11,color:"#0891b2",marginTop:4}}>
                     {store.products.filter(p=>p.supplierId===d.supplierId).length} produits · stock : {totalQty}
                   </div>
                 </div>
-                <div style={{display:"flex",gap:5,flexShrink:0}}>
+                <div style={{display:"flex",gap:5,flexShrink:0,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                  {can(currentUser,"depots","w")&&!d.isPrincipal&&(
+                    <button onClick={()=>setPrincipal(d)}
+                      style={{...btn(),background:"#f0f9ff",color:"#0891b2",padding:"5px 8px",fontSize:11}}>⭐ Principal</button>
+                  )}
                   {can(currentUser,"depots","w")&&<button onClick={()=>open(d)} style={{...btn(),background:"#f0f9ff",color:"#0891b2",padding:"5px 8px",fontSize:11}}>✏️</button>}
                   {can(currentUser,"depots","d")&&<button onClick={()=>setDeletingDepot(d)} style={{...btn(),background:"#fee2e2",color:"#ef4444",padding:"5px 8px",fontSize:11}}>🗑️</button>}
                 </div>
@@ -3571,7 +3772,7 @@ function DepotsPage({store,activeSupplier,currentUser}){
             </div>
           );
         })}
-        {depots.length===0&&<div style={{...card,textAlign:"center",padding:40,color:"#94a3b8"}}>Aucun dépôt.</div>}
+        {depots.length===0&&<div style={{...card,textAlign:"center",padding:40,color:"#94a3b8"}}>Aucun dépôt. Créez votre premier dépôt.</div>}
       </div>
     </div>
   );
@@ -3692,11 +3893,9 @@ function UsersPage({store, currentUser}){
 
   const handleResetPassword = async () => {
     if(!newPw || newPw.length < 6) { setPwMsg("⚠️ Minimum 6 caractères."); return; }
-    
     try {
-      // sendPasswordResetEmail est disponible via firebase/auth importé au niveau module
-      const fbAuth = auth; // auth initialisé en haut du fichier
       await sendPasswordResetEmail(auth, resetPwU.email);
+      setPwMsg("✅ Email de réinitialisation envoyé.");
       setTimeout(()=>{ setResetPwU(null); setPwMsg(""); setNewPw(""); }, 3000);
     } catch(e) {
       setPwMsg("❌ Erreur : " + e.message);
