@@ -20,6 +20,7 @@ import {
   addDoc,
   getDoc,
   updateDoc,
+  deleteDoc,
   query,
   orderBy,
   onSnapshot,
@@ -658,19 +659,54 @@ async function readExcelFile(file) {
 function matchProduct(nameInFile, products) {
   if (!nameInFile) return null;
   const norm = s => s.toLowerCase().trim()
-    .normalize("NFD").replace(/[̀-ͯ]/g,"")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
     .replace(/[^a-z0-9]/g," ").replace(/\s+/g," ").trim();
+
   const n = norm(nameInFile);
+  const nWords = n.split(" ").filter(w => w.length > 1);
+
   // 1. Correspondance exacte normalisée
-  let m = products.find(p => norm(p.name) === n);
-  if (m) return m;
-  // 2. Le nom du fichier contient le premier mot du produit connu
-  const words = n.split(" ").filter(w => w.length > 2);
-  m = products.find(p => words.some(w => norm(p.name).includes(w)));
-  if (m) return m;
-  // 3. Le produit connu contient un mot du nom du fichier
-  m = products.find(p => norm(p.name).split(" ").filter(w=>w.length>2).some(w => n.includes(w)));
-  return m || null;
+  const exact = products.find(p => norm(p.name) === n);
+  if (exact) return exact;
+
+  // 2. Score : compter les mots significatifs communs
+  const scored = products.map(p => {
+    const pNorm  = norm(p.name);
+    const pWords = pNorm.split(" ").filter(w => w.length > 1);
+    // Mots de l'entrée trouvés dans le produit
+    const commonN = nWords.filter(w => pWords.includes(w)).length;
+    // Mots du produit trouvés dans l'entrée
+    const commonP = pWords.filter(w => nWords.includes(w)).length;
+    // Score = ratio de mots communs sur total mots du produit
+    const score = pWords.length > 0
+      ? (commonN + commonP) / (nWords.length + pWords.length)
+      : 0;
+    return { p, score, commonN, commonP, pWords, nWords };
+  }).filter(s => s.score > 0);
+
+  if (scored.length === 0) return null;
+
+  // Trier par score décroissant
+  scored.sort((a,b) => b.score - a.score);
+  const best = scored[0];
+
+  // Seuil strict : au moins 50% des mots du produit doivent matcher
+  // ET au moins 2 mots communs si le produit a plus de 2 mots
+  const minWords = best.pWords.length > 2 ? 2 : 1;
+  if (best.commonP < minWords) return null;
+  if (best.score < 0.35) return null;
+
+  // Si deux candidats ont un score proche, vérifier qu'ils ne sont pas ambigus
+  if (scored.length > 1) {
+    const second = scored[1];
+    // Si le 2e candidat a un score très proche du 1er → ambiguïté → ne pas matcher
+    if (second.score > 0 && (best.score - second.score) < 0.1) {
+      // Départager : le produit dont le nom normalisé contient le plus de mots du fichier
+      if (second.commonN > best.commonN) return second.p;
+    }
+  }
+
+  return best.p;
 }
 
 // ─── Scan Excel : lecture réelle des colonnes ───
@@ -738,13 +774,24 @@ async function scanDocumentWithAI(file, products) {
   }
 
   // ── Image ou PDF : envoi à Claude ──
+  const productList = products.map((p,i) => `${i+1}. "${p.name}"`).join("\n");
   const instruction = `Tu es un assistant d'extraction de données pharmaceutiques.
 Analyse ce document et extrais les informations de bon d'entrée ou d'inventaire.
+
+LISTE EXACTE DES PRODUITS CONNUS (utilise EXACTEMENT ces noms, ne les modifie pas) :
+${productList}
+
+RÈGLES STRICTES DE CORRESPONDANCE :
+- Pour chaque ligne du document, trouve le produit qui correspond LE MIEUX dans la liste ci-dessus
+- La correspondance doit être PRÉCISE : "Perfuseur" → cherche un produit avec "PERFUSEUR" dans son nom, PAS "SODIUM CHLORURE"
+- Pour les variantes (ex: Vicryl 2/0, Vicryl 3/0, Vicryl 5/0) : fais attention aux numéros/tailles, ne confonds PAS Vicryl 2/0 ronde avec Vicryl 3/0 ronde
+- Si aucun produit ne correspond exactement, utilise le nom tel qu'il apparaît dans le document
+- Ne jamais substituer un produit par un autre qui commence par les mêmes lettres si le reste du nom est différent
+
 Réponds UNIQUEMENT avec du JSON valide, sans markdown, sans texte avant ou après.
 Format exact:
-{"reference":"BON-XXX","fournisseur":"Nom","items":[{"productName":"...","qty":0,"unitPrice":0,"lot":"...","expiry":"AAAA-MM-JJ"}]}
-Produits déjà connus dans la base: ${products.slice(0,30).map(p=>p.name).join(" | ")}
-Extrait TOUTES les lignes du document même si le produit n'est pas dans la liste ci-dessus.`;
+{"reference":"BON-XXX","fournisseur":"Nom","items":[{"productName":"nom exact du produit de la liste ou tel que dans le document","qty":0,"unitPrice":0,"lot":"...","expiry":"AAAA-MM-JJ"}]}
+Extrait TOUTES les lignes du document.`;
 
   try {
     let content;
@@ -3856,12 +3903,15 @@ function UsersPage({store, currentUser}){
   const [resetPwU,   setResetPwU]   = useState(null);  // user dont on reset le mdp
   const [newPw,      setNewPw]      = useState("");
   const [pwMsg,      setPwMsg]      = useState("");
-  const [form,       setForm]       = useState({name:"",email:"",role:"magasinier"});
+  const [form,       setForm]       = useState({name:"",email:"",role:"magasinier",tempPw:""});
+  const [showTempPw, setShowTempPw] = useState(false);
   const [permForm,   setPermForm]   = useState({});
+  const [showPwReset,setShowPwReset]= useState(false);
 
   const openAdd = () => {
     setEditing(null);
-    setForm({name:"",email:"",role:"magasinier"});
+    setForm({name:"",email:"",role:"magasinier",tempPw:""});
+    setShowTempPw(false);
     setShow(true);
   };
   const openEdit = (u) => {
@@ -3894,9 +3944,10 @@ function UsersPage({store, currentUser}){
   const handleResetPassword = async () => {
     if(!newPw || newPw.length < 6) { setPwMsg("⚠️ Minimum 6 caractères."); return; }
     try {
-      await sendPasswordResetEmail(auth, resetPwU.email);
-      setPwMsg("✅ Email de réinitialisation envoyé.");
-      setTimeout(()=>{ setResetPwU(null); setPwMsg(""); setNewPw(""); }, 3000);
+      // Stocker le mot de passe provisoire dans Firestore (l'user devra le changer)
+      await store.updateUser(resetPwU.id, { provisionalPw: newPw, mustChangePw: true });
+      setPwMsg("✅ Mot de passe provisoire défini. L'utilisateur verra le nouveau mot de passe à sa prochaine connexion.");
+      setTimeout(()=>{ setResetPwU(null); setPwMsg(""); setNewPw(""); setShowPwReset(false); }, 3500);
     } catch(e) {
       setPwMsg("❌ Erreur : " + e.message);
     }
@@ -3908,7 +3959,7 @@ function UsersPage({store, currentUser}){
   return(
     <div style={{padding:0}}>
       <ConfirmDelete open={!!deletingU} onClose={()=>setDeletingU(null)}
-        label={deletingU?.name||""} onConfirm={()=>store.deleteUser(deletingU.id)}/>
+        label={deletingU?.name||""} onConfirm={async()=>{ await store.deleteUser(deletingU.id); setDeletingU(null); }}/>
 
       <PageHeader pageId="utilisateurs" title="👥 Utilisateurs" subtitle="Gestion des accès et rôles">
         <button onClick={openAdd} style={{...btn(),background:"white",color:"#4c0519",fontWeight:700}}>+ Nouveau</button>
@@ -3919,15 +3970,32 @@ function UsersPage({store, currentUser}){
         <Modal open={show} onClose={()=>setShow(false)} title={editing?"✏️ Modifier Utilisateur":"👤 Nouvel Utilisateur"}>
           <div style={{marginBottom:12}}><label style={label}>Nom complet</label><input style={input} value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}/></div>
           <div style={{marginBottom:12}}><label style={label}>Email</label><input style={{...input,background:editing?"#f8fafc":"white"}} type="email" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} disabled={!!editing}/></div>
-          <div style={{marginBottom:16}}>
+          <div style={{marginBottom:12}}>
             <label style={label}>Rôle</label>
             <select style={input} value={form.role} onChange={e=>setForm(f=>({...f,role:e.target.value}))}>
               {Object.entries(ROLES).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
             </select>
           </div>
-          {!editing&&<div style={{background:"#f0f9ff",borderRadius:8,padding:10,fontSize:12,color:"#0891b2",marginBottom:14}}>
-            ℹ️ Un email de bienvenue avec mot de passe temporaire sera envoyé : <b>PharmaStock2025!</b>
-          </div>}
+          {!editing&&(
+            <div style={{marginBottom:16}}>
+              <label style={label}>Mot de passe provisoire <span style={{color:"#94a3b8",fontWeight:400}}>(optionnel)</span></label>
+              <div style={{position:"relative"}}>
+                <input
+                  style={{...input,paddingRight:38}}
+                  type={showTempPw?"text":"password"}
+                  value={form.tempPw}
+                  onChange={e=>setForm(f=>({...f,tempPw:e.target.value}))}
+                  placeholder="Laissez vide pour utiliser PharmaStock2025!"/>
+                <button onClick={()=>setShowTempPw(v=>!v)}
+                  style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"#64748b",fontSize:16,padding:0}}>
+                  {showTempPw?"🙈":"👁️"}
+                </button>
+              </div>
+              <div style={{background:"#f0f9ff",borderRadius:8,padding:10,fontSize:11,color:"#0891b2",marginTop:6}}>
+                ℹ️ Mot de passe par défaut : <b>PharmaStock2025!</b> — L'utilisateur devra le changer à la première connexion.
+              </div>
+            </div>
+          )}
           <button onClick={save} disabled={!form.name||!form.email}
             style={{...btn(),background:"#0891b2",color:"white",width:"100%",padding:11}}>
             {editing?"✏️ Enregistrer":"💾 Créer l'utilisateur"}
@@ -3978,39 +4046,79 @@ function UsersPage({store, currentUser}){
             <Alert type={pwMsg.startsWith("✅")?"success":pwMsg.startsWith("⚠️")?"warn":"error"}>{pwMsg}</Alert>
           ) : (
             <>
-              <div style={{fontSize:13,color:"#64748b",marginBottom:16}}>
-                Un email de réinitialisation sera envoyé à <b>{resetPwU?.email}</b>.<br/>
-                L'utilisateur pourra définir son nouveau mot de passe via le lien reçu.
+              <div style={{fontSize:13,color:"#64748b",marginBottom:12}}>
+                Définir un mot de passe provisoire pour <b>{resetPwU?.name}</b> ({resetPwU?.email})
               </div>
-              <button onClick={handleResetPassword}
-                style={{...btn(),background:"#f59e0b",color:"white",width:"100%",padding:11,fontSize:14}}>
-                📧 Envoyer l'email de réinitialisation
-              </button>
+              <div style={{marginBottom:12}}>
+                <label style={label}>Nouveau mot de passe provisoire</label>
+                <div style={{position:"relative"}}>
+                  <input
+                    style={{...input,paddingRight:38}}
+                    type={showPwReset?"text":"password"}
+                    value={newPw}
+                    onChange={e=>setNewPw(e.target.value)}
+                    placeholder="Minimum 6 caractères"/>
+                  <button onClick={()=>setShowPwReset(v=>!v)}
+                    style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"#64748b",fontSize:16,padding:0}}>
+                    {showPwReset?"🙈":"👁️"}
+                  </button>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={handleResetPassword}
+                  style={{...btn(),background:"#0891b2",color:"white",flex:1,padding:11,fontSize:13}}>
+                  💾 Définir ce mot de passe
+                </button>
+                <button onClick={()=>{ store.updateUser(resetPwU.id,{mustChangePw:true}); sendPasswordResetEmail(auth,resetPwU.email).then(()=>setPwMsg("✅ Email envoyé à "+resetPwU.email)).catch(e=>setPwMsg("❌ "+e.message)); }}
+                  style={{...btn(),background:"#f59e0b",color:"white",flex:1,padding:11,fontSize:13}}>
+                  📧 Envoyer email reset
+                </button>
+              </div>
             </>
           )}
         </Modal>
 
         {/* Liste utilisateurs */}
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          {store.users.map(u=>(
-            <div key={u.id} style={{...card,padding:14}}>
+          {store.users.map(u=>{
+            const isSuperuser = u.isSuperuser || u.role==="superuser";
+            const isCurrentUser = u.id===currentUser?.uid;
+            const canDelete = !isSuperuser && !isCurrentUser;
+            const canToggleAdmin = !isSuperuser && !isCurrentUser && currentUser?.role==="admin";
+            return(
+            <div key={u.id} style={{...card,padding:14,border:isSuperuser?"2px solid #f59e0b":u.role==="admin"?"2px solid #7c3aed":"1.5px solid #f1f5f9"}}>
               <div style={{display:"flex",alignItems:"center",gap:12}}>
-                <div style={{width:40,height:40,borderRadius:"50%",background:(ROLES[u.role]?.color||"#94a3b8")+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>👤</div>
+                <div style={{width:40,height:40,borderRadius:"50%",background:(ROLES[u.role]?.color||"#94a3b8")+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>
+                  {isSuperuser?"⭐":u.role==="admin"?"🛡️":"👤"}
+                </div>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontWeight:700,color:"#1e293b",fontSize:13}}>{u.name}</div>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <div style={{fontWeight:700,color:"#1e293b",fontSize:13}}>{u.name}</div>
+                    {isSuperuser&&<span style={{background:"#f59e0b",color:"white",fontSize:9,fontWeight:700,borderRadius:99,padding:"1px 6px"}}>SUPER</span>}
+                  </div>
                   <div style={{fontSize:11,color:"#64748b"}}>{u.email}</div>
                   <Badge color={ROLES[u.role]?.color||"#94a3b8"}>{ROLES[u.role]?.label||u.role}</Badge>
-                  {u.permissions&&<span style={{fontSize:10,color:"#7c3aed",marginLeft:6}}>🔐 Permissions personnalisées</span>}
+                  {u.permissions&&<span style={{fontSize:10,color:"#7c3aed",marginLeft:6}}>🔐 Perms perso.</span>}
+                  {u.mustChangePw&&<span style={{fontSize:10,color:"#f59e0b",marginLeft:6}}>⚠️ Doit changer mdp</span>}
                 </div>
                 <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                  <button onClick={()=>openEdit(u)} style={{...btn(),background:"#f0f9ff",color:"#0891b2",padding:"5px 8px",fontSize:11}} title="Modifier">✏️</button>
-                  <button onClick={()=>openPerms(u)} style={{...btn(),background:"#fdf4ff",color:"#7c3aed",padding:"5px 8px",fontSize:11}} title="Permissions">🔐</button>
-                  <button onClick={()=>setResetPwU(u)} style={{...btn(),background:"#fffbeb",color:"#d97706",padding:"5px 8px",fontSize:11}} title="Réinitialiser mot de passe">🔑</button>
-                  {u.id!==currentUser?.uid&&<button onClick={()=>setDeletingU(u)} style={{...btn(),background:"#fee2e2",color:"#ef4444",padding:"5px 8px",fontSize:11}} title="Supprimer">🗑️</button>}
+                  {!isSuperuser&&<button onClick={()=>openEdit(u)} style={{...btn(),background:"#f0f9ff",color:"#0891b2",padding:"5px 8px",fontSize:11}} title="Modifier">✏️</button>}
+                  {!isSuperuser&&<button onClick={()=>openPerms(u)} style={{...btn(),background:"#fdf4ff",color:"#7c3aed",padding:"5px 8px",fontSize:11}} title="Permissions">🔐</button>}
+                  {!isSuperuser&&<button onClick={()=>setResetPwU(u)} style={{...btn(),background:"#fffbeb",color:"#d97706",padding:"5px 8px",fontSize:11}} title="Mot de passe provisoire">🔑</button>}
+                  {canToggleAdmin&&(
+                    <button onClick={()=>store.updateUser(u.id,{role:u.role==="admin"?"magasinier":"admin"})}
+                      style={{...btn(),background:u.role==="admin"?"#ede9fe":"#f8fafc",color:u.role==="admin"?"#7c3aed":"#64748b",padding:"5px 8px",fontSize:11}}
+                      title={u.role==="admin"?"Retirer admin":"Promouvoir admin"}>
+                      {u.role==="admin"?"🛡️ -Admin":"🛡️ Admin"}
+                    </button>
+                  )}
+                  {canDelete&&<button onClick={()=>setDeletingU(u)} style={{...btn(),background:"#fee2e2",color:"#ef4444",padding:"5px 8px",fontSize:11}} title="Supprimer">🗑️</button>}
+                  {isSuperuser&&<span style={{fontSize:10,color:"#f59e0b",padding:"5px 8px"}}>🔒 Protégé</span>}
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
           {store.users.length===0&&<div style={{...card,textAlign:"center",padding:40,color:"#94a3b8"}}>Aucun utilisateur.</div>}
         </div>
       </div>
@@ -4026,6 +4134,7 @@ function LoginPage({onLogin}){
   const [password,setPassword]= useState("");
   const [err,     setErr]     = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPw,  setShowPw]  = useState(false);
 
   const tryLogin = async () => {
     if (!email || !password) { setErr("Veuillez saisir votre email et mot de passe."); return; }
@@ -4081,10 +4190,16 @@ function LoginPage({onLogin}){
         </div>
         <div style={{marginBottom:20}}>
           <label style={label}>Mot de passe</label>
-          <input style={input} type="password" value={password}
-            onChange={e=>setPassword(e.target.value)}
-            placeholder="••••••••"
-            onKeyDown={e=>e.key==="Enter"&&tryLogin()}/>
+          <div style={{position:"relative"}}>
+            <input style={{...input,paddingRight:38}} type={showPw?"text":"password"} value={password}
+              onChange={e=>setPassword(e.target.value)}
+              placeholder="••••••••"
+              onKeyDown={e=>e.key==="Enter"&&tryLogin()}/>
+            <button onClick={()=>setShowPw(v=>!v)}
+              style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"#64748b",fontSize:16,padding:0,lineHeight:1}}>
+              {showPw?"🙈":"👁️"}
+            </button>
+          </div>
         </div>
         <button onClick={tryLogin} disabled={loading}
           style={{...btn(),width:"100%",padding:13,background:loading?"#cbd5e1":"linear-gradient(135deg,#0891b2,#0e7490)",color:"white",fontSize:15}}>
