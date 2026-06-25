@@ -27,6 +27,13 @@ import {
   serverTimestamp,
   setDoc,
 } from "firebase/firestore";
+import {
+  getStorage,
+  ref as storageRef,
+  uploadBytes,
+  getDownloadURL,
+  deleteObject,
+} from "firebase/storage";
 // ⚠️ Importez votre app Firebase depuis votre firebase.js :
 // import { app } from "./firebase";
 // const auth = getAuth(app);
@@ -47,8 +54,9 @@ const firebaseConfig = {
 
 // Évite "App already exists" en cas de hot-reload
 const _app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
-const auth = getAuth(_app);
-const db   = getFirestore(_app);
+const auth    = getAuth(_app);
+const db      = getFirestore(_app);
+const storage = getStorage(_app);
 
 // ─────────────────────────────────────────────
 // EMAIL — Configuration EmailJS
@@ -140,6 +148,7 @@ const INIT_USERS = [
 const ROLES = {
   admin:        { label: "Administrateur", color: "#7c3aed" },
   gestionnaire: { label: "Gestionnaire",   color: "#0891b2" },
+  pharmacien:   { label: "Pharmacien",     color: "#0d9488" },
   magasinier:   { label: "Magasinier",     color: "#059669" },
   comptable:    { label: "Comptable",      color: "#d97706" },
 };
@@ -162,6 +171,7 @@ const SECTIONS = [
 const DEFAULT_PERMS = {
   admin:        { entrees:{r:1,w:1,d:1}, retours:{r:1,w:1,d:1}, inventaire:{r:1,w:1,d:1}, factures:{r:1,w:1,d:1}, "hist-inv":{r:1,w:1,d:1}, "hist-fact":{r:1,w:1,d:1}, messagerie:{r:1,w:1,d:1}, produits:{r:1,w:1,d:1}, fournisseurs:{r:1,w:1,d:1}, depots:{r:1,w:1,d:1} },
   gestionnaire: { entrees:{r:1,w:1,d:0}, retours:{r:1,w:1,d:0}, inventaire:{r:1,w:1,d:0}, factures:{r:1,w:1,d:0}, "hist-inv":{r:1,w:0,d:0}, "hist-fact":{r:1,w:0,d:0}, messagerie:{r:1,w:1,d:0}, produits:{r:1,w:1,d:0}, fournisseurs:{r:1,w:1,d:0}, depots:{r:1,w:1,d:0} },
+  pharmacien:   { entrees:{r:1,w:1,d:0}, retours:{r:1,w:1,d:0}, inventaire:{r:1,w:1,d:0}, factures:{r:1,w:1,d:0}, "hist-inv":{r:1,w:1,d:0}, "hist-fact":{r:1,w:1,d:0}, messagerie:{r:1,w:1,d:0}, produits:{r:1,w:1,d:0}, fournisseurs:{r:1,w:1,d:0}, depots:{r:1,w:1,d:0} },
   magasinier:   { entrees:{r:1,w:1,d:0}, retours:{r:1,w:1,d:0}, inventaire:{r:0,w:0,d:0}, factures:{r:0,w:0,d:0}, "hist-inv":{r:0,w:0,d:0}, "hist-fact":{r:0,w:0,d:0}, messagerie:{r:0,w:0,d:0}, produits:{r:1,w:0,d:0}, fournisseurs:{r:0,w:0,d:0}, depots:{r:1,w:0,d:0} },
   comptable:    { entrees:{r:1,w:0,d:0}, retours:{r:1,w:0,d:0}, inventaire:{r:1,w:1,d:0}, factures:{r:1,w:1,d:0}, "hist-inv":{r:1,w:0,d:0}, "hist-fact":{r:1,w:0,d:0}, messagerie:{r:1,w:1,d:0}, produits:{r:1,w:0,d:0}, fournisseurs:{r:1,w:0,d:0}, depots:{r:1,w:0,d:0} },
 };
@@ -372,7 +382,7 @@ function useStore(userId, userName) {
     entries, returns, inventories, invoices, messages,
     stock, loading,
 
-    addSupplier:    s    => addDoc(collection(db,"suppliers"), { ...s, createdBy:userId, createdByName:userName, createdAt: serverTimestamp() }),
+    addSupplier:    s    => addDoc(collection(db,"suppliers"), { ...s, createdBy:userId, createdByName:userName, createdAt: serverTimestamp() }), // retourne Promise<DocumentReference>
     updateSupplier: (id,s)=> updateDoc(doc(db,"suppliers",id), s),
 
     addDepot:    d    => addDoc(collection(db,"depots"), { ...d, createdBy:userId, createdByName:userName, createdAt: serverTimestamp() }),
@@ -1519,7 +1529,11 @@ function AIPanel({open,onClose,ai,onNav,store,page,activeSupplier,currentUser}){
   const handleFile=async(file)=>{
     if(!file) return;
     setScanning(true);
-    const result = await scanDocumentWithAI(file, store.products, activeSupplier?.id);
+    // Filtrer les produits par fournisseur actif — ne pas comparer avec d'autres fournisseurs
+    const supplierProducts = activeSupplier
+      ? store.products.filter(p => p.supplierId === activeSupplier.id)
+      : store.products;
+    const result = await scanDocumentWithAI(file, supplierProducts);
     setScanning(false);
     const summary = result.success
       ? `Document scanné: ${file.name}\nDonnées extraites: ${JSON.stringify(result, null, 2)}\nExplique-moi ces données et propose comment les intégrer.`
@@ -1665,7 +1679,10 @@ function ImageCarousel() {
       onMouseLeave={() => setPaused(false)}
       style={{
         position:"relative",
-        background: slide.bg,
+        background: slide.imageUrl ? "none" : slide.bg,
+        backgroundImage: slide.imageUrl ? `url(${slide.imageUrl})` : "none",
+        backgroundSize: "cover",
+        backgroundPosition: "center",
         borderRadius:14,
         overflow:"hidden",
         marginBottom:16,
@@ -1676,12 +1693,15 @@ function ImageCarousel() {
         userSelect:"none",
       }}>
 
+      {/* Overlay sombre si photo */}
+      {slide.imageUrl&&<div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",borderRadius:14}}/>}
+
       {/* Contenu slide */}
-      <div style={{flex:1, padding:"24px 60px 24px 24px", textAlign:"center"}}>
-        <div style={{fontSize:48, lineHeight:1, marginBottom:10,
+      <div style={{flex:1, padding:"24px 60px 24px 24px", textAlign:"center", position:"relative", zIndex:1}}>
+        {!slide.imageUrl&&<div style={{fontSize:48, lineHeight:1, marginBottom:10,
           filter:"drop-shadow(0 2px 8px rgba(0,0,0,0.4))"}}>
           {slide.emoji}
-        </div>
+        </div>}
         <div style={{
           fontSize:15, fontWeight:800, color:"white", lineHeight:1.3,
           marginBottom:8, textShadow:"0 2px 8px rgba(0,0,0,0.5)",
@@ -1768,6 +1788,31 @@ function Dashboard({store,activeSupplier,activeDepot,currentUser}){
     "linear-gradient(135deg,#2d1b69 0%,#11998e 100%)",
   ];
 
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  const handlePhotoUpload = async (file) => {
+    if (!file) return;
+    setUploadingPhoto(true);
+    try {
+      const path = `carousel/${Date.now()}_${file.name.replace(/[^a-z0-9.]/gi,"_")}`;
+      const sRef = storageRef(storage, path);
+      await uploadBytes(sRef, file);
+      const url = await getDownloadURL(sRef);
+      setEditSlide(v => ({...v, imageUrl: url, storagePath: path}));
+    } catch(e) {
+      alert("Erreur upload : " + e.message);
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  const handleDeletePhoto = async () => {
+    if (!editSlide?.storagePath) { setEditSlide(v=>({...v,imageUrl:"",storagePath:""})); return; }
+    try {
+      await deleteObject(storageRef(storage, editSlide.storagePath));
+      setEditSlide(v => ({...v, imageUrl:"", storagePath:""}));
+    } catch(e) { setEditSlide(v=>({...v,imageUrl:"",storagePath:""})); }
+  };
   const saveAndDispatch = (newSlides) => {
     saveSlides(newSlides);
     setSlides(newSlides);
@@ -1777,8 +1822,13 @@ function Dashboard({store,activeSupplier,activeDepot,currentUser}){
   const handleSaveSlide = () => {
     if(!editSlide) return;
     const updated = slides.map((s,i)=> i===editSlide.index ? {
-      bg:editSlide.bg, emoji:editSlide.emoji,
-      title:editSlide.title, sub:editSlide.sub, accent:editSlide.accent
+      bg:          editSlide.bg,
+      emoji:       editSlide.imageUrl ? "" : editSlide.emoji,
+      title:       editSlide.title,
+      sub:         editSlide.sub,
+      accent:      editSlide.accent,
+      imageUrl:    editSlide.imageUrl    || "",
+      storagePath: editSlide.storagePath || "",
     } : s);
     saveAndDispatch(updated);
     setEditSlide(null);
@@ -1869,19 +1919,43 @@ function Dashboard({store,activeSupplier,activeDepot,currentUser}){
             {editSlide&&(
               <div style={{background:"white",border:"1px solid #e2e8f0",borderRadius:10,padding:12,marginTop:8}}>
                 <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:"#1e293b"}}>✏️ Modifier le slide {editSlide.index+1}</div>
+                {/* Photo de fond */}
                 <div style={{marginBottom:8}}>
-                  <div style={{fontSize:11,color:"#64748b",marginBottom:3}}>Emoji</div>
-                  <input value={editSlide.emoji} onChange={e=>setEditSlide(v=>({...v,emoji:e.target.value}))}
-                    style={{width:"100%",padding:"6px 8px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:20,boxSizing:"border-box"}}/>
+                  <div style={{fontSize:11,color:"#64748b",marginBottom:3}}>📷 Photo de fond <span style={{color:"#94a3b8"}}>(remplace le dégradé)</span></div>
+                  {editSlide.imageUrl ? (
+                    <div style={{position:"relative",borderRadius:8,overflow:"hidden",marginBottom:4}}>
+                      <img src={editSlide.imageUrl} alt="slide" style={{width:"100%",height:90,objectFit:"cover",display:"block"}}/>
+                      <button onClick={handleDeletePhoto}
+                        style={{position:"absolute",top:6,right:6,background:"rgba(239,68,68,0.9)",border:"none",color:"white",borderRadius:6,padding:"3px 8px",cursor:"pointer",fontSize:11,fontWeight:700}}>
+                        🗑️ Supprimer
+                      </button>
+                    </div>
+                  ) : (
+                    <label style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",border:"2px dashed #cbd5e1",borderRadius:8,cursor:"pointer",background:"#f8fafc"}}>
+                      <input type="file" accept="image/*" style={{display:"none"}}
+                        onChange={e=>e.target.files[0]&&handlePhotoUpload(e.target.files[0])}/>
+                      {uploadingPhoto
+                        ? <span style={{fontSize:12,color:"#0891b2"}}>⏳ Upload en cours...</span>
+                        : <><span style={{fontSize:18}}>📷</span><span style={{fontSize:12,color:"#64748b"}}>Cliquer pour choisir une image</span></>}
+                    </label>
+                  )}
                 </div>
+                {/* Emoji — masqué si photo */}
+                {!editSlide.imageUrl&&(
+                  <div style={{marginBottom:8}}>
+                    <div style={{fontSize:11,color:"#64748b",marginBottom:3}}>Emoji (si pas de photo)</div>
+                    <input value={editSlide.emoji||""} onChange={e=>setEditSlide(v=>({...v,emoji:e.target.value}))}
+                      style={{width:"100%",padding:"6px 8px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:20,boxSizing:"border-box"}}/>
+                  </div>
+                )}
                 <div style={{marginBottom:8}}>
                   <div style={{fontSize:11,color:"#64748b",marginBottom:3}}>Titre</div>
-                  <input value={editSlide.title} onChange={e=>setEditSlide(v=>({...v,title:e.target.value}))}
+                  <input value={editSlide.title||""} onChange={e=>setEditSlide(v=>({...v,title:e.target.value}))}
                     style={{width:"100%",padding:"6px 8px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,boxSizing:"border-box"}}/>
                 </div>
                 <div style={{marginBottom:8}}>
                   <div style={{fontSize:11,color:"#64748b",marginBottom:3}}>Sous-titre</div>
-                  <textarea value={editSlide.sub} onChange={e=>setEditSlide(v=>({...v,sub:e.target.value}))}
+                  <textarea value={editSlide.sub||""} onChange={e=>setEditSlide(v=>({...v,sub:e.target.value}))}
                     rows={2} style={{width:"100%",padding:"6px 8px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:11,resize:"vertical",boxSizing:"border-box"}}/>
                 </div>
                 <div style={{marginBottom:8}}>
@@ -1894,25 +1968,31 @@ function Dashboard({store,activeSupplier,activeDepot,currentUser}){
                     ))}
                   </div>
                 </div>
-                <div style={{marginBottom:10}}>
-                  <div style={{fontSize:11,color:"#64748b",marginBottom:3}}>Dégradé de fond</div>
-                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                    {BG_GRADIENTS.map(g=>(
-                      <div key={g} onClick={()=>setEditSlide(v=>({...v,bg:g}))}
-                        style={{width:32,height:24,borderRadius:4,background:g,cursor:"pointer",
-                          border:editSlide.bg===g?"3px solid #0891b2":"2px solid transparent"}}/>
-                    ))}
+                {/* Dégradé — masqué si photo */}
+                {!editSlide.imageUrl&&(
+                  <div style={{marginBottom:10}}>
+                    <div style={{fontSize:11,color:"#64748b",marginBottom:3}}>Dégradé de fond</div>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      {BG_GRADIENTS.map(g=>(
+                        <div key={g} onClick={()=>setEditSlide(v=>({...v,bg:g}))}
+                          style={{width:32,height:24,borderRadius:4,background:g,cursor:"pointer",
+                            border:editSlide.bg===g?"3px solid #0891b2":"2px solid transparent"}}/>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
                 {/* Aperçu */}
-                <div style={{background:editSlide.bg,borderRadius:8,padding:"10px 14px",marginBottom:10,textAlign:"center"}}>
-                  <div style={{fontSize:28}}>{editSlide.emoji}</div>
-                  <div style={{color:"white",fontWeight:700,fontSize:12}}>{editSlide.title}</div>
+                <div style={{background:editSlide.imageUrl?"none":editSlide.bg,borderRadius:8,padding:"10px 14px",marginBottom:10,textAlign:"center",
+                  ...(editSlide.imageUrl?{backgroundImage:`url(${editSlide.imageUrl})`,backgroundSize:"cover",backgroundPosition:"center"}:{})}}>
+                  {!editSlide.imageUrl&&<div style={{fontSize:28}}>{editSlide.emoji}</div>}
+                  <div style={{color:"white",fontWeight:700,fontSize:12,textShadow:"0 1px 3px rgba(0,0,0,0.5)"}}>{editSlide.title}</div>
                   <div style={{height:2,background:editSlide.accent,width:40,margin:"6px auto 0",borderRadius:99}}/>
                 </div>
                 <div style={{display:"flex",gap:6}}>
-                  <button onClick={handleSaveSlide}
-                    style={{flex:1,padding:"8px",borderRadius:8,border:"none",background:"#0891b2",color:"white",cursor:"pointer",fontWeight:700,fontSize:12}}>✅ Sauvegarder</button>
+                  <button onClick={handleSaveSlide} disabled={uploadingPhoto}
+                    style={{flex:1,padding:"8px",borderRadius:8,border:"none",background:uploadingPhoto?"#cbd5e1":"#0891b2",color:"white",cursor:uploadingPhoto?"not-allowed":"pointer",fontWeight:700,fontSize:12}}>
+                    {uploadingPhoto?"⏳ Upload...":"✅ Sauvegarder"}
+                  </button>
                   <button onClick={()=>setEditSlide(null)}
                     style={{padding:"8px 12px",borderRadius:8,border:"1px solid #e2e8f0",background:"white",color:"#64748b",cursor:"pointer",fontSize:12}}>Annuler</button>
                 </div>
@@ -2242,6 +2322,8 @@ function DocumentForm({type,store,activeSupplier,activeDepot,ai,onNav,currentUse
 // INVENTORY PAGE — par dépôt + consolidation fournisseur
 // ─────────────────────────────────────────────
 function InventoryPage({store,activeSupplier,currentUser}){
+  const DRAFT_KEY = `inv_draft_${activeSupplier?.id||"global"}`;
+
   // mode: "choose" | "by-depot" | "consolidated"
   const [mode,setMode]=useState("choose");
   const [depotId,setDepotId]=useState("");
@@ -2254,7 +2336,35 @@ function InventoryPage({store,activeSupplier,currentUser}){
   const [scanMsg,setScanMsg]=useState("");
   const [printList,setPrintList]=useState(false);
   const [showOldStock,setShowOldStock]=useState(true);
+  const [editingResult,setEditingResult]=useState(false); // mode édition résultats
   const fileRef=useRef(null);
+
+  // ── Restaurer le brouillon au montage ──
+  useEffect(()=>{
+    try {
+      const saved = localStorage.getItem(DRAFT_KEY);
+      if(saved){
+        const draft = JSON.parse(saved);
+        if(draft.depotPhysical) setDepotPhysical(draft.depotPhysical);
+        if(draft.depotResults)  setDepotResults(draft.depotResults);
+        if(draft.result)        setResult(draft.result);
+        if(draft.step && draft.step < 4) setStep(draft.step);
+        if(draft.depotId)       setDepotId(draft.depotId);
+      }
+    } catch(e){}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[activeSupplier?.id]);
+
+  // ── Sauvegarder le brouillon à chaque changement ──
+  useEffect(()=>{
+    if(step===4){ localStorage.removeItem(DRAFT_KEY); return; }
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({
+        depotPhysical, depotResults, result, step, depotId
+      }));
+    } catch(e){}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[depotPhysical, depotResults, result, step, depotId]);
 
   const suppDepots = activeSupplier ? store.depots.filter(d=>d.supplierId===activeSupplier.id) : store.depots;
   // All products of this supplier (no depotId filter — same products in all depots)
@@ -2430,6 +2540,22 @@ function InventoryPage({store,activeSupplier,currentUser}){
 
       {!activeSupplier&&<Alert type="warn">⚠️ Sélectionnez un fournisseur pour lancer l'inventaire.</Alert>}
 
+      {/* Bandeau brouillon */}
+      {activeSupplier && step>1 && step<4 && (
+        <div style={{background:"#fffbeb",border:"1px solid #fcd34d",borderRadius:8,padding:"10px 14px",marginBottom:12,display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+          <div style={{fontSize:12,color:"#92400e",fontWeight:600}}>
+            ⏸️ Inventaire en cours — brouillon sauvegardé automatiquement
+            {Object.keys(depotResults).length>0&&<span style={{marginLeft:8,fontWeight:400,color:"#78350f"}}>· {Object.keys(depotResults).length} dépôt(s) saisi(s)</span>}
+          </div>
+          <button onClick={()=>{
+            localStorage.removeItem(DRAFT_KEY);
+            setDepotPhysical({}); setDepotResults({}); setResult(null); setStep(1); setDepotId("");
+          }} style={{background:"#fee2e2",color:"#ef4444",border:"none",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11,fontWeight:700,flexShrink:0}}>
+            🗑️ Réinitialiser
+          </button>
+        </div>
+      )}
+
       {/* Steps */}
       <div style={{display:"flex",gap:0,marginBottom:20}}>
         {["Dépôt","Saisie","Résultats","Terminé"].map((s,i)=>(
@@ -2595,7 +2721,13 @@ function InventoryPage({store,activeSupplier,currentUser}){
 
           {/* Tableau consolidé */}
           <div style={{...card,marginBottom:12}}>
-            <div style={{fontWeight:700,fontSize:14,marginBottom:4}}>📊 Consolidation — {monthLabel()}</div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+              <div style={{fontWeight:700,fontSize:14}}>📊 Consolidation — {monthLabel()}</div>
+              <button onClick={()=>setEditingResult(v=>!v)}
+                style={{...btn(),background:editingResult?"#0891b2":"#f0f9ff",color:editingResult?"white":"#0891b2",border:"1px solid #bae6fd",fontSize:11,padding:"5px 10px"}}>
+                {editingResult?"✅ Terminer édition":"✏️ Modifier"}
+              </button>
+            </div>
             <div style={{fontSize:11,color:"#64748b",marginBottom:4}}>
               Formule : Vendus = Ancien + Entrées − Retours − Stock Nouveau (somme de tous les dépôts)
             </div>
@@ -2603,15 +2735,33 @@ function InventoryPage({store,activeSupplier,currentUser}){
               👤 Inventaire en cours par : <b>{store.users?.find(u=>u.id===currentUser?.uid)?.name||currentUser?.name||"—"}</b>
             </div>
             {result.map(row=>(
-              <div key={row.product.id} style={{background:"#f8fafc",borderRadius:8,padding:"10px 12px",marginBottom:8}}>
+              <div key={row.product.id} style={{background:"#f8fafc",borderRadius:8,padding:"10px 12px",marginBottom:8,border:editingResult?"1.5px dashed #bae6fd":"1.5px solid transparent"}}>
                 <div style={{fontWeight:700,color:"#1e293b",fontSize:13,marginBottom:8}}>{row.product.name}</div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:5,marginBottom:6}}>
-                  {[["Ancien",row.old,"#64748b"],["+Entrées",row.ent,"#059669"],["−Retours",row.ret,"#d97706"],["Nouveau total",row.nw,"#0891b2"]].map(([l,v,c])=>(
+                  {[["Ancien",row.old,"#64748b"],["+Entrées",row.ent,"#059669"],["−Retours",row.ret,"#d97706"]].map(([l,v,c])=>(
                     <div key={l} style={{textAlign:"center",background:"white",borderRadius:6,padding:"5px 3px"}}>
                       <div style={{color:c,fontWeight:700,fontSize:14}}>{v}</div>
                       <div style={{color:"#94a3b8",fontSize:10}}>{l}</div>
                     </div>
                   ))}
+                  <div style={{textAlign:"center",background:"white",borderRadius:6,padding:"5px 3px"}}>
+                    {editingResult ? (
+                      <input type="number" min="0"
+                        value={row.nw}
+                        onChange={e=>{
+                          const newNw = Number(e.target.value)||0;
+                          const newSold = Math.max(0, row.old+row.ent-row.ret-newNw);
+                          setResult(prev=>prev.map(r=>r.product.id===row.product.id ? {...r,nw:newNw,sold:newSold} : r));
+                          // Mettre à jour depotPhysical pour cohérence
+                          const firstDepot = Object.keys(depotPhysical)[0]||"__global__";
+                          setDepotPhysical(prev=>({...prev,[firstDepot]:{...(prev[firstDepot]||{}),[row.product.id]:String(newNw)}}));
+                        }}
+                        style={{width:"100%",padding:"4px",border:"1.5px solid #0891b2",borderRadius:6,fontSize:14,textAlign:"center",fontWeight:700,color:"#0891b2"}}/>
+                    ) : (
+                      <div style={{color:"#0891b2",fontWeight:700,fontSize:14}}>{row.nw}</div>
+                    )}
+                    <div style={{color:"#94a3b8",fontSize:10}}>Nouveau total</div>
+                  </div>
                 </div>
                 {/* Détail par dépôt */}
                 {Object.keys(row.depotBreakdown||{}).length>1&&(
@@ -3688,7 +3838,7 @@ function DepotsPage({store,activeSupplier,currentUser}){
   const [editing,setEditing]=useState(null);
   const [form,setForm]=useState({name:"",location:"",supplierId:"",isPrincipal:false});
   const [deletingDepot,setDeletingDepot]=useState(null);
-  const depots=activeSupplier ? store.depots.filter(d=>d.supplierId===activeSupplier.id) : store.depots;
+  const depots=(activeSupplier ? store.depots.filter(d=>d.supplierId===activeSupplier.id) : store.depots).filter(d=>!d.isPrincipal && !d.isAutoCreated);
   const getSupplierName=id=>store.suppliers.find(s=>s.id===id)?.name||"—";
 
   const open=(d=null)=>{
@@ -3839,8 +3989,23 @@ function FournisseursPage({store,activeSupplier,onActivate,currentUser}){
     setForm(s?{name:s.name,email:s.email,phone:s.phone,address:s.address}:{name:"",email:"",phone:"",address:""});
     setShow(true);
   };
-  const save=()=>{
-    if(editing) store.updateSupplier(editing,form); else store.addSupplier(form);
+  const save=async()=>{
+    if(editing){
+      store.updateSupplier(editing,form);
+    } else {
+      // Créer le fournisseur et son dépôt principal automatiquement
+      const ref = await store.addSupplier(form);
+      const supplierId = ref?.id;
+      if(supplierId){
+        await store.addDepot({
+          name: "Dépôt principal — " + form.name,
+          location: "Dépôt principal",
+          supplierId,
+          isPrincipal: true,
+          isAutoCreated: true, // marqueur pour ne pas afficher dans la liste
+        });
+      }
+    }
     setShow(false);
   };
 
@@ -4081,20 +4246,34 @@ function UsersPage({store, currentUser}){
         {/* Liste utilisateurs */}
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
           {store.users.map(u=>{
-            const isSuperuser = u.isSuperuser || u.role==="superuser";
-            const isCurrentUser = u.id===currentUser?.uid;
-            const canDelete = !isSuperuser && !isCurrentUser;
-            const canToggleAdmin = !isSuperuser && !isCurrentUser && currentUser?.role==="admin";
+            const isSuperuser    = u.isSuperuser || u.role==="superuser";
+            const isTargetAdmin  = u.role==="admin";
+            const isCurrentUser  = u.id===currentUser?.uid;
+            const amISuperuser   = currentUser?.isSuperuser || currentUser?.role==="superuser";
+            const amIAdmin       = currentUser?.role==="admin";
+
+            // Règles de protection :
+            // - Superuser → intouchable par tout le monde
+            // - Admin cible → seul le superuser peut le modifier/supprimer/démettre
+            // - Soi-même → ne peut pas se supprimer ni se démettre
+            const isProtected    = isSuperuser || (isTargetAdmin && !amISuperuser);
+            const canEdit        = !isSuperuser && (!isTargetAdmin || amISuperuser) && !isCurrentUser;
+            const canEditPerms   = !isSuperuser && (!isTargetAdmin || amISuperuser);
+            const canResetPw     = !isSuperuser && (!isTargetAdmin || amISuperuser);
+            const canDelete      = !isSuperuser && !isCurrentUser && (!isTargetAdmin || amISuperuser);
+            const canToggleAdmin = !isSuperuser && !isCurrentUser && amISuperuser; // seul superuser peut promouvoir/rétrograder admin
+
             return(
-            <div key={u.id} style={{...card,padding:14,border:isSuperuser?"2px solid #f59e0b":u.role==="admin"?"2px solid #7c3aed":"1.5px solid #f1f5f9"}}>
+            <div key={u.id} style={{...card,padding:14,border:isSuperuser?"2px solid #f59e0b":isTargetAdmin?"2px solid #7c3aed":"1.5px solid #f1f5f9"}}>
               <div style={{display:"flex",alignItems:"center",gap:12}}>
                 <div style={{width:40,height:40,borderRadius:"50%",background:(ROLES[u.role]?.color||"#94a3b8")+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>
-                  {isSuperuser?"⭐":u.role==="admin"?"🛡️":"👤"}
+                  {isSuperuser?"⭐":isTargetAdmin?"🛡️":"👤"}
                 </div>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{display:"flex",alignItems:"center",gap:6}}>
                     <div style={{fontWeight:700,color:"#1e293b",fontSize:13}}>{u.name}</div>
                     {isSuperuser&&<span style={{background:"#f59e0b",color:"white",fontSize:9,fontWeight:700,borderRadius:99,padding:"1px 6px"}}>SUPER</span>}
+                    {isTargetAdmin&&!isSuperuser&&<span style={{background:"#7c3aed",color:"white",fontSize:9,fontWeight:700,borderRadius:99,padding:"1px 6px"}}>ADMIN</span>}
                   </div>
                   <div style={{fontSize:11,color:"#64748b"}}>{u.email}</div>
                   <Badge color={ROLES[u.role]?.color||"#94a3b8"}>{ROLES[u.role]?.label||u.role}</Badge>
@@ -4102,9 +4281,9 @@ function UsersPage({store, currentUser}){
                   {u.mustChangePw&&<span style={{fontSize:10,color:"#f59e0b",marginLeft:6}}>⚠️ Doit changer mdp</span>}
                 </div>
                 <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                  {!isSuperuser&&<button onClick={()=>openEdit(u)} style={{...btn(),background:"#f0f9ff",color:"#0891b2",padding:"5px 8px",fontSize:11}} title="Modifier">✏️</button>}
-                  {!isSuperuser&&<button onClick={()=>openPerms(u)} style={{...btn(),background:"#fdf4ff",color:"#7c3aed",padding:"5px 8px",fontSize:11}} title="Permissions">🔐</button>}
-                  {!isSuperuser&&<button onClick={()=>setResetPwU(u)} style={{...btn(),background:"#fffbeb",color:"#d97706",padding:"5px 8px",fontSize:11}} title="Mot de passe provisoire">🔑</button>}
+                  {canEdit      &&<button onClick={()=>openEdit(u)}    style={{...btn(),background:"#f0f9ff",color:"#0891b2",padding:"5px 8px",fontSize:11}} title="Modifier">✏️</button>}
+                  {canEditPerms &&<button onClick={()=>openPerms(u)}   style={{...btn(),background:"#fdf4ff",color:"#7c3aed",padding:"5px 8px",fontSize:11}} title="Permissions">🔐</button>}
+                  {canResetPw   &&<button onClick={()=>setResetPwU(u)} style={{...btn(),background:"#fffbeb",color:"#d97706",padding:"5px 8px",fontSize:11}} title="Mot de passe provisoire">🔑</button>}
                   {canToggleAdmin&&(
                     <button onClick={()=>store.updateUser(u.id,{role:u.role==="admin"?"magasinier":"admin"})}
                       style={{...btn(),background:u.role==="admin"?"#ede9fe":"#f8fafc",color:u.role==="admin"?"#7c3aed":"#64748b",padding:"5px 8px",fontSize:11}}
@@ -4112,8 +4291,8 @@ function UsersPage({store, currentUser}){
                       {u.role==="admin"?"🛡️ -Admin":"🛡️ Admin"}
                     </button>
                   )}
-                  {canDelete&&<button onClick={()=>setDeletingU(u)} style={{...btn(),background:"#fee2e2",color:"#ef4444",padding:"5px 8px",fontSize:11}} title="Supprimer">🗑️</button>}
-                  {isSuperuser&&<span style={{fontSize:10,color:"#f59e0b",padding:"5px 8px"}}>🔒 Protégé</span>}
+                  {canDelete    &&<button onClick={()=>setDeletingU(u)} style={{...btn(),background:"#fee2e2",color:"#ef4444",padding:"5px 8px",fontSize:11}} title="Supprimer">🗑️</button>}
+                  {isProtected  &&!isCurrentUser&&<span style={{fontSize:10,color:isSuperuser?"#f59e0b":"#7c3aed",padding:"5px 4px"}}>🔒</span>}
                 </div>
               </div>
             </div>
