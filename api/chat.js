@@ -16,7 +16,7 @@ export default async function handler(req, res) {
 
     const body = {
       model: "claude-sonnet-4-6",
-      max_tokens: 1500,
+      max_tokens: 8000,  // Augmenté pour supporter les grands tableaux PDF
       messages,
     };
     if (system) body.system = system;

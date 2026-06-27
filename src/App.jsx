@@ -68,9 +68,9 @@ const storage = getStorage(_app);
 //    {{to_email}}, {{to_name}}, {{from_name}}, {{subject}},
 //    {{message}}, {{invoice_details}}, {{extra_recipients}}
 // 4. Remplir les 3 constantes ci-dessous
-const EMAILJS_SERVICE_ID  = "service_wmx81ms";   // ex: "service_abc123"
-const EMAILJS_TEMPLATE_ID = "template_h74zhzk";  // ex: "template_xyz789"
-const EMAILJS_PUBLIC_KEY  = "Nc8I8RFeVEBvmJbdk";   // ex: "user_ABCDEFGH"
+const EMAILJS_SERVICE_ID  = "VOTRE_SERVICE_ID";   // ex: "service_abc123"
+const EMAILJS_TEMPLATE_ID = "VOTRE_TEMPLATE_ID";  // ex: "template_xyz789"
+const EMAILJS_PUBLIC_KEY  = "VOTRE_PUBLIC_KEY";   // ex: "user_ABCDEFGH"
 
 async function sendRealEmail({ to, toName, from, subject, body, invoiceDetails, extraRecipients }) {
   // Charger EmailJS dynamiquement si pas encore chargé
@@ -533,7 +533,7 @@ function useAI() {
     const dataCtx = ctx.fullData ? JSON.stringify(ctx.fullData, null, 1) : "{}";
     const pagesAccess = (ctx.fullData?.pagesAccessibles || []);
 
-    const system = "Tu es l'assistant IA intelligent de CHNCAK PharmaStock (Centre Hospitalier National Cheikh Ahmadoul Khadim).\n\nUTILISATEUR : " + (ctx.fullData?.utilisateur?.nom||"—") + " | Rôle : " + (ctx.fullData?.utilisateur?.role||"—") + "\n\nNAVIGATION : Utilise [NAVIGATE:nom-page] pour ouvrir une page.\nPages accessibles : " + pagesAccess.join(", ") + "\n\nGÉNÉRATION DE FICHIERS :\n- Pour générer un fichier Excel : [EXCEL:nom_fichier.xlsx]\n  Suivi d'un tableau JSON : [DATA:[{...},{...}]]\n- Pour générer un PDF : [PDF:nom_fichier]\n  Suivi du contenu HTML : [PDFCONTENT:<table>...</table>]\n- Pour générer un CSV : [CSV:nom_fichier.csv]\n  Suivi d'un tableau JSON : [DATA:[{...},{...}]]\n\nEXEMPLES :\n- Rapport stock : génère un Excel avec tous les produits et leurs quantités.\n- Factures du mois : génère un PDF ou Excel avec la liste des factures.\n- Produits en alerte : génère un fichier CSV des produits sous le seuil.\n\nDONNÉES EN TEMPS RÉEL :\n" + dataCtx + "\n\nINSTRUCTIONS :\n1. Réponds en français, de façon précise et professionnelle.\n2. Utilise les données ci-dessus pour répondre sur stocks, quantités, dates, historiques, situations.\n3. Pour naviguer vers une page accessible : [NAVIGATE:nom-page].\n4. Si l'utilisateur demande un fichier, génère-le avec les balises appropriées.\n5. Fais des calculs, comparaisons, résumés à partir des données.\n6. Signale proactivement les stocks bas ou anomalies.\\n7. IMPORTANT : quand tu génères un fichier, place TOUT le HTML dans [PDFCONTENT:...] et TOUT le JSON dans [DATA:[...]]. Ne répète JAMAIS le HTML ou JSON brut dans ta réponse. Écris uniquement un message de confirmation court.";
+    const system = "Tu es l'assistant IA intelligent de CHNCAK PharmaStock (Centre Hospitalier National Cheikh Ahmadoul Khadim).\n\nUTILISATEUR : " + (ctx.fullData?.utilisateur?.nom||"—") + " | Rôle : " + (ctx.fullData?.utilisateur?.role||"—") + "\n\nNAVIGATION : Utilise [NAVIGATE:nom-page] pour ouvrir une page.\nPages accessibles : " + pagesAccess.join(", ") + "\n\nGÉNÉRATION DE FICHIERS :\n- Pour générer un fichier Excel : [EXCEL:nom_fichier.xlsx]\n  Suivi d'un tableau JSON : [DATA:[{...},{...}]]\n- Pour générer un PDF : [PDF:nom_fichier]\n  Suivi du contenu HTML : [PDFCONTENT:<table>...</table>]\n- Pour générer un CSV : [CSV:nom_fichier.csv]\n  Suivi d'un tableau JSON : [DATA:[{...},{...}]]\n\nEXEMPLES :\n- Rapport stock : génère un Excel avec tous les produits et leurs quantités.\n- Factures du mois : génère un PDF ou Excel avec la liste des factures.\n- Produits en alerte : génère un fichier CSV des produits sous le seuil.\n\nDONNÉES EN TEMPS RÉEL :\n" + dataCtx + "\n\nINSTRUCTIONS :\n1. Réponds en français, de façon précise et professionnelle.\n2. Utilise les données ci-dessus pour répondre sur stocks, quantités, dates, historiques, situations.\n3. Pour naviguer vers une page accessible : [NAVIGATE:nom-page].\n4. Si l'utilisateur demande un fichier, génère-le avec les balises appropriées.\n5. Fais des calculs, comparaisons, résumés à partir des données.\n6. Signale proactivement les stocks bas ou anomalies.\\n7. GÉNÉRATION DE FICHIERS : place TOUT le HTML dans [PDFCONTENT:...] et TOUT le JSON dans [DATA:[...]]. Ne répète JAMAIS le HTML ou JSON brut dans ta réponse.\\n8. IMPORTANT - DONNÉES COMPLÈTES : quand on te demande une liste ou un rapport, tu DOIS inclure la TOTALITÉ des éléments sans exception. Ne tronque JAMAIS une liste. Si on demande les 93 produits, génère les 93 lignes. Écris uniquement un message de confirmation court après les balises.";
 
     try {
       const res = await fetch("/api/chat", {
@@ -618,13 +618,27 @@ function useAI() {
         .replace(/\[EXCEL:[^\]]+\]/g,"✅ Fichier Excel généré et téléchargé.")
         .replace(/\[CSV:[^\]]+\]/g,"✅ Fichier CSV généré et téléchargé.")
         .replace(/\[PDF:[^\]]+\]/g,"✅ Fichier PDF ouvert pour impression/téléchargement.")
+        // Supprimer les blocs DATA et PDFCONTENT (avec contenu potentiellement très long)
         .replace(/\[DATA:\[[\s\S]*?\]\]/g,"")
         .replace(/\[PDFCONTENT:[\s\S]*?\]/g,"")
-        // Supprimer tout HTML brut que l'IA aurait généré en dehors des balises
+        // Supprimer tout HTML brut
+        .replace(/<table[\s\S]*?<\/table>/gi,"")
         .replace(/<[^>]+>/g,"")
-        .replace(/```html[\s\S]*?```/g,"")
+        // Supprimer blocs de code
         .replace(/```[\s\S]*?```/g,"")
+        // Supprimer tableaux JSON bruts [ {...}, {...} ]
+        .replace(/\[\s*\{[\s\S]*?\}\s*\]/g,"")
+        // Supprimer lignes qui ressemblent à du JSON ou données brutes
+        .replace(/^\s*[\{\}"\[\],:0-9]+.*$/gm,"")
+        // Nettoyer les lignes vides multiples
+        .replace(/\n{3,}/g,"\n\n")
         .trim();
+
+      // Si après nettoyage il ne reste que du bruit, mettre un message générique
+      if(!cleanText || cleanText.length < 5) {
+        const fileType = excelMatch?"Excel":csvMatch?"CSV":pdfMatch?"PDF":"fichier";
+        cleanText = "✅ " + fileType + " généré avec succès.";
+      }
 
       setMsgs([...newMsgs, {role:"assistant", content:cleanText}]);
     } catch(e) {
@@ -1079,12 +1093,30 @@ const PAGE_COLORS = {
 
 function PageHeader({ pageId, title, subtitle, children }) {
   const theme = PAGE_COLORS[pageId] || { bg:"linear-gradient(135deg,#1e293b,#334155)", accent:"#94a3b8", icon:"📄" };
+  const [visible, setVisible] = useState(true);
+  const lastY = useRef(0);
+  useEffect(()=>{
+    const el = document.getElementById("main-scroll-area");
+    if(!el) return;
+    const onScroll = () => {
+      const y = el.scrollTop;
+      // Cacher si on scrolle vers le bas (>80px), montrer si on remonte
+      setVisible(y < lastY.current || y < 80);
+      lastY.current = y;
+    };
+    el.addEventListener("scroll", onScroll, {passive:true});
+    return ()=>el.removeEventListener("scroll", onScroll);
+  },[]);
   return (
     <div style={{
       background: theme.bg,
       padding:"18px 16px 14px",
       marginBottom:0,
       position:"sticky", top:0, zIndex:10,
+      transition:"transform 0.22s ease, opacity 0.22s ease",
+      transform: visible ? "translateY(0)" : "translateY(-110%)",
+      opacity: visible ? 1 : 0,
+      pointerEvents: visible ? "auto" : "none",
     }}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
         <div>
@@ -1163,8 +1195,9 @@ function ScanReviewModal({ open, onClose, scanResult, allProducts, activeSupplie
     setRows(scanResult.items.map((it, idx) => ({
       _idx:        idx,
       selected:    true,
-      isNew:       !!it.newProduct,
-      productId:   it.productId   || "",
+      // En mode products : tous sont nouveaux et éditables, on ne compare pas avec la base
+      isNew:       mode === "products" ? true : !!it.newProduct,
+      productId:   mode === "products" ? "" : (it.productId || ""),
       productName: it.productName || "",
       qty:         it.qty         || "",
       unitPrice:   it.unitPrice   || "",
@@ -1172,7 +1205,7 @@ function ScanReviewModal({ open, onClose, scanResult, allProducts, activeSupplie
       lot:         it.lot         || "",
       expiry:      it.expiry      || "",
     })));
-  }, [open, scanResult]);
+  }, [open, scanResult, mode]);
 
   if (!open) return null;
 
@@ -1282,10 +1315,11 @@ function ScanReviewModal({ open, onClose, scanResult, allProducts, activeSupplie
         <div style={{ padding:"14px 20px", background:"linear-gradient(135deg,#7c3aed,#6d28d9)",
           borderRadius:"16px 16px 0 0", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
           <div>
-            <div style={{ fontWeight:800, color:"white", fontSize:15 }}>📋 Révision du scan</div>
+            <div style={{ fontWeight:800, color:"white", fontSize:15 }}>📋 {mode==="products"?"Révision des produits à importer":"Révision du scan"}</div>
             <div style={{ fontSize:11, color:"rgba(255,255,255,0.7)", marginTop:2 }}>
-              {scanResult?.rawCount ? scanResult.rawCount + " lignes lues · " : ""}
-              {existing.length} produit(s) reconnu(s) · {newProds.length} nouveau(x)
+              {mode==="products"
+                ? rows.length + " produit(s) — modifiez les noms et prix avant d'importer"
+                : (scanResult?.rawCount ? scanResult.rawCount + " lignes lues · " : "") + existing.length + " produit(s) reconnu(s) · " + newProds.length + " nouveau(x)"}
             </div>
           </div>
           <button onClick={onClose} style={{ background:"rgba(255,255,255,0.2)", border:"none",
@@ -1293,8 +1327,46 @@ function ScanReviewModal({ open, onClose, scanResult, allProducts, activeSupplie
         </div>
 
         <div style={{ padding:16, maxHeight:"65vh", overflowY:"auto" }}>
-
-          {/* Produits reconnus */}
+          {mode === "products" ? (
+            /* Mode import produits : tous éditables, pas de séparation nouveau/existant */
+            <div style={{marginBottom:16}}>
+              <div style={{background:"#f0f9ff",borderRadius:8,padding:"8px 12px",marginBottom:10,fontSize:12,color:"#0891b2"}}>
+                ℹ️ Tous les produits seront importés pour <b>{activeSupplier?.name||"—"}</b>. Modifiez les noms et prix si nécessaire.
+              </div>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse"}}>
+                  <thead>
+                    <tr>
+                      <th style={{...colHdr,width:30}}></th>
+                      <th style={colHdr}>Nom du produit</th>
+                      <th style={{...colHdr,width:90}}>Prix FCFA</th>
+                      <th style={{...colHdr,width:70}}>Unité</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map(r=>(
+                      <tr key={r._idx} style={{background:r.selected?"white":"#fafafa",opacity:r.selected?1:0.5}}>
+                        <td style={colTd}><input type="checkbox" checked={r.selected} onChange={e=>update(r._idx,"selected",e.target.checked)}/></td>
+                        <td style={colTd}>
+                          <input value={r.productName} onChange={e=>update(r._idx,"productName",e.target.value)}
+                            style={{width:"100%",padding:"4px 6px",border:"1px solid #bae6fd",borderRadius:5,fontSize:12}}/>
+                        </td>
+                        <td style={colTd}>
+                          <input type="number" min="0" value={r.unitPrice} onChange={e=>update(r._idx,"unitPrice",e.target.value)}
+                            style={{width:80,padding:"4px 6px",border:"1px solid #e2e8f0",borderRadius:5,fontSize:12,textAlign:"right"}}/>
+                        </td>
+                        <td style={colTd}>
+                          <input value={r.unit||""} onChange={e=>update(r._idx,"unit",e.target.value)} list="units-list"
+                            style={{width:65,padding:"4px 6px",border:"1px solid #e2e8f0",borderRadius:5,fontSize:12}}/>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (<>
+          {/* Mode bon/inventaire : séparer reconnus et nouveaux */}
           <Section
             title="✅ Produits reconnus dans la base"
             color="#059669" bg="#f0fdf4"
@@ -1302,8 +1374,6 @@ function ScanReviewModal({ open, onClose, scanResult, allProducts, activeSupplie
             showQty={mode !== "products"}
             showPrice={mode === "products"}
           />
-
-          {/* Nouveaux produits */}
           <Section
             title="🆕 Nouveaux produits (non dans la base)"
             color="#7c3aed" bg="#fdf4ff"
@@ -1311,15 +1381,7 @@ function ScanReviewModal({ open, onClose, scanResult, allProducts, activeSupplie
             showQty={mode !== "products"}
             showPrice={true}
           />
-
-          {mode === "products" && newProds.some(r => r.selected) && (
-            <div style={{ background:"#fffbeb", border:"1px solid #fcd34d", borderRadius:8,
-              padding:"10px 14px", fontSize:12, color:"#92400e", marginBottom:8 }}>
-              ⚠️ Les nouveaux produits sélectionnés seront créés avec le fournisseur actif :
-              <strong> {activeSupplier?.name || "—"}</strong>
-            </div>
-          )}
-        </div>
+          </>)}
 
         {/* Footer */}
         <div style={{ padding:"12px 16px", borderTop:"1px solid #f1f5f9",
@@ -1339,6 +1401,7 @@ function ScanReviewModal({ open, onClose, scanResult, allProducts, activeSupplie
           </button>
         </div>
       </div>
+    </div>
     </div>
   );
 }
@@ -1481,10 +1544,11 @@ function TopBar({page,activeSupplier,onMenu,onAI,aiOpen,unread,onLogout,onChange
       <button onClick={onMenu} style={{...btn(),background:"rgba(255,255,255,0.1)",color:"white",padding:"6px 11px",fontSize:17}}>☰</button>
       <img src={LOGO_B64} alt="CHNCAK" style={{width:34,height:34,borderRadius:"50%",objectFit:"cover",border:"2px solid #38bdf8",flexShrink:0}}/>
       <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
-        <div style={{fontWeight:700,color:"white",fontSize:14,lineHeight:1.2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{PAGE_LABELS[page]||"CHNCAK PharmaStock"}</div>
-        {activeSupplier&&(
-          <div onClick={onChangeSupplier} style={{fontSize:11,color:"#38bdf8",cursor:"pointer",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>🏢 {activeSupplier.name}</div>
-        )}
+        <div style={{fontWeight:700,color:"white",fontSize:13,lineHeight:1.2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>CHNCAK PharmaStock</div>
+        <div onClick={activeSupplier?onChangeSupplier:undefined}
+          style={{fontSize:11,color:"#38bdf8",cursor:activeSupplier?"pointer":"default",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+          {activeSupplier ? ("🏢 "+activeSupplier.name) : "Aucun fournisseur sélectionné"}
+        </div>
       </div>
       {unread>0&&page!=="messagerie"&&(
         <div onClick={()=>onNav&&onNav("messagerie")} style={{background:"#ef4444",color:"white",borderRadius:99,padding:"2px 7px",fontSize:11,fontWeight:700,cursor:"pointer",flexShrink:0}}>✉ {unread}</div>
@@ -1505,13 +1569,85 @@ function AIPanel({open,onClose,ai,onNav,store,page,activeSupplier,currentUser}){
   const [input,setInput]=useState("");
   const [scanning,setScanning]=useState(false);
   const [scanMsg,setScanMsg]=useState("");
+  const [listening,setListening]=useState(false);
+  const [micError,setMicError]=useState("");
   const fileRef=useRef(null);
   const bottomRef=useRef(null);
+  const recognRef=useRef(null);
+
   // Hooks doivent tous être avant le return conditionnel
   useEffect(()=>{
     if(!open) return;
     bottomRef.current?.scrollIntoView({behavior:"smooth"});
   },[ai.msgs, open]);
+
+  // Injecter l'animation pulse si pas déjà présente
+  useEffect(()=>{
+    if(!document.getElementById("pharma-pulse-style")){
+      const s = document.createElement("style");
+      s.id = "pharma-pulse-style";
+      s.textContent = "@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}";
+      document.head.appendChild(s);
+    }
+  },[]);
+
+  // Nettoyage micro à la fermeture
+  useEffect(()=>{
+    if(!open && recognRef.current){
+      try { recognRef.current.stop(); } catch(e){}
+      setListening(false);
+    }
+  },[open]);
+
+  const toggleMic = () => {
+    setMicError("");
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if(!SR){ setMicError("Micro non supporté par ce navigateur."); return; }
+
+    if(listening){
+      try { recognRef.current?.stop(); } catch(e){}
+      setListening(false);
+      return;
+    }
+
+    const recog = new SR();
+    recog.lang = "fr-FR";
+    recog.interimResults = true;
+    recog.continuous = false;
+    recog.maxAlternatives = 1;
+    recognRef.current = recog;
+
+    recog.onstart  = () => setListening(true);
+    recog.onend    = () => setListening(false);
+    recog.onerror  = (e) => {
+      setListening(false);
+      if(e.error==="not-allowed") setMicError("⛔ Accès au micro refusé. Autorisez le micro dans votre navigateur.");
+      else if(e.error!=="aborted") setMicError("❌ Erreur micro : " + e.error);
+    };
+    recog.onresult = (e) => {
+      const transcript = Array.from(e.results)
+        .map(r=>r[0].transcript).join("");
+      setInput(transcript);
+      // Si résultat final, envoyer automatiquement
+      if(e.results[e.results.length-1].isFinal){
+        setListening(false);
+        if(transcript.trim()){
+          // Envoyer après un court délai pour que l'UI se mette à jour
+          setTimeout(()=>{
+            ai.send(transcript.trim(), {
+              page,
+              activeSupplier: activeSupplier?.name,
+              pagesAccessibles: SECTIONS.filter(s=>can(currentUser,s.id,"r")).map(s=>s.id).concat(["dashboard"]),
+              fullData: buildAIContext(store, currentUser, activeSupplier, page),
+            }, onNav);
+            setInput("");
+          }, 100);
+        }
+      }
+    };
+    try { recog.start(); }
+    catch(e){ setMicError("❌ Impossible de démarrer le micro."); }
+  };
 
   if(!open) return null;
 
@@ -1586,14 +1722,31 @@ function AIPanel({open,onClose,ai,onNav,store,page,activeSupplier,currentUser}){
         <div style={{display:"flex",gap:7,alignItems:"flex-end"}}>
           <textarea value={input} onChange={e=>setInput(e.target.value)}
             onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();handleSend();} }}
-            placeholder="Stock d'un produit, historique, situation... (Entrée)"
-            style={{flex:1,padding:"9px 12px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,resize:"none",height:58,boxSizing:"border-box",outline:"none"}}
+            placeholder={listening?"🎙️ Parlez maintenant...":"Stock d'un produit, historique, situation... (Entrée)"}
+            style={{flex:1,padding:"9px 12px",border:listening?"1.5px solid #7c3aed":"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,resize:"none",height:58,boxSizing:"border-box",outline:"none",background:listening?"#fdf4ff":"white",transition:"all 0.2s"}}
           />
           <div style={{display:"flex",flexDirection:"column",gap:5}}>
             <button onClick={handleSend} disabled={ai.loading} style={{...btn(),background:"#7c3aed",color:"white",padding:"8px 12px"}}>→</button>
+            {/* Micro */}
+            <button onClick={toggleMic}
+              title={listening?"Arrêter l'écoute":"Dicter un message"}
+              style={{...btn(),
+                background:listening?"#ef4444":"#f0f9ff",
+                color:listening?"white":"#7c3aed",
+                border:listening?"none":"1px solid #ddd8fe",
+                padding:"7px 9px",fontSize:15,
+                animation:listening?"pulse 1s infinite":undefined,
+              }}>
+              {listening?"⏹":"🎙️"}
+            </button>
             <button onClick={()=>fileRef.current?.click()} style={{...btn(),background:"#f0f9ff",color:"#0891b2",border:"1px solid #bae6fd",padding:"7px 9px",fontSize:13}}>📎</button>
           </div>
         </div>
+        {micError&&<div style={{fontSize:11,color:"#ef4444",marginTop:4}}>{micError}</div>}
+        {listening&&<div style={{fontSize:11,color:"#7c3aed",marginTop:4,display:"flex",alignItems:"center",gap:4}}>
+          <span style={{width:8,height:8,borderRadius:"50%",background:"#ef4444",display:"inline-block",animation:"pulse 1s infinite"}}/>
+          Écoute en cours... Parlez en français
+        </div>}
         <input ref={fileRef} type="file" accept=".pdf,.xlsx,.xls,.jpg,.jpeg,.png" style={{display:"none"}} onChange={e=>{ handleFile(e.target.files[0]); e.target.value=""; }}/>
         <div style={{fontSize:10,color:"#94a3b8",marginTop:6,textAlign:"center"}}>Glissez ou cliquez 📎 pour scanner un document PDF/Excel/Image</div>
       </div>
@@ -2366,7 +2519,12 @@ function InventoryPage({store,activeSupplier,currentUser}){
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[depotPhysical, depotResults, result, step, depotId]);
 
-  const suppDepots = activeSupplier ? store.depots.filter(d=>d.supplierId===activeSupplier.id) : store.depots;
+  const suppDepots = activeSupplier
+    ? store.depots.filter(d=>d.supplierId===activeSupplier.id && !d.isPrincipal && !d.isAutoCreated)
+    : store.depots.filter(d=>!d.isPrincipal && !d.isAutoCreated);
+  const principalDepot = activeSupplier
+    ? store.depots.find(d=>d.supplierId===activeSupplier.id && (d.isPrincipal||d.isAutoCreated))
+    : null;
   // All products of this supplier (no depotId filter — same products in all depots)
   const suppProds = activeSupplier ? store.products.filter(p=>p.supplierId===activeSupplier.id) : store.products;
 
@@ -2380,9 +2538,15 @@ function InventoryPage({store,activeSupplier,currentUser}){
       const old=store.stock[p.id]||0;
       const ent=mEnts.reduce((s,e)=>s+(e.items?.find(i=>i.productId===p.id)?.qty||0)*1,0);
       const ret=mRets.reduce((s,r)=>s+(r.items?.find(i=>i.productId===p.id)?.qty||0)*1,0);
-      const nw=Number((phys||{})[p.id]||0);
-      const sold=Math.max(0,old+ent-ret-nw);
-      return{product:p,old,ent,ret,nw,sold,depot:store.depots.find(d=>d.id===dId)?.name||dId};
+      // ⚠️ DISTINCTION CRITIQUE :
+      // - phys[p.id] === undefined → produit NON inventorié → garder ancien stock (nw = old+ent-ret)
+      // - phys[p.id] === "0" ou 0  → produit inventorié à ZÉRO → sold = old+ent-ret
+      const rawVal = (phys||{})[p.id];
+      const wasInventoried = rawVal !== undefined && rawVal !== "";
+      const nw = wasInventoried ? Number(rawVal) : (old+ent-ret); // si non inventorié, nw = stock théorique → sold = 0
+      const sold = wasInventoried ? Math.max(0, old+ent-ret-nw) : 0;
+      return{product:p, old, ent, ret, nw, sold, wasInventoried,
+        depot:store.depots.find(d=>d.id===dId)?.name||dId};
     });
   };
 
@@ -2391,16 +2555,28 @@ function InventoryPage({store,activeSupplier,currentUser}){
     const byProd={};
     Object.values(allDepotResults).forEach(rows=>{
       rows.forEach(row=>{
-        if(!byProd[row.product.id]) byProd[row.product.id]={product:row.product,old:0,ent:0,ret:0,nw:0,sold:0,depotBreakdown:{}};
-        byProd[row.product.id].old+=row.old;
-        byProd[row.product.id].ent+=row.ent;
-        byProd[row.product.id].ret+=row.ret;
-        byProd[row.product.id].nw+=row.nw;
-        byProd[row.product.id].sold+=row.sold;
-        byProd[row.product.id].depotBreakdown[row.depot]=row.nw;
+        if(!byProd[row.product.id]){
+          byProd[row.product.id]={product:row.product,old:0,ent:0,ret:0,nw:0,sold:0,wasInventoried:false,depotBreakdown:{}};
+        }
+        byProd[row.product.id].old = Math.max(byProd[row.product.id].old, row.old); // prendre le max (même produit)
+        byProd[row.product.id].ent += row.ent;
+        byProd[row.product.id].ret += row.ret;
+        if(row.wasInventoried){
+          byProd[row.product.id].wasInventoried = true;
+          byProd[row.product.id].nw += row.nw;
+          byProd[row.product.id].sold += row.sold;
+        }
+        byProd[row.product.id].depotBreakdown[row.depot] = row.wasInventoried ? row.nw : "—";
       });
     });
-    return Object.values(byProd);
+    // Pour les produits non inventoriés, sold reste 0 et nw = old+ent-ret
+    return Object.values(byProd).map(r=>{
+      if(!r.wasInventoried){
+        r.nw = r.old + r.ent - r.ret;
+        r.sold = 0;
+      }
+      return r;
+    });
   };
 
   const handleStartDepot=()=>{
@@ -2499,12 +2675,10 @@ function InventoryPage({store,activeSupplier,currentUser}){
     };
     await store.addInventory(inv);
     // Mettre à jour le stock UNIQUEMENT pour les produits qui ont été inventoriés
-    // (nw > 0 ou explicitement saisi), les autres restent inchangés
+    // (wasInventoried = true) — les autres gardent leur stock inchangé
     for(const row of (result||[])){
       if(!row.product?.id) continue;
-      // Vérifier si ce produit a été saisi dans au moins un dépôt
-      const wasCounted = Object.values(depotPhysical).some(phys => phys[row.product.id] !== undefined);
-      if(wasCounted && row.nw >= 0){
+      if(row.wasInventoried && row.nw >= 0){
         try { await store.setStockForProduct(row.product.id, row.nw); } catch(e){ console.warn("Stock update error:", e); }
       }
       // Si non inventorié → stock inchangé
@@ -2606,8 +2780,13 @@ function InventoryPage({store,activeSupplier,currentUser}){
             <button onClick={handleStartDepot} disabled={!depotId} style={{...btn(),background:!depotId?"#cbd5e1":"#0891b2",color:"white",flex:1}}>
               Saisie par dépôt →
             </button>
-            <button onClick={()=>{setDepotId("__global__");setStep(2);setScanMsg("");}} style={{...btn(),background:"#7c3aed",color:"white",flex:1}}>
-              🌐 Tous dépôts (global)
+            <button onClick={()=>{
+              const globalId = principalDepot?.id || "__global__";
+              setDepotId(globalId);
+              setStep(2);
+              setScanMsg("");
+            }} style={{...btn(),background:"#7c3aed",color:"white",flex:1}}>
+              🌐 Inventaire global (tous dépôts)
             </button>
             {completedDepots.length>0&&(
               <button onClick={()=>setStep(3)} style={{...btn(),background:"#059669",color:"white"}}>
@@ -2735,8 +2914,11 @@ function InventoryPage({store,activeSupplier,currentUser}){
               👤 Inventaire en cours par : <b>{store.users?.find(u=>u.id===currentUser?.uid)?.name||currentUser?.name||"—"}</b>
             </div>
             {result.map(row=>(
-              <div key={row.product.id} style={{background:"#f8fafc",borderRadius:8,padding:"10px 12px",marginBottom:8,border:editingResult?"1.5px dashed #bae6fd":"1.5px solid transparent"}}>
-                <div style={{fontWeight:700,color:"#1e293b",fontSize:13,marginBottom:8}}>{row.product.name}</div>
+              <div key={row.product.id} style={{background:row.wasInventoried?"#f8fafc":"#fffbeb",borderRadius:8,padding:"10px 12px",marginBottom:8,border:editingResult?"1.5px dashed #bae6fd":row.wasInventoried?"1.5px solid transparent":"1.5px solid #fcd34d"}}>
+                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+                  <div style={{fontWeight:700,color:"#1e293b",fontSize:13,flex:1}}>{row.product.name}</div>
+                  {!row.wasInventoried&&<span style={{background:"#fef3c7",color:"#92400e",fontSize:10,fontWeight:700,borderRadius:99,padding:"2px 8px"}}>⏭️ Non inventorié</span>}
+                </div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:5,marginBottom:6}}>
                   {[["Ancien",row.old,"#64748b"],["+Entrées",row.ent,"#059669"],["−Retours",row.ret,"#d97706"]].map(([l,v,c])=>(
                     <div key={l} style={{textAlign:"center",background:"white",borderRadius:6,padding:"5px 3px"}}>
@@ -3234,17 +3416,62 @@ function InventoryHistoryPage({store, activeSupplier, user}) {
           )}
 
           {/* Actions bas de page */}
-          {can(user,"hist-inv","d")&&(
-            <div style={{display:"flex",gap:10,marginTop:14,flexWrap:"wrap"}}>
+          <div style={{display:"flex",gap:10,marginTop:14,flexWrap:"wrap"}}>
+            {/* Modifier inventaire */}
+            {!inv.validated && can(user,"hist-inv","w") && (
+              <button onClick={()=>{
+                // Ré-ouvrir l'inventaire pour modification → naviguer vers InventoryPage avec les données
+                if(window.confirm("Voulez-vous modifier cet inventaire ? Les quantités seront rechargées dans le formulaire.")){
+                  store.updateInventory(inv.id, {...inv, editing:true});
+                  alert("Inventaire marqué comme 'en cours de modification'. Allez sur la page Inventaire pour modifier.");
+                }
+              }} style={{...btn(),background:"#f0f9ff",color:"#0891b2",border:"1px solid #bae6fd"}}>
+                ✏️ Modifier
+              </button>
+            )}
+            {/* Valider définitivement */}
+            {!inv.validated && can(user,"hist-inv","w") && (
+              <button onClick={()=>{
+                if(window.confirm("Valider définitivement cet inventaire ? Cette action empêchera toute modification ultérieure (seul l'admin pourra le déverrouiller).")){
+                  store.updateInventory(inv.id, {...inv, validated:true, validatedAt:new Date().toISOString(), validatedBy:user?.uid});
+                  setSelected(s=>({...s,validated:true,validatedAt:new Date().toISOString()}));
+                }
+              }} style={{...btn(),background:"#059669",color:"white",fontWeight:700}}>
+                ✅ Valider définitivement
+              </button>
+            )}
+            {/* Statut validé */}
+            {inv.validated && (
+              <div style={{display:"flex",alignItems:"center",gap:8,background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:8,padding:"8px 14px",flex:1}}>
+                <span style={{fontSize:16}}>🔒</span>
+                <div>
+                  <div style={{fontWeight:700,fontSize:12,color:"#059669"}}>Inventaire validé définitivement</div>
+                  <div style={{fontSize:11,color:"#64748b"}}>{inv.validatedAt ? new Date(inv.validatedAt).toLocaleDateString("fr-FR") : ""}</div>
+                </div>
+                {/* Seul l'admin peut déverrouiller */}
+                {user?.role==="admin" || user?.role==="superuser" ? (
+                  <button onClick={()=>{
+                    if(window.confirm("Déverrouiller cet inventaire pour modification ?")){
+                      store.updateInventory(inv.id, {...inv, validated:false, validatedAt:null, validatedBy:null});
+                      setSelected(s=>({...s,validated:false}));
+                    }
+                  }} style={{...btn(),background:"#fef3c7",color:"#92400e",border:"1px solid #fcd34d",marginLeft:"auto",fontSize:11}}>
+                    🔓 Déverrouiller (Admin)
+                  </button>
+                ) : null}
+              </div>
+            )}
+            {/* Supprimer — seulement si non validé */}
+            {!inv.validated && can(user,"hist-inv","d") && (
               <button onClick={()=>setDeletingSelectedInv(true)}
                 style={{...btn(),background:"#fee2e2",color:"#ef4444",border:"1px solid #fca5a5"}}>
-                🗑️ Supprimer cet inventaire
+                🗑️ Supprimer
               </button>
-              <ConfirmDelete open={deletingSelectedInv} onClose={()=>setDeletingSelectedInv(false)}
-                label={inv.month}
-                onConfirm={()=>store.deleteInventory(inv.id).then(()=>setSelected(null))}/>
-            </div>
-          )}
+            )}
+            <ConfirmDelete open={deletingSelectedInv} onClose={()=>setDeletingSelectedInv(false)}
+              label={inv.month}
+              onConfirm={()=>store.deleteInventory(inv.id).then(()=>setSelected(null))}/>
+          </div>
         </div>
       </div>
     );
@@ -3290,6 +3517,10 @@ function InventoryHistoryPage({store, activeSupplier, user}) {
                   <div style={{fontWeight:800,color:"#059669",fontSize:16}}>{inv.totalSold||0}</div>
                   <div style={{fontSize:10,color:"#64748b"}}>unités vendues</div>
                 </div>
+                {inv.validated
+                  ? <span style={{background:"#059669",color:"white",fontSize:10,fontWeight:700,borderRadius:99,padding:"2px 8px"}}>🔒 Validé</span>
+                  : <span style={{background:"#f59e0b",color:"white",fontSize:10,fontWeight:700,borderRadius:99,padding:"2px 8px"}}>⏳ En cours</span>
+                }
                 <div style={{color:"#0891b2",fontSize:18}}>›</div>
               </div>
             </div>
@@ -4589,7 +4820,7 @@ export default function App(){
         onAI={()=>{setAiOpen(v=>!v);setMenuOpen(false);}} aiOpen={aiOpen}
         unread={unread} onLogout={logout} onChangeSupplier={()=>setSupplierModal(true)} onNav={nav}
         onProfile={()=>setProfileOpen(true)} userName={user?.name||user?.email}/>
-      <div style={{flex:1,overflowY:"auto"}}>
+      <div id="main-scroll-area" style={{flex:1,overflowY:"auto"}}>
         {renderPage()}
       </div>
       <Sidebar open={menuOpen} onClose={()=>setMenuOpen(false)} page={page} onNav={nav}
