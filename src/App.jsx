@@ -165,15 +165,16 @@ const SECTIONS = [
   { id:"produits",     label:"Produits" },
   { id:"fournisseurs", label:"Fournisseurs" },
   { id:"depots",       label:"Dépôts" },
+  { id:"activites",    label:"Journal d'activité", adminOnly:true },
 ];
 
 // Permissions par défaut par rôle (utilisé si l'admin n'a pas personnalisé)
 const DEFAULT_PERMS = {
-  admin:        { entrees:{r:1,w:1,d:1}, retours:{r:1,w:1,d:1}, inventaire:{r:1,w:1,d:1}, factures:{r:1,w:1,d:1}, "hist-inv":{r:1,w:1,d:1}, "hist-fact":{r:1,w:1,d:1}, messagerie:{r:1,w:1,d:1}, produits:{r:1,w:1,d:1}, fournisseurs:{r:1,w:1,d:1}, depots:{r:1,w:1,d:1} },
-  gestionnaire: { entrees:{r:1,w:1,d:0}, retours:{r:1,w:1,d:0}, inventaire:{r:1,w:1,d:0}, factures:{r:1,w:1,d:0}, "hist-inv":{r:1,w:0,d:0}, "hist-fact":{r:1,w:0,d:0}, messagerie:{r:1,w:1,d:0}, produits:{r:1,w:1,d:0}, fournisseurs:{r:1,w:1,d:0}, depots:{r:1,w:1,d:0} },
-  pharmacien:   { entrees:{r:1,w:1,d:0}, retours:{r:1,w:1,d:0}, inventaire:{r:1,w:1,d:0}, factures:{r:1,w:1,d:0}, "hist-inv":{r:1,w:1,d:0}, "hist-fact":{r:1,w:1,d:0}, messagerie:{r:1,w:1,d:0}, produits:{r:1,w:1,d:0}, fournisseurs:{r:1,w:1,d:0}, depots:{r:1,w:1,d:0} },
-  magasinier:   { entrees:{r:1,w:1,d:0}, retours:{r:1,w:1,d:0}, inventaire:{r:0,w:0,d:0}, factures:{r:0,w:0,d:0}, "hist-inv":{r:0,w:0,d:0}, "hist-fact":{r:0,w:0,d:0}, messagerie:{r:0,w:0,d:0}, produits:{r:1,w:0,d:0}, fournisseurs:{r:0,w:0,d:0}, depots:{r:1,w:0,d:0} },
-  comptable:    { entrees:{r:1,w:0,d:0}, retours:{r:1,w:0,d:0}, inventaire:{r:1,w:1,d:0}, factures:{r:1,w:1,d:0}, "hist-inv":{r:1,w:0,d:0}, "hist-fact":{r:1,w:0,d:0}, messagerie:{r:1,w:1,d:0}, produits:{r:1,w:0,d:0}, fournisseurs:{r:1,w:0,d:0}, depots:{r:1,w:0,d:0} },
+  admin:        { entrees:{r:1,w:1,d:1}, retours:{r:1,w:1,d:1}, inventaire:{r:1,w:1,d:1}, factures:{r:1,w:1,d:1}, "hist-inv":{r:1,w:1,d:1}, "hist-fact":{r:1,w:1,d:1}, messagerie:{r:1,w:1,d:1}, produits:{r:1,w:1,d:1}, fournisseurs:{r:1,w:1,d:1}, depots:{r:1,w:1,d:1}, activites:{r:1,w:1,d:1} },
+  gestionnaire: { entrees:{r:1,w:1,d:0}, retours:{r:1,w:1,d:0}, inventaire:{r:1,w:1,d:0}, factures:{r:1,w:1,d:0}, "hist-inv":{r:1,w:0,d:0}, "hist-fact":{r:1,w:0,d:0}, messagerie:{r:1,w:1,d:0}, produits:{r:1,w:1,d:0}, fournisseurs:{r:1,w:1,d:0}, depots:{r:1,w:1,d:0}, activites:{r:0,w:0,d:0} },
+  pharmacien:   { entrees:{r:1,w:1,d:0}, retours:{r:1,w:1,d:0}, inventaire:{r:1,w:1,d:0}, factures:{r:1,w:1,d:0}, "hist-inv":{r:1,w:1,d:0}, "hist-fact":{r:1,w:1,d:0}, messagerie:{r:1,w:1,d:0}, produits:{r:1,w:1,d:0}, fournisseurs:{r:1,w:1,d:0}, depots:{r:1,w:1,d:0}, activites:{r:0,w:0,d:0} },
+  magasinier:   { entrees:{r:1,w:1,d:0}, retours:{r:1,w:1,d:0}, inventaire:{r:0,w:0,d:0}, factures:{r:0,w:0,d:0}, "hist-inv":{r:0,w:0,d:0}, "hist-fact":{r:0,w:0,d:0}, messagerie:{r:0,w:0,d:0}, produits:{r:1,w:0,d:0}, fournisseurs:{r:0,w:0,d:0}, depots:{r:1,w:0,d:0}, activites:{r:0,w:0,d:0} },
+  comptable:    { entrees:{r:1,w:0,d:0}, retours:{r:1,w:0,d:0}, inventaire:{r:1,w:1,d:0}, factures:{r:1,w:1,d:0}, "hist-inv":{r:1,w:0,d:0}, "hist-fact":{r:1,w:0,d:0}, messagerie:{r:1,w:1,d:0}, produits:{r:1,w:0,d:0}, fournisseurs:{r:1,w:0,d:0}, depots:{r:1,w:0,d:0}, activites:{r:0,w:0,d:0} },
 };
 
 // Helper: obtenir les permissions effectives d'un utilisateur
@@ -203,6 +204,7 @@ const PAGE_LABELS = {
   "produits":    "Produits",
   "fournisseurs":"Fournisseurs",
   "utilisateurs":"Utilisateurs",
+  "activites":   "Journal d'activité",
 };
 
 const NAV_ITEMS = [
@@ -217,6 +219,7 @@ const NAV_ITEMS = [
   { id: "produits",     label: "Produits",               icon: "💊", perm: "produits" },
   { id: "fournisseurs", label: "Fournisseurs",           icon: "🏢", perm: "fournisseurs" },
   { id: "depots",       label: "Dépôts",                 icon: "🏭", perm: "depots" },
+  { id: "activites",    label: "Journal d'activité",     icon: "📜", adminOnly: true },
   { id: "utilisateurs", label: "Utilisateurs",           icon: "👥", adminOnly: true },
 ];
 
@@ -347,6 +350,7 @@ function useStore(userId, userName) {
   const [inventories,  setInventories]  = useState([]);
   const [invoices,     setInvoices]     = useState([]);
   const [messages,     setMessages]     = useState([]);
+  const [activities,   setActivities]   = useState([]);
   const [stock,        setStock]        = useState({});
   const [loading,      setLoading]      = useState(true);
 
@@ -361,6 +365,7 @@ function useStore(userId, userName) {
       liveCol("inventories", setInventories, orderBy("createdAt","desc")),
       liveCol("invoices",    setInvoices,    orderBy("createdAt","desc")),
       liveCol("messages",    setMessages,    orderBy("createdAt","desc")),
+      liveCol("activities",  setActivities,  orderBy("createdAt","desc")),
     ];
     const unsubProd = onSnapshot(
       query(collection(db,"products"), orderBy("name")),
@@ -379,7 +384,7 @@ function useStore(userId, userName) {
 
   return {
     suppliers, depots, products, users,
-    entries, returns, inventories, invoices, messages,
+    entries, returns, inventories, invoices, messages, activities,
     stock, loading,
 
     addSupplier:    s    => addDoc(collection(db,"suppliers"), { ...s, createdBy:userId, createdByName:userName, createdAt: serverTimestamp() }), // retourne Promise<DocumentReference>
@@ -401,6 +406,7 @@ function useStore(userId, userName) {
         ...e, type:"entry", createdBy:userId, createdByName:userName, createdAt: serverTimestamp(),
       });
       await adjustStockFB(e.items, +1);
+      await addDoc(collection(db,"activities"), { action:"create", entity:"entry", entityId:ref.id, details:`Bon d'entrée créé : ${e.reference} (${e.items?.length||0} article(s))`, userId, userName, createdAt:serverTimestamp() });
       return { id: ref.id, ...e, date: new Date().toISOString() };
     },
 
@@ -409,23 +415,62 @@ function useStore(userId, userName) {
         ...r, type:"return", createdBy:userId, createdByName:userName, createdAt: serverTimestamp(),
       });
       await adjustStockFB(r.items, -1);
+      await addDoc(collection(db,"activities"), { action:"create", entity:"return", entityId:ref.id, details:`Bon de retour créé : ${r.reference} (${r.items?.length||0} article(s))`, userId, userName, createdAt:serverTimestamp() });
       return { id: ref.id, ...r, date: new Date().toISOString() };
     },
 
-    addInventory: inv =>
-      addDoc(collection(db,"inventories"), {
+    addInventory: async inv => {
+      const ref = await addDoc(collection(db,"inventories"), {
         ...inv, createdBy:userId, createdByName:userName, createdAt: serverTimestamp(),
-      }),
+      });
+      await addDoc(collection(db,"activities"), { action:"create", entity:"inventory", entityId:ref.id, details:`Inventaire créé : ${inv.month} — ${inv.totalSold||0} unité(s) vendue(s)`, userId, userName, createdAt:serverTimestamp() });
+      return ref;
+    },
 
-    addInvoice: inv =>
-      addDoc(collection(db,"invoices"), {
+    addInvoice: async inv => {
+      const ref = await addDoc(collection(db,"invoices"), {
         ...inv, status:"en attente", createdBy:userId, createdByName:userName, createdAt: serverTimestamp(),
-      }),
+      });
+      await addDoc(collection(db,"activities"), { action:"create", entity:"invoice", entityId:ref.id, details:`Facture créée : ${inv.reference} — ${Number(inv.total||0).toLocaleString("fr-FR")} FCFA`, userId, userName, createdAt:serverTimestamp() });
+      return ref;
+    },
 
-    addMessage: m =>
-      addDoc(collection(db,"messages"), {
-        ...m, read:false, createdBy:userId, createdByName:userName, createdAt: serverTimestamp(),
-      }),
+    addProduct: async p => {
+      const ref = await addDoc(collection(db,"products"), {
+        ...p, stockQty: 0, createdBy:userId, createdByName:userName, createdAt: serverTimestamp(),
+      });
+      await addDoc(collection(db,"activities"), { action:"create", entity:"product", entityId:ref.id, details:`Produit créé : ${p.name}`, userId, userName, createdAt:serverTimestamp() });
+      return ref.id;
+    },
+    updateProduct: async (id,p) => {
+      await updateDoc(doc(db,"products",id), p);
+      await addDoc(collection(db,"activities"), { action:"update", entity:"product", entityId:id, details:`Produit modifié : ${p.name||id}`, userId, userName, createdAt:serverTimestamp() });
+    },
+
+    deleteEntry: async id => {
+      await addDoc(collection(db,"activities"), { action:"delete", entity:"entry", entityId:id, details:`Bon d'entrée supprimé : ${id}`, userId, userName, createdAt:serverTimestamp() });
+      return deleteDoc(doc(db,"entries",id));
+    },
+    deleteReturn: async id => {
+      await addDoc(collection(db,"activities"), { action:"delete", entity:"return", entityId:id, details:`Bon de retour supprimé : ${id}`, userId, userName, createdAt:serverTimestamp() });
+      return deleteDoc(doc(db,"returns",id));
+    },
+    deleteInventory: async id => {
+      await addDoc(collection(db,"activities"), { action:"delete", entity:"inventory", entityId:id, details:`Inventaire supprimé : ${id}`, userId, userName, createdAt:serverTimestamp() });
+      return deleteDoc(doc(db,"inventories",id));
+    },
+    deleteInvoice: async id => {
+      await addDoc(collection(db,"activities"), { action:"delete", entity:"invoice", entityId:id, details:`Facture supprimée : ${id}`, userId, userName, createdAt:serverTimestamp() });
+      return deleteDoc(doc(db,"invoices",id));
+    },
+    deleteProduct: async id => {
+      await addDoc(collection(db,"activities"), { action:"delete", entity:"product", entityId:id, details:`Produit supprimé : ${id}`, userId, userName, createdAt:serverTimestamp() });
+      return deleteDoc(doc(db,"products",id));
+    },
+    deleteSupplier: async id => {
+      await addDoc(collection(db,"activities"), { action:"delete", entity:"supplier", entityId:id, details:`Fournisseur supprimé : ${id}`, userId, userName, createdAt:serverTimestamp() });
+      return deleteDoc(doc(db,"suppliers",id));
+    },
 
     markRead: id => updateDoc(doc(db,"messages",id), { read: true }),
 
@@ -440,17 +485,26 @@ function useStore(userId, userName) {
         await addDoc(collection(db,"users"), { ...u, createdAt: serverTimestamp() });
       }
     },
+    addUser: async u => {
+      try {
+        const cred = await createUserWithEmailAndPassword(auth, u.email, u.tempPw||"PharmaStock2025!");
+        await setDoc(doc(db,"users",cred.user.uid), {
+          name: u.name, email: u.email, role: u.role,
+          createdAt: serverTimestamp(),
+        });
+        await addDoc(collection(db,"activities"), { action:"create", entity:"user", details:`Utilisateur créé : ${u.name} (${u.role})`, userId, userName, createdAt:serverTimestamp() });
+      } catch(e) {
+        await addDoc(collection(db,"users"), { ...u, createdAt: serverTimestamp() });
+      }
+    },
     updateUser: (id,u) => updateDoc(doc(db,"users",id), u),
-    deleteUser: (id)   => deleteDoc(doc(db,"users",id)),
+    deleteUser: async id => {
+      await addDoc(collection(db,"activities"), { action:"delete", entity:"user", entityId:id, details:`Utilisateur supprimé : ${id}`, userId, userName, createdAt:serverTimestamp() });
+      return deleteDoc(doc(db,"users",id));
+    },
 
-    deleteEntry:    (id) => deleteDoc(doc(db,"entries",id)),
-    deleteReturn:   (id) => deleteDoc(doc(db,"returns",id)),
-    deleteInventory:(id) => deleteDoc(doc(db,"inventories",id)),
-    deleteInvoice:  (id) => deleteDoc(doc(db,"invoices",id)),
     deleteMessage:  (id) => deleteDoc(doc(db,"messages",id)),
-    deleteProduct:  (id) => deleteDoc(doc(db,"products",id)),
     deleteDepot:    (id) => deleteDoc(doc(db,"depots",id)),
-    deleteSupplier: (id) => deleteDoc(doc(db,"suppliers",id)),
 
     updateEntry:    (id,d) => updateDoc(doc(db,"entries",id),d),
     updateReturn:   (id,d) => updateDoc(doc(db,"returns",id),d),
@@ -458,6 +512,11 @@ function useStore(userId, userName) {
     updateInvoice:  (id,d) => updateDoc(doc(db,"invoices",id),d),
 
     setStockForProduct: (pid,qty) => updateDoc(doc(db,"products",pid), { stockQty: qty }),
+
+    logActivity: (action, details) =>
+      addDoc(collection(db,"activities"), {
+        action, details, userId, userName, createdAt: serverTimestamp(),
+      }),
   };
 }
 // ─────────────────────────────────────────────
@@ -1087,6 +1146,7 @@ const PAGE_COLORS = {
   "messagerie":   { bg:"linear-gradient(135deg,#0c4a6e,#075985)", accent:"#7dd3fc", icon:"✉️" },
   "produits":     { bg:"linear-gradient(135deg,#14532d,#166534)", accent:"#86efac", icon:"💊" },
   "depots":       { bg:"linear-gradient(135deg,#1c1917,#292524)", accent:"#d6d3d1", icon:"🏭" },
+  "activites":    { bg:"linear-gradient(135deg,#1e1b4b,#312e81)", accent:"#a5b4fc", icon:"📜" },
   "fournisseurs": { bg:"linear-gradient(135deg,#0f172a,#1e293b)", accent:"#94a3b8", icon:"🏢" },
   "utilisateurs": { bg:"linear-gradient(135deg,#4c0519,#9f1239)", accent:"#fda4af", icon:"👥" },
 };
@@ -4348,6 +4408,120 @@ function FournisseursPage({store,activeSupplier,onActivate,currentUser}){
 // ─────────────────────────────────────────────
 // USERS PAGE
 // ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// ACTIVITIES PAGE — Journal d'activité (admin)
+// ─────────────────────────────────────────────
+function ActivitiesPage({store, currentUser}){
+  const [filter, setFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
+  const ENTITY_LABELS = {
+    entry:"Bon d'entrée", return:"Bon de retour", inventory:"Inventaire",
+    invoice:"Facture", product:"Produit", supplier:"Fournisseur",
+    depot:"Dépôt", user:"Utilisateur", other:"Autre",
+  };
+  const ACTION_COLORS = {
+    create:{ bg:"#dcfce7", color:"#059669", label:"Création" },
+    update:{ bg:"#fef3c7", color:"#d97706", label:"Modification" },
+    delete:{ bg:"#fee2e2", color:"#ef4444", label:"Suppression" },
+  };
+
+  const activities = (store.activities||[]).filter(a=>{
+    if(filter!=="all" && a.action!==filter) return false;
+    if(search && !a.details?.toLowerCase().includes(search.toLowerCase()) &&
+       !a.userName?.toLowerCase().includes(search.toLowerCase())) return false;
+    if(dateFrom && a.createdAt?.seconds){
+      if(new Date(a.createdAt.seconds*1000) < new Date(dateFrom)) return false;
+    }
+    if(dateTo && a.createdAt?.seconds){
+      if(new Date(a.createdAt.seconds*1000) > new Date(dateTo+"T23:59:59")) return false;
+    }
+    return true;
+  });
+
+  const stats = {
+    create: (store.activities||[]).filter(a=>a.action==="create").length,
+    update: (store.activities||[]).filter(a=>a.action==="update").length,
+    delete: (store.activities||[]).filter(a=>a.action==="delete").length,
+  };
+
+  return(
+    <div style={{padding:0}}>
+      <PageHeader pageId="activites" title="📜 Journal d'activité" subtitle="Historique complet des actions utilisateurs"/>
+      <div style={{padding:16}}>
+
+        {/* Stats rapides */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
+          {[["create","Créations","#dcfce7","#059669"],["update","Modifications","#fef3c7","#d97706"],["delete","Suppressions","#fee2e2","#ef4444"]].map(([k,l,bg,c])=>(
+            <div key={k} onClick={()=>setFilter(filter===k?"all":k)}
+              style={{...card,padding:10,textAlign:"center",cursor:"pointer",border:`2px solid ${filter===k?c:"transparent"}`,background:filter===k?bg:"white"}}>
+              <div style={{fontWeight:800,fontSize:18,color:c}}>{stats[k]}</div>
+              <div style={{fontSize:11,color:"#64748b"}}>{l}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Filtres */}
+        <div style={{...card,marginBottom:12,padding:12}}>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+            <div style={{position:"relative",flex:1,minWidth:160}}>
+              <input style={{...input,paddingLeft:30,fontSize:12}} placeholder="Rechercher..."
+                value={search} onChange={e=>setSearch(e.target.value)}/>
+              <span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",fontSize:14}}>🔍</span>
+            </div>
+            <input type="date" style={{...input,width:130,fontSize:11}} value={dateFrom} onChange={e=>setDateFrom(e.target.value)} placeholder="Du"/>
+            <input type="date" style={{...input,width:130,fontSize:11}} value={dateTo} onChange={e=>setDateTo(e.target.value)} placeholder="Au"/>
+            {(search||dateFrom||dateTo||filter!=="all")&&(
+              <button onClick={()=>{setSearch("");setDateFrom("");setDateTo("");setFilter("all");}}
+                style={{...btn(),background:"#fee2e2",color:"#ef4444",fontSize:11,padding:"5px 10px"}}>✕ Réinitialiser</button>
+            )}
+          </div>
+        </div>
+
+        {/* Liste */}
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {activities.length===0&&(
+            <div style={{...card,textAlign:"center",padding:40,color:"#94a3b8"}}>
+              Aucune activité trouvée.
+            </div>
+          )}
+          {activities.map((a,i)=>{
+            const ac = ACTION_COLORS[a.action]||ACTION_COLORS.update;
+            const date = a.createdAt?.seconds
+              ? new Date(a.createdAt.seconds*1000).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})
+              : "—";
+            return(
+              <div key={a.id||i} style={{...card,padding:"10px 14px",display:"flex",alignItems:"flex-start",gap:10}}>
+                <div style={{flexShrink:0,marginTop:2}}>
+                  <span style={{background:ac.bg,color:ac.color,fontSize:10,fontWeight:700,borderRadius:99,padding:"2px 8px",whiteSpace:"nowrap"}}>
+                    {ac.label}
+                  </span>
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,color:"#1e293b",fontWeight:500,marginBottom:2}}>{a.details||"—"}</div>
+                  <div style={{display:"flex",gap:10,fontSize:11,color:"#94a3b8",flexWrap:"wrap"}}>
+                    <span>👤 {a.userName||"—"}</span>
+                    <span>🕐 {date}</span>
+                    {a.entity&&<span style={{color:"#7c3aed"}}>📂 {ENTITY_LABELS[a.entity]||a.entity}</span>}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {activities.length>0&&(
+          <div style={{textAlign:"center",fontSize:12,color:"#94a3b8",marginTop:10}}>
+            {activities.length} activité(s) affichée(s) sur {store.activities?.length||0} au total
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function UsersPage({store, currentUser}){
   const [show,       setShow]       = useState(false);
   const [editing,    setEditing]    = useState(null);
@@ -4866,6 +5040,7 @@ export default function App(){
       case "produits":     return <ProductsPage store={store} activeSupplier={activeSupplier} currentUser={user}/>;
       case "depots":       return <DepotsPage store={store} activeSupplier={activeSupplier} currentUser={user}/>;
       case "fournisseurs": return <FournisseursPage store={store} activeSupplier={activeSupplier} onActivate={setActiveSupplier} currentUser={user}/>;
+      case "activites":    return can(user,"activites","r")?<ActivitiesPage store={store} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé. Contactez l'administrateur.</Alert></div>;
       case "utilisateurs": return role==="admin"?<UsersPage store={store} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès refusé.</Alert></div>;
       default:             return <Dashboard store={store} activeSupplier={activeSupplier} activeDepot={activeDepot}/>;
     }
