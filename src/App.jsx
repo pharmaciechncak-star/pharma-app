@@ -1383,6 +1383,8 @@ function ScanReviewModal({ open, onClose, scanResult, allProducts, activeSupplie
           />
           </>)}
 
+        </div>{/* fin div padding:16 overflowY:auto */}
+
         {/* Footer */}
         <div style={{ padding:"12px 16px", borderTop:"1px solid #f1f5f9",
           display:"flex", gap:10, justifyContent:"flex-end", flexWrap:"wrap" }}>
@@ -1401,7 +1403,6 @@ function ScanReviewModal({ open, onClose, scanResult, allProducts, activeSupplie
           </button>
         </div>
       </div>
-    </div>
     </div>
   );
 }
@@ -1966,6 +1967,7 @@ function Dashboard({store,activeSupplier,activeDepot,currentUser}){
       setEditSlide(v => ({...v, imageUrl:"", storagePath:""}));
     } catch(e) { setEditSlide(v=>({...v,imageUrl:"",storagePath:""})); }
   };
+
   const saveAndDispatch = (newSlides) => {
     saveSlides(newSlides);
     setSlides(newSlides);
@@ -2214,8 +2216,6 @@ function Dashboard({store,activeSupplier,activeDepot,currentUser}){
 }
 
 // ─────────────────────────────────────────────
-// DOCUMENT FORM (Bon d'entrée / retour)
-// ─────────────────────────────────────────────
 function DocumentForm({type,store,activeSupplier,activeDepot,ai,onNav,currentUser}){
   const isEntry=type==="entry";
   const suppDepots=activeSupplier ? store.depots.filter(d=>d.supplierId===activeSupplier.id) : store.depots;
@@ -2227,159 +2227,121 @@ function DocumentForm({type,store,activeSupplier,activeDepot,ai,onNav,currentUse
     depotId: suppDepots[0]?.id||"",
     date: new Date().toISOString().split("T")[0],
     notes:"",
-    items:[{productId:"",qty:"",unitPrice:"",lot:"",expiry:""}],
+    items:[],
   });
   const [form,setForm]=useState(blank);
   const [saved,setSaved]=useState(false);
   const [scanning,setScanning]=useState(false);
   const [scanMsg,setScanMsg]=useState("");
+  const [search,setSearch]=useState("");
+  const [showResults,setShowResults]=useState(false);
+  const searchRef=useRef(null);
   const fileRef=useRef(null);
-
   const [printBon,setPrintBon]=useState(null);
 
   // sync supplier
   useEffect(()=>{ if(activeSupplier) setForm(f=>({...f,supplierId:activeSupplier.id,depotId:suppDepots[0]?.id||f.depotId})); },[activeSupplier?.id]);
 
-  // Derniers bons de ce type pour ce fournisseur
-  const recentBons = (isEntry ? store.entries : store.returns)
-    .filter(b => !activeSupplier || b.supplierId === activeSupplier?.id)
-    .slice(0, 3);
+  // Filtrer produits selon recherche
+  const filtered = search.trim().length>0
+    ? suppProds.filter(p=>p.name.toLowerCase().includes(search.toLowerCase()))
+    : suppProds;
 
-  const addItem=()=>setForm(f=>({...f,items:[...f.items,{productId:"",qty:"",unitPrice:"",lot:"",expiry:""}]}));
+  // Ajouter un produit à la liste
+  const addProduct=(prod)=>{
+    setForm(f=>{
+      const exists=f.items.find(it=>it.productId===prod.id);
+      if(exists) return {...f,items:f.items.map(it=>it.productId===prod.id?{...it,qty:String(Number(it.qty||0)+1)}:it)};
+      return {...f,items:[...f.items,{productId:prod.id,qty:"1",unitPrice:prod.price?String(prod.price):"",lot:"",expiry:""}]};
+    });
+    setSearch(""); setShowResults(false);
+  };
+
   const removeItem=i=>setForm(f=>({...f,items:f.items.filter((_,idx)=>idx!==i)}));
   const setItem=(i,field,val)=>setForm(f=>({...f,items:f.items.map((it,idx)=>idx===i?{...it,[field]:val}:it)}));
 
-  // Auto-fill price when product is selected
-  const selectProduct=(i,productId)=>{
-    const prod=suppProds.find(p=>p.id===productId);
-    setForm(f=>({
-      ...f,
-      items:f.items.map((it,idx)=>idx===i
-        ? {...it, productId, unitPrice: prod?.price ? String(prod.price) : it.unitPrice}
-        : it
-      )
-    }));
-  };
+  const recentBons=(isEntry?store.entries:store.returns).filter(b=>!activeSupplier||b.supplierId===activeSupplier?.id).slice(0,3);
 
   const handleSave=()=>{
     const doc={...form,items:form.items.filter(it=>it.productId&&it.qty),supplierId:form.supplierId||activeSupplier?.id};
+    if(doc.items.length===0){alert("⚠️ Ajoutez au moins un produit.");return;}
     if(isEntry) store.addEntry(doc); else store.addReturn(doc);
     setSaved(true); setForm(blank());
     setTimeout(()=>setSaved(false),3000);
   };
 
-  const [bonScanResult, setBonScanResult] = useState(null);
-  const [bonReviewOpen, setBonReviewOpen] = useState(false);
-  const [deletingBon,   setDeletingBon]   = useState(null);
+  const [bonScanResult,setBonScanResult]=useState(null);
+  const [bonReviewOpen,setBonReviewOpen]=useState(false);
+  const [deletingBon,setDeletingBon]=useState(null);
 
   const handleScan=async(file)=>{
     if(!file) return;
-    setScanning(true);
-    setScanMsg("📄 Analyse du document en cours...");
+    setScanning(true); setScanMsg("📄 Analyse du document en cours...");
     try {
-      const result = await scanDocumentWithAI(file, suppProds);
-      if(result.success && result.items?.length > 0){
-        setScanMsg("");
-        setBonScanResult(result);
-        setBonReviewOpen(true); // ouvrir révision
-      } else {
-        setScanMsg("⚠️ " + (result.error || "Aucun article détecté dans le document."));
-      }
-    } catch(e) {
-      setScanMsg("❌ Erreur scan : " + e.message);
-    }
+      const result=await scanDocumentWithAI(file,suppProds);
+      if(result.success&&result.items?.length>0){ setScanMsg(""); setBonScanResult(result); setBonReviewOpen(true); }
+      else setScanMsg("⚠️ "+(result.error||"Aucun article détecté."));
+    } catch(e){ setScanMsg("❌ Erreur scan : "+e.message); }
     setScanning(false);
   };
 
-  const handleConfirmBonScan = async (selectedRows) => {
+  const handleConfirmBonScan=async(selectedRows)=>{
     setBonReviewOpen(false);
-    // Nouveaux produits non reconnus → proposer création
-    const newProds = selectedRows.filter(r => r.isNew && r.productName?.trim());
-    let newlyCreated = [];
-    for (const np of newProds) {
-      const id = await store.addProduct({
-        name: np.productName.trim(),
-        price: Number(np.unitPrice||0),
-        unit: np.unit||"Boîte",
-        supplierId: activeSupplier?.id||"",
-      });
-      newlyCreated.push({ ...np, productId: id });
+    const newProds=selectedRows.filter(r=>r.isNew&&r.productName?.trim());
+    let newlyCreated=[];
+    for(const np of newProds){
+      const id=await store.addProduct({name:np.productName.trim(),price:Number(np.unitPrice||0),unit:np.unit||"Boîte",supplierId:activeSupplier?.id||""});
+      newlyCreated.push({...np,productId:id});
     }
-    // Construire les lignes du bon
-    const items = selectedRows.map(r => {
-      const prodId = r.isNew
-        ? (newlyCreated.find(nc=>nc.productName===r.productName)?.productId||"")
-        : r.productId;
-      const knownProd = suppProds.find(p=>p.id===prodId);
-      return {
-        productId: prodId,
-        qty:       String(r.qty||""),
-        unitPrice: r.unitPrice ? String(r.unitPrice) : knownProd?.price ? String(knownProd.price) : "",
-        lot:       r.lot||"",
-        expiry:    r.expiry||"",
-      };
-    }).filter(it => it.productId);
-    setForm(f=>({
-      ...f,
-      reference: bonScanResult?.reference || f.reference,
-      notes: "Extrait du document scanné",
-      items: items.length > 0 ? items : f.items,
-    }));
-    const nNew = newProds.length;
-    setScanMsg("✅ " + items.length + " article(s) importé(s)" + (nNew>0 ? " · " + nNew + " nouveau(x) produit(s) créé(s)" : ""));
-    setTimeout(()=>setScanMsg(""), 8000);
+    const items=selectedRows.map(r=>{
+      const prodId=r.isNew?(newlyCreated.find(nc=>nc.productName===r.productName)?.productId||""):r.productId;
+      const knownProd=suppProds.find(p=>p.id===prodId);
+      return{productId:prodId,qty:String(r.qty||""),unitPrice:r.unitPrice?String(r.unitPrice):knownProd?.price?String(knownProd.price):"",lot:r.lot||"",expiry:r.expiry||""};
+    }).filter(it=>it.productId);
+    setForm(f=>({...f,reference:bonScanResult?.reference||f.reference,notes:"Extrait du document scanné",items:items.length>0?items:f.items}));
+    setScanMsg("✅ "+items.length+" article(s) importé(s)"+(newProds.length>0?" · "+newProds.length+" nouveau(x) produit(s) créé(s)":""));
+    setTimeout(()=>setScanMsg(""),8000);
     setBonScanResult(null);
   };
 
+  const total=form.items.reduce((s,it)=>s+(Number(it.qty||0)*Number(it.unitPrice||0)),0);
+
   return(
-    <div style={{padding:16}}>
-      {/* Confirm delete bon */}
+    <div style={{padding:0}}>
       <ConfirmDelete open={!!deletingBon} onClose={()=>setDeletingBon(null)}
         label={deletingBon?.reference||""}
         onConfirm={()=>{ if(isEntry) store.deleteEntry(deletingBon.id); else store.deleteReturn(deletingBon.id); }}/>
-      {/* Modale révision scan bon */}
-      <ScanReviewModal
-        open={bonReviewOpen}
-        onClose={()=>{setBonReviewOpen(false);setBonScanResult(null);}}
-        scanResult={bonScanResult}
-        allProducts={store.products}
-        activeSupplier={activeSupplier}
-        onConfirm={handleConfirmBonScan}
-        mode="bon"
-      />
-      <PageHeader
-        pageId={isEntry?"entrees":"retours"}
+      <ScanReviewModal open={bonReviewOpen} onClose={()=>{setBonReviewOpen(false);setBonScanResult(null);}}
+        scanResult={bonScanResult} allProducts={store.products} activeSupplier={activeSupplier}
+        onConfirm={handleConfirmBonScan} mode="bon"/>
+      <PageHeader pageId={isEntry?"entrees":"retours"}
         title={isEntry?"📥 Bon d'Entrée":"↩️ Bon de Retour"}
-        subtitle={isEntry?"Réception de produits pharmaceutiques · "+(activeSupplier?.name||""):"Retour fournisseur · "+(activeSupplier?.name||"")}>
+        subtitle={isEntry?"Réception · "+(activeSupplier?.name||""):"Retour · "+(activeSupplier?.name||"")}>
         <button onClick={()=>fileRef.current?.click()} style={{...btn(),background:"rgba(255,255,255,0.15)",color:"white",border:"1px solid rgba(255,255,255,0.3)",fontSize:12}}>
           {scanning?"⏳ Analyse...":"📄 Scanner"}
         </button>
-        <input ref={fileRef} type="file" accept=".pdf,.xlsx,.jpg,.jpeg,.png" style={{display:"none"}} onChange={e=>{handleScan(e.target.files[0]);e.target.value="";}} />
+        <input ref={fileRef} type="file" accept=".pdf,.xlsx,.jpg,.jpeg,.png" style={{display:"none"}} onChange={e=>{handleScan(e.target.files[0]);e.target.value="";}}/>
       </PageHeader>
 
-      {!activeSupplier&&<Alert type="warn">⚠️ Aucun fournisseur actif. Sélectionnez un fournisseur via le menu ou la barre du haut.</Alert>}
+      <div style={{padding:16}}>
+      {!activeSupplier&&<Alert type="warn">⚠️ Aucun fournisseur actif.</Alert>}
       {saved&&<Alert type="success">✅ Bon enregistré avec succès !</Alert>}
+      {scanMsg&&<Alert type={scanMsg.startsWith("✅")?"success":scanMsg.startsWith("⚠️")?"warn":"error"}>{scanMsg}</Alert>}
 
-
+      {/* Infos du bon */}
       <div style={{...card,marginBottom:12}}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:8}}>
-          <div>
-            <label style={label}>Référence</label>
-            <input style={input} value={form.reference} onChange={e=>setForm(f=>({...f,reference:e.target.value}))}/>
-          </div>
-          <div>
-            <label style={label}>Date</label>
-            <input style={input} type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}/>
-          </div>
+          <div><label style={label}>Référence</label>
+            <input style={input} value={form.reference} onChange={e=>setForm(f=>({...f,reference:e.target.value}))}/></div>
+          <div><label style={label}>Date</label>
+            <input style={input} type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}/></div>
         </div>
-
-        <div style={{marginBottom:12}}>
+        <div style={{marginBottom:8}}>
           <label style={label}>Fournisseur</label>
           <div style={{...input,background:"#f8fafc",color:activeSupplier?"#1e293b":"#94a3b8",display:"flex",alignItems:"center"}}>
-            {activeSupplier ? `🏢 ${activeSupplier.name}` : "— Aucun fournisseur actif —"}
+            {activeSupplier?`🏢 ${activeSupplier.name}`:"— Aucun fournisseur actif —"}
           </div>
         </div>
-
         <div>
           <label style={label}>Dépôt</label>
           <select style={input} value={form.depotId} onChange={e=>setForm(f=>({...f,depotId:e.target.value}))}>
@@ -2389,34 +2351,89 @@ function DocumentForm({type,store,activeSupplier,activeDepot,ai,onNav,currentUse
         </div>
       </div>
 
-      {/* Articles */}
+      {/* ── Recherche produit ── */}
       <div style={{...card,marginBottom:12}}>
-        <div style={{fontWeight:700,color:"#1e293b",marginBottom:12,fontSize:14}}>Articles</div>
-        {form.items.map((it,i)=>(
-          <div key={i} style={{background:"#f8fafc",borderRadius:8,padding:12,marginBottom:8}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-              <div style={{fontSize:12,fontWeight:700,color:"#64748b"}}>Article {i+1}</div>
-              {form.items.length>1&&<button onClick={()=>removeItem(i)} style={{...btn(),background:"#fee2e2",color:"#ef4444",padding:"3px 8px",fontSize:12}}>✕</button>}
-            </div>
-            <div style={{marginBottom:8}}>
-              <label style={label}>Produit</label>
-              <select style={input} value={it.productId} onChange={e=>selectProduct(i,e.target.value)}>
-                <option value="">Sélectionner un produit...</option>
-                {suppProds.map(p=><option key={p.id} value={p.id}>{p.name} — {Number(p.price||0).toLocaleString("fr-FR")} FCFA</option>)}
-              </select>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-              <div><label style={label}>Quantité</label><input style={input} type="number" min="0" value={it.qty} onChange={e=>setItem(i,"qty",e.target.value)}/></div>
-              <div>
-                <label style={label}>Prix Unit. (FCFA) <span style={{fontWeight:400,color:"#94a3b8",fontSize:10}}>auto</span></label>
-                <input style={{...input,background:it.unitPrice?"#f0fdf4":"white"}} type="number" min="0" value={it.unitPrice} onChange={e=>setItem(i,"unitPrice",e.target.value)} placeholder="Auto depuis produit"/>
+        <div style={{fontWeight:700,color:"#1e293b",marginBottom:10,fontSize:14}}>
+          🔍 Rechercher un produit à ajouter
+        </div>
+        <div style={{position:"relative"}}>
+          <input
+            ref={searchRef}
+            style={{...input,paddingLeft:36,fontSize:13}}
+            placeholder="Tapez le nom d'un produit..."
+            value={search}
+            onChange={e=>{setSearch(e.target.value);setShowResults(true);}}
+            onFocus={()=>setShowResults(true)}
+            onBlur={()=>setTimeout(()=>setShowResults(false),200)}
+          />
+          <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:16,pointerEvents:"none"}}>🔍</span>
+        </div>
+        {showResults&&filtered.length>0&&(
+          <div style={{background:"white",border:"1px solid #e2e8f0",borderRadius:8,marginTop:4,maxHeight:220,overflowY:"auto",boxShadow:"0 4px 16px rgba(0,0,0,0.10)"}}>
+            {filtered.slice(0,20).map(p=>(
+              <div key={p.id} onMouseDown={()=>addProduct(p)}
+                style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+                  padding:"10px 14px",borderBottom:"1px solid #f1f5f9",cursor:"pointer",
+                  background:form.items.find(it=>it.productId===p.id)?"#f0fdf4":"white"}}
+                onMouseEnter={e=>e.currentTarget.style.background="#f0f9ff"}
+                onMouseLeave={e=>e.currentTarget.style.background=form.items.find(it=>it.productId===p.id)?"#f0fdf4":"white"}>
+                <div>
+                  <div style={{fontWeight:600,fontSize:13,color:"#1e293b"}}>{p.name}</div>
+                  <div style={{fontSize:11,color:"#64748b"}}>{Number(p.price||0).toLocaleString("fr-FR")} FCFA · {p.unit||"Boîte"}</div>
+                </div>
+                {form.items.find(it=>it.productId===p.id)
+                  ? <span style={{color:"#059669",fontWeight:700,fontSize:12}}>✓ Ajouté</span>
+                  : <span style={{color:"#0891b2",fontWeight:700,fontSize:12}}>+ Ajouter</span>}
               </div>
-              <div><label style={label}>N° Lot</label><input style={input} value={it.lot} onChange={e=>setItem(i,"lot",e.target.value)}/></div>
-              <div><label style={label}>Expiration</label><input style={input} type="date" value={it.expiry} onChange={e=>setItem(i,"expiry",e.target.value)}/></div>
-            </div>
+            ))}
+            {filtered.length>20&&<div style={{padding:"8px 14px",fontSize:11,color:"#94a3b8",textAlign:"center"}}>{filtered.length-20} autres résultats — affinez la recherche</div>}
           </div>
-        ))}
-        <button onClick={addItem} style={{...btn(),background:"#f0f9ff",color:"#0891b2",border:"1px dashed #bae6fd",width:"100%",marginTop:4}}>+ Ajouter un article</button>
+        )}
+        {showResults&&search.trim().length>0&&filtered.length===0&&(
+          <div style={{padding:"12px 14px",fontSize:12,color:"#94a3b8",textAlign:"center",background:"#f8fafc",borderRadius:8,marginTop:4}}>
+            Aucun produit trouvé pour « {search} »
+          </div>
+        )}
+      </div>
+
+      {/* ── Liste des produits sélectionnés ── */}
+      <div style={{...card,marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div style={{fontWeight:700,color:"#1e293b",fontSize:14}}>
+            🛒 Produits sélectionnés
+            {form.items.length>0&&<span style={{marginLeft:8,background:"#0891b2",color:"white",borderRadius:99,padding:"2px 8px",fontSize:11}}>{form.items.length}</span>}
+          </div>
+          {total>0&&<div style={{fontWeight:800,color:"#0891b2",fontSize:14}}>Total : {total.toLocaleString("fr-FR")} FCFA</div>}
+        </div>
+        {form.items.length===0?(
+          <div style={{textAlign:"center",padding:"24px 0",color:"#94a3b8",fontSize:13}}>
+            ☝️ Recherchez et sélectionnez des produits ci-dessus
+          </div>
+        ):(
+          form.items.map((it,i)=>{
+            const prod=suppProds.find(p=>p.id===it.productId);
+            const lineTotal=Number(it.qty||0)*Number(it.unitPrice||0);
+            return(
+              <div key={i} style={{background:"#f8fafc",borderRadius:8,padding:"10px 12px",marginBottom:8,border:"1.5px solid #e2e8f0"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                  <div style={{fontWeight:700,color:"#1e293b",fontSize:13,flex:1,marginRight:8}}>{prod?.name||it.productId}</div>
+                  <button onClick={()=>removeItem(i)} style={{...btn(),background:"#fee2e2",color:"#ef4444",padding:"3px 8px",fontSize:11,flexShrink:0}}>✕</button>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                  <div><label style={label}>Quantité</label>
+                    <input style={input} type="number" min="0" value={it.qty} onChange={e=>setItem(i,"qty",e.target.value)}/></div>
+                  <div><label style={label}>Prix unit. (FCFA)</label>
+                    <input style={{...input,background:it.unitPrice?"#f0fdf4":"white"}} type="number" min="0" value={it.unitPrice} onChange={e=>setItem(i,"unitPrice",e.target.value)} placeholder="Auto"/></div>
+                  <div><label style={label}>N° Lot</label>
+                    <input style={input} value={it.lot} onChange={e=>setItem(i,"lot",e.target.value)}/></div>
+                  <div><label style={label}>Expiration</label>
+                    <input style={input} type="date" value={it.expiry} onChange={e=>setItem(i,"expiry",e.target.value)}/></div>
+                </div>
+                {lineTotal>0&&<div style={{textAlign:"right",fontSize:11,color:"#0891b2",fontWeight:700,marginTop:4}}>Sous-total : {lineTotal.toLocaleString("fr-FR")} FCFA</div>}
+              </div>
+            );
+          })
+        )}
       </div>
 
       <div style={{...card,marginBottom:14}}>
@@ -2424,9 +2441,11 @@ function DocumentForm({type,store,activeSupplier,activeDepot,ai,onNav,currentUse
         <textarea style={{...input,height:70,resize:"vertical"}} value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/>
       </div>
 
-      <button onClick={handleSave} disabled={!activeSupplier||!form.depotId} style={{...btn(),background:!activeSupplier?"#cbd5e1":"linear-gradient(135deg,#0891b2,#0e7490)",color:"white",width:"100%",padding:12,fontSize:14}}>
-        💾 Enregistrer le Bon
+      <button onClick={handleSave} disabled={!activeSupplier||!form.depotId||form.items.length===0}
+        style={{...btn(),background:(!activeSupplier||form.items.length===0)?"#cbd5e1":"linear-gradient(135deg,#0891b2,#0e7490)",color:"white",width:"100%",padding:12,fontSize:14,marginBottom:4}}>
+        💾 Enregistrer le Bon {form.items.length>0&&`(${form.items.length} produit${form.items.length>1?"s":""})`}
       </button>
+      </div>{/* end padding:16 */}
 
       {/* Bons récents avec impression */}
       {recentBons.length > 0 && (
@@ -3461,6 +3480,31 @@ function InventoryHistoryPage({store, activeSupplier, user}) {
                 ) : null}
               </div>
             )}
+            {/* Générer facture depuis inventaire */}
+            {can(user,"factures","w") && (
+              <button onClick={()=>{
+                const items = (inv.data||[]).filter(r=>r.sold>0).map(r=>({
+                  productId:   r.product?.id||"",
+                  productName: r.product?.name||r.productName||"—",
+                  qty:         r.sold,
+                  unitPrice:   r.product?.price||0,
+                  total:       r.sold*(r.product?.price||0),
+                }));
+                if(items.length===0){ alert("⚠️ Aucun produit vendu dans cet inventaire."); return; }
+                store.addInvoice({
+                  month:       inv.month,
+                  supplierId:  inv.supplierId,
+                  supplier:    activeSupplier?.name||"—",
+                  reference:   "FACT-"+genId(),
+                  inventoryId: inv.id,
+                  items,
+                  total: items.reduce((s,i)=>s+i.total,0),
+                });
+                alert("✅ Facture générée depuis l'inventaire !");
+              }} style={{...btn(),background:"#7c3aed",color:"white",fontWeight:700}}>
+                🧾 Générer Facture
+              </button>
+            )}
             {/* Supprimer — seulement si non validé */}
             {!inv.validated && can(user,"hist-inv","d") && (
               <button onClick={()=>setDeletingSelectedInv(true)}
@@ -3470,7 +3514,20 @@ function InventoryHistoryPage({store, activeSupplier, user}) {
             )}
             <ConfirmDelete open={deletingSelectedInv} onClose={()=>setDeletingSelectedInv(false)}
               label={inv.month}
-              onConfirm={()=>store.deleteInventory(inv.id).then(()=>setSelected(null))}/>
+              onConfirm={async()=>{
+                // Restaurer le stock avant l'inventaire pour chaque produit inventorié
+                if(inv.data && Array.isArray(inv.data)){
+                  for(const row of inv.data){
+                    if(!row.product?.id || !row.wasInventoried) continue;
+                    // Stock avant inventaire = old + ent - ret
+                    const stockAvant = (row.old||0) + (row.ent||0) - (row.ret||0);
+                    try { await store.setStockForProduct(row.product.id, stockAvant); } catch(e){}
+                  }
+                }
+                await store.deleteInventory(inv.id);
+                setSelected(null);
+                setDeletingSelectedInv(false);
+              }}/>
           </div>
         </div>
       </div>
