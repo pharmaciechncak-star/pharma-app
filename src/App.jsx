@@ -68,9 +68,9 @@ const storage = getStorage(_app);
 //    {{to_email}}, {{to_name}}, {{from_name}}, {{subject}},
 //    {{message}}, {{invoice_details}}, {{extra_recipients}}
 // 4. Remplir les 3 constantes ci-dessous
-const EMAILJS_SERVICE_ID  = "VOTRE_SERVICE_ID";   // ex: "service_abc123"
-const EMAILJS_TEMPLATE_ID = "VOTRE_TEMPLATE_ID";  // ex: "template_xyz789"
-const EMAILJS_PUBLIC_KEY  = "VOTRE_PUBLIC_KEY";   // ex: "user_ABCDEFGH"
+const EMAILJS_SERVICE_ID  = "service_wmx81ms";   // ex: "service_abc123"
+const EMAILJS_TEMPLATE_ID = "template_h74zhzk";  // ex: "template_xyz789"
+const EMAILJS_PUBLIC_KEY  = "Nc8I8RFeVEBvmJbdk";   // ex: "user_ABCDEFGH"
 
 async function sendRealEmail({ to, toName, from, subject, body, invoiceDetails, extraRecipients }) {
   // Charger EmailJS dynamiquement si pas encore chargé
