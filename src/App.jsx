@@ -27,13 +27,7 @@ import {
   serverTimestamp,
   setDoc,
 } from "firebase/firestore";
-import {
-  getStorage,
-  ref as storageRef,
-  uploadBytes,
-  getDownloadURL,
-  deleteObject,
-} from "firebase/storage";
+// Firebase Storage non utilisé — images stockées en base64 dans localStorage
 // ⚠️ Importez votre app Firebase depuis votre firebase.js :
 // import { app } from "./firebase";
 // const auth = getAuth(app);
@@ -56,7 +50,7 @@ const firebaseConfig = {
 const _app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 const auth    = getAuth(_app);
 const db      = getFirestore(_app);
-const storage = getStorage(_app);
+// const storage = getStorage(_app); // non utilisé
 
 // ─────────────────────────────────────────────
 // EMAIL — Configuration EmailJS
@@ -154,6 +148,9 @@ const ROLES = {
 };
 
 // Sections du logiciel avec les 3 droits possibles
+const LOGO_CHNCAK_B64 = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MjAgMTYwIj4KCiAgPCEtLSBGb25kIGTDqWdyYWTDqSAtLT4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iYmdHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6IzBjNGE2ZTtzdG9wLW9wYWNpdHk6MSIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMwZTc0OTA7c3RvcC1vcGFjaXR5OjEiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImNyb3NzR3JhZCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMyMmM1NWUiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMTZhMzRhIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGZpbHRlciBpZD0ic2hhZG93Ij4KICAgICAgPGZlRHJvcFNoYWRvdyBkeD0iMSIgZHk9IjEiIHN0ZERldmlhdGlvbj0iMiIgZmxvb2QtY29sb3I9InJnYmEoMCwwLDAsMC4zKSIvPgogICAgPC9maWx0ZXI+CiAgICA8ZmlsdGVyIGlkPSJnbG93Ij4KICAgICAgPGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMiIgcmVzdWx0PSJibHVyIi8+CiAgICAgIDxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0iYmx1ciIvPjxmZU1lcmdlTm9kZSBpbj0iU291cmNlR3JhcGhpYyIvPjwvZmVNZXJnZT4KICAgIDwvZmlsdGVyPgogIDwvZGVmcz4KCiAgPCEtLSBGb25kIGFycm9uZGkgLS0+CiAgPHJlY3Qgd2lkdGg9IjUyMCIgaGVpZ2h0PSIxNjAiIHJ4PSIxOCIgZmlsbD0idXJsKCNiZ0dyYWQpIi8+CgogIDwhLS0gTGlnbmUgZMOpY29yYXRpdmUgaGF1dCAtLT4KICA8cmVjdCB4PSIwIiB5PSIwIiB3aWR0aD0iNTIwIiBoZWlnaHQ9IjQiIHJ4PSIyIiBmaWxsPSIjMjJjNTVlIiBvcGFjaXR5PSIwLjgiLz4KICA8IS0tIExpZ25lIGTDqWNvcmF0aXZlIGJhcyAtLT4KICA8cmVjdCB4PSIwIiB5PSIxNTYiIHdpZHRoPSI1MjAiIGhlaWdodD0iNCIgcng9IjIiIGZpbGw9IiMyMmM1NWUiIG9wYWNpdHk9IjAuOCIvPgoKICA8IS0tIOKVkOKVkOKVkCBDUk9JWCBQSEFSTUFDRVVUSVFVRSDilZDilZDilZAgLS0+CiAgPGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMjAsIDE4KSIgZmlsdGVyPSJ1cmwoI3NoYWRvdykiPgogICAgPCEtLSBDcm9peCBwcmluY2lwYWxlIC0tPgogICAgPHJlY3QgeD0iMzciIHk9IjEwIiB3aWR0aD0iMjIiIGhlaWdodD0iNjYiIHJ4PSI1IiBmaWxsPSJ1cmwoI2Nyb3NzR3JhZCkiLz4KICAgIDxyZWN0IHg9IjEwIiB5PSIzNyIgd2lkdGg9IjY2IiBoZWlnaHQ9IjIyIiByeD0iNSIgZmlsbD0idXJsKCNjcm9zc0dyYWQpIi8+CiAgICA8IS0tIFJlZmxldCBzdXIgbGEgY3JvaXggLS0+CiAgICA8cmVjdCB4PSIzNyIgeT0iMTAiIHdpZHRoPSIxMCIgaGVpZ2h0PSI2NiIgcng9IjUiIGZpbGw9IndoaXRlIiBvcGFjaXR5PSIwLjEyIi8+CiAgICA8cmVjdCB4PSIxMCIgeT0iMzciIHdpZHRoPSI2NiIgaGVpZ2h0PSIxMCIgcng9IjUiIGZpbGw9IndoaXRlIiBvcGFjaXR5PSIwLjEyIi8+CgogICAgPCEtLSBDb3VwZSBkZSBIeWdpZSAtLT4KICAgIDwhLS0gUGllZCBkZSBsYSBjb3VwZSAtLT4KICAgIDxyZWN0IHg9IjQyIiB5PSI1MiIgd2lkdGg9IjEyIiBoZWlnaHQ9IjMiIHJ4PSIxLjUiIGZpbGw9IndoaXRlIi8+CiAgICA8cmVjdCB4PSI0NC41IiB5PSIzNiIgd2lkdGg9IjciIGhlaWdodD0iMTciIHJ4PSIxIiBmaWxsPSJ3aGl0ZSIvPgogICAgPCEtLSBWYXNxdWUgLS0+CiAgICA8cGF0aCBkPSJNMzYgMzggUTQzIDQ4IDQ4IDQ4IFE1MyA0OCA2MCAzOCIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyLjUiIGZpbGw9Im5vbmUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgoKICAgIDwhLS0gU2VycGVudCBkJ0VzY3VsYXBlIC0tPgogICAgPHBhdGggZD0iTTQ4IDM3IFE1NiA0MCA1MSA0NCBRNTcgNDcgNTEgNTEgUTU3IDU0IDUxIDU3IgogICAgICAgICAgc3Ryb2tlPSIjYmJmN2QwIiBzdHJva2Utd2lkdGg9IjIuOCIgZmlsbD0ibm9uZSIKICAgICAgICAgIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgogICAgPCEtLSBUw6p0ZSBkdSBzZXJwZW50IC0tPgogICAgPGNpcmNsZSBjeD0iNTEiIGN5PSIzNiIgcj0iMi41IiBmaWxsPSIjYmJmN2QwIi8+CiAgICA8Y2lyY2xlIGN4PSI0OS44IiBjeT0iMzUuMiIgcj0iMC44IiBmaWxsPSIjMGM0YTZlIi8+CiAgPC9nPgoKICA8IS0tIOKVkOKVkOKVkCBURVhURVMg4pWQ4pWQ4pWQIC0tPgoKICA8IS0tIE5vbSBwcmluY2lwYWwgLS0+CiAgPHRleHQgeD0iMTQwIiB5PSI1MiIKICAgICAgICBmb250LWZhbWlseT0iR2VvcmdpYSwgJ1RpbWVzIE5ldyBSb21hbicsIHNlcmlmIgogICAgICAgIGZvbnQtc2l6ZT0iMjIiIGZvbnQtd2VpZ2h0PSJib2xkIgogICAgICAgIGZpbGw9IndoaXRlIiBsZXR0ZXItc3BhY2luZz0iMS41IgogICAgICAgIGZpbHRlcj0idXJsKCNzaGFkb3cpIj4KICAgIENlbnRyZSBIb3NwaXRhbGllciBOYXRpb25hbAogIDwvdGV4dD4KCiAgPCEtLSBOb20gZW4gZ3JhbmQgLS0+CiAgPHRleHQgeD0iMTQwIiB5PSI4NSIKICAgICAgICBmb250LWZhbWlseT0iR2VvcmdpYSwgJ1RpbWVzIE5ldyBSb21hbicsIHNlcmlmIgogICAgICAgIGZvbnQtc2l6ZT0iMjgiIGZvbnQtd2VpZ2h0PSJib2xkIgogICAgICAgIGZpbGw9IiM0YWRlODAiIGxldHRlci1zcGFjaW5nPSIyIgogICAgICAgIGZpbHRlcj0idXJsKCNnbG93KSI+CiAgICBDaGVpa2ggQWhtYWRvdWwgS2hhZGltCiAgPC90ZXh0PgoKICA8IS0tIFPDqXBhcmF0ZXVyIC0tPgogIDxsaW5lIHgxPSIxNDAiIHkxPSI5NiIgeDI9IjUwMCIgeTI9Ijk2IiBzdHJva2U9IiMyMmM1NWUiIHN0cm9rZS13aWR0aD0iMS41IiBvcGFjaXR5PSIwLjUiLz4KCiAgPCEtLSBTb3VzLXRpdHJlIC0tPgogIDx0ZXh0IHg9IjE0MCIgeT0iMTE1IgogICAgICAgIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIKICAgICAgICBmb250LXNpemU9IjE0IiBmb250LXdlaWdodD0iNjAwIgogICAgICAgIGZpbGw9IiM3ZGQzZmMiIGxldHRlci1zcGFjaW5nPSIzIj4KICAgIFBIQVJNQUNJRSAgwrcgIENITkNBSwogIDwvdGV4dD4KCiAgPCEtLSBBcHBsaWNhdGlvbiBuYW1lIC0tPgogIDx0ZXh0IHg9IjE0MCIgeT0iMTQwIgogICAgICAgIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIKICAgICAgICBmb250LXNpemU9IjEzIgogICAgICAgIGZpbGw9InJnYmEoMjU1LDI1NSwyNTUsMC42KSIgbGV0dGVyLXNwYWNpbmc9IjEiPgogICAgUGhhcm1hU3RvY2sg4oCUIFN5c3TDqG1lIGRlIGdlc3Rpb24gZGVzIGludmVudGFpcmVzIHBoYXJtYWNldXRpcXVlcwogIDwvdGV4dD4KCiAgPCEtLSDDiXRvaWxlcyBkw6ljb3JhdGl2ZXMgLS0+CiAgPHRleHQgeD0iNDg4IiB5PSI0NSIgZm9udC1zaXplPSIxMiIgZmlsbD0iI2ZiYmYyNCIgb3BhY2l0eT0iMC44Ij7inKY8L3RleHQ+CiAgPHRleHQgeD0iNDk4IiB5PSI2MiIgZm9udC1zaXplPSI4IiBmaWxsPSIjZmJiZjI0IiBvcGFjaXR5PSIwLjUiPuKcpjwvdGV4dD4KICA8dGV4dCB4PSI0NzgiIHk9IjU4IiBmb250LXNpemU9IjYiIGZpbGw9IiNmYmJmMjQiIG9wYWNpdHk9IjAuNCI+4pymPC90ZXh0PgoKPC9zdmc+Cg==";
+const ICON_CHNCAK_B64  = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgcng9IjE2IiBmaWxsPSIjMGM0YTZlIi8+CiAgPCEtLSBDcm9peCBwaGFybWFjZXV0aXF1ZSBzaW1wbGlmacOpZSAtLT4KICA8cmVjdCB4PSIzOCIgeT0iMTUiIHdpZHRoPSIyNCIgaGVpZ2h0PSI3MCIgcng9IjQiIGZpbGw9IiMyMmM1NWUiLz4KICA8cmVjdCB4PSIxNSIgeT0iMzgiIHdpZHRoPSI3MCIgaGVpZ2h0PSIyNCIgcng9IjQiIGZpbGw9IiMyMmM1NWUiLz4KICA8IS0tIENvdXBlIGRlIEh5Z2llIGNlbnRyYWxlIC0tPgogIDxlbGxpcHNlIGN4PSI1MCIgY3k9IjU2IiByeD0iOCIgcnk9IjMiIGZpbGw9IndoaXRlIi8+CiAgPHJlY3QgeD0iNDciIHk9IjQwIiB3aWR0aD0iNiIgaGVpZ2h0PSIxOCIgcng9IjEiIGZpbGw9IndoaXRlIi8+CiAgPCEtLSBTZXJwZW50IHN0eWxpc8OpIC0tPgogIDxwYXRoIGQ9Ik01MyA0MiBRNTggNDUgNTQgNTAgUTYwIDUzIDU0IDU4IiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIuNSIgZmlsbD0ibm9uZSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+Cjwvc3ZnPgo=";
+
 const SECTIONS = [
   { id:"entrees",      label:"Bons d'Entrée" },
   { id:"retours",      label:"Bons de Retour" },
@@ -443,8 +440,14 @@ function useStore(userId, userName) {
       return ref.id;
     },
     updateProduct: async (id,p) => {
+      // Récupérer l'ancien nom avant modification
+      let oldName = id;
+      try { const snap = await getDoc(doc(db,"products",id)); oldName = snap.data()?.name||id; } catch(e){}
       await updateDoc(doc(db,"products",id), p);
-      await addDoc(collection(db,"activities"), { action:"update", entity:"product", entityId:id, details:`Produit modifié : ${p.name||id}`, userId, userName, createdAt:serverTimestamp() });
+      const details = oldName !== (p.name||id)
+        ? `Produit modifié : "${oldName}" → "${p.name||id}"`
+        : `Produit modifié : "${p.name||id}"`;
+      await addDoc(collection(db,"activities"), { action:"update", entity:"product", entityId:id, details, oldName, newName:p.name||id, userId, userName, createdAt:serverTimestamp() });
     },
 
     deleteEntry: async id => {
@@ -464,7 +467,9 @@ function useStore(userId, userName) {
       return deleteDoc(doc(db,"invoices",id));
     },
     deleteProduct: async id => {
-      await addDoc(collection(db,"activities"), { action:"delete", entity:"product", entityId:id, details:`Produit supprimé : ${id}`, userId, userName, createdAt:serverTimestamp() });
+      let oldName = id;
+      try { const snap = await getDoc(doc(db,"products",id)); oldName = snap.data()?.name||id; } catch(e){}
+      await addDoc(collection(db,"activities"), { action:"delete", entity:"product", entityId:id, details:`Produit supprimé : "${oldName}"`, oldName, userId, userName, createdAt:serverTimestamp() });
       return deleteDoc(doc(db,"products",id));
     },
     deleteSupplier: async id => {
@@ -497,9 +502,29 @@ function useStore(userId, userName) {
         await addDoc(collection(db,"users"), { ...u, createdAt: serverTimestamp() });
       }
     },
-    updateUser: (id,u) => updateDoc(doc(db,"users",id), u),
+    updateUser: async (id,u) => {
+      let oldData = {};
+      try { const snap = await getDoc(doc(db,"users",id)); oldData = snap.data()||{}; } catch(e){}
+      await updateDoc(doc(db,"users",id), u);
+      // Construire un message de modification détaillé
+      const changes = [];
+      if(u.name && u.name !== oldData.name) changes.push(`Nom : "${oldData.name||"—"}" → "${u.name}"`);
+      if(u.role && u.role !== oldData.role) changes.push(`Rôle : "${ROLES[oldData.role]?.label||oldData.role||"—"}" → "${ROLES[u.role]?.label||u.role}"`);
+      if(u.provisionalPw) changes.push("Mot de passe provisoire défini");
+      if(u.permissions) changes.push("Permissions modifiées");
+      const details = changes.length > 0
+        ? `Utilisateur modifié : "${oldData.name||id}" — ${changes.join(", ")}`
+        : `Utilisateur modifié : "${oldData.name||id}"`;
+      if(changes.length > 0 || u.name || u.role){
+        await addDoc(collection(db,"activities"), { action:"update", entity:"user", entityId:id, details, oldName:oldData.name, newName:u.name||oldData.name, oldRole:oldData.role, newRole:u.role||oldData.role, userId, userName, createdAt:serverTimestamp() });
+      }
+    },
     deleteUser: async id => {
-      await addDoc(collection(db,"activities"), { action:"delete", entity:"user", entityId:id, details:`Utilisateur supprimé : ${id}`, userId, userName, createdAt:serverTimestamp() });
+      let oldData = {};
+      try { const snap = await getDoc(doc(db,"users",id)); oldData = snap.data()||{}; } catch(e){}
+      const oldName = oldData.name||id;
+      const oldRole = ROLES[oldData.role]?.label||oldData.role||"—";
+      await addDoc(collection(db,"activities"), { action:"delete", entity:"user", entityId:id, details:`Utilisateur supprimé : "${oldName}" (${oldRole})`, oldName, oldRole, userId, userName, createdAt:serverTimestamp() });
       return deleteDoc(doc(db,"users",id));
     },
 
@@ -1541,16 +1566,11 @@ function Sidebar({open,onClose,page,onNav,user,unread,activeSupplier,onChangeSup
         transform:open?"translateX(0)":"translateX(-100%)",
         boxShadow:"4px 0 20px rgba(0,0,0,0.4)",
       }}>
-        {/* logo */}
-        <div style={{padding:"18px 20px 14px",borderBottom:"1px solid rgba(255,255,255,0.07)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <img src={LOGO_B64} alt="CHNCAK" style={{width:44,height:44,borderRadius:"50%",objectFit:"cover",border:"2px solid #38bdf8"}}/>
-            <div>
-              <div style={{fontSize:13,fontWeight:800,color:"#38bdf8",lineHeight:1.2}}>CHNCAK</div>
-              <div style={{fontSize:9,color:"#475569",lineHeight:1.2}}>PharmaStock</div>
-            </div>
-          </div>
-          <button onClick={onClose} style={{...btn(),background:"rgba(255,255,255,0.08)",color:"#94a3b8",padding:"5px 9px"}}>✕</button>
+        {/* Logo CHNCAK */}
+        <div style={{padding:"14px 16px 12px",borderBottom:"1px solid rgba(255,255,255,0.07)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <img src={LOGO_CHNCAK_B64} alt="CHNCAK PharmaStock"
+            style={{height:52,width:"auto",maxWidth:200,objectFit:"contain"}}/>
+          <button onClick={onClose} style={{...btn(),background:"rgba(255,255,255,0.08)",color:"#94a3b8",padding:"5px 9px",flexShrink:0}}>✕</button>
         </div>
 
         {/* active supplier banner */}
@@ -1603,9 +1623,9 @@ function TopBar({page,activeSupplier,onMenu,onAI,aiOpen,unread,onLogout,onChange
   return(
     <div style={{background:"linear-gradient(90deg,#0f172a,#1e293b)",height:56,display:"flex",alignItems:"center",padding:"0 12px",gap:8,flexShrink:0,position:"sticky",top:0,zIndex:150,boxShadow:"0 2px 8px rgba(0,0,0,0.25)"}}>
       <button onClick={onMenu} style={{...btn(),background:"rgba(255,255,255,0.1)",color:"white",padding:"6px 11px",fontSize:17}}>☰</button>
-      <img src={LOGO_B64} alt="CHNCAK" style={{width:34,height:34,borderRadius:"50%",objectFit:"cover",border:"2px solid #38bdf8",flexShrink:0}}/>
+      <img src={ICON_CHNCAK_B64} alt="CHNCAK" style={{width:36,height:36,borderRadius:8,objectFit:"contain",flexShrink:0,background:"white",padding:2}}/>
       <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
-        <div style={{fontWeight:700,color:"white",fontSize:13,lineHeight:1.2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>CHNCAK PharmaStock</div>
+        <div style={{fontWeight:700,color:"white",fontSize:12,lineHeight:1.2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",letterSpacing:0.5}}>CHNCAK · PharmaStock</div>
         <div onClick={activeSupplier?onChangeSupplier:undefined}
           style={{fontSize:11,color:"#38bdf8",cursor:activeSupplier?"pointer":"default",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
           {activeSupplier ? ("🏢 "+activeSupplier.name) : "Aucun fournisseur sélectionné"}
@@ -1689,21 +1709,10 @@ function AIPanel({open,onClose,ai,onNav,store,page,activeSupplier,currentUser}){
       const transcript = Array.from(e.results)
         .map(r=>r[0].transcript).join("");
       setInput(transcript);
-      // Si résultat final, envoyer automatiquement
+      // Résultat final → arrêter l'écoute mais NE PAS envoyer automatiquement
+      // L'utilisateur peut modifier le texte puis appuyer sur Entrée ou →
       if(e.results[e.results.length-1].isFinal){
         setListening(false);
-        if(transcript.trim()){
-          // Envoyer après un court délai pour que l'UI se mette à jour
-          setTimeout(()=>{
-            ai.send(transcript.trim(), {
-              page,
-              activeSupplier: activeSupplier?.name,
-              pagesAccessibles: SECTIONS.filter(s=>can(currentUser,s.id,"r")).map(s=>s.id).concat(["dashboard"]),
-              fullData: buildAIContext(store, currentUser, activeSupplier, page),
-            }, onNav);
-            setInput("");
-          }, 100);
-        }
       }
     };
     try { recog.start(); }
@@ -1783,7 +1792,7 @@ function AIPanel({open,onClose,ai,onNav,store,page,activeSupplier,currentUser}){
         <div style={{display:"flex",gap:7,alignItems:"flex-end"}}>
           <textarea value={input} onChange={e=>setInput(e.target.value)}
             onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();handleSend();} }}
-            placeholder={listening?"🎙️ Parlez maintenant...":"Stock d'un produit, historique, situation... (Entrée)"}
+            placeholder={listening?"🎙️ Parlez... le texte apparaîtra ici, vous pourrez le modifier avant d'envoyer":"Message ou question... (Entrée pour envoyer)"}
             style={{flex:1,padding:"9px 12px",border:listening?"1.5px solid #7c3aed":"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,resize:"none",height:58,boxSizing:"border-box",outline:"none",background:listening?"#fdf4ff":"white",transition:"all 0.2s"}}
           />
           <div style={{display:"flex",flexDirection:"column",gap:5}}>
@@ -1896,11 +1905,12 @@ function ImageCarousel() {
         background: slide.imageUrl ? "none" : slide.bg,
         backgroundImage: slide.imageUrl ? `url(${slide.imageUrl})` : "none",
         backgroundSize: "cover",
-        backgroundPosition: "center",
-        borderRadius:14,
+        backgroundPosition: "center center",
         overflow:"hidden",
         marginBottom:16,
-        minHeight:160,
+        marginLeft:-16,
+        marginRight:-16,
+        height:200,
         display:"flex",
         alignItems:"center",
         transition:"background 0.6s ease",
@@ -2004,28 +2014,29 @@ function Dashboard({store,activeSupplier,activeDepot,currentUser}){
 
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
-  const handlePhotoUpload = async (file) => {
+  const handlePhotoUpload = (file) => {
     if (!file) return;
-    setUploadingPhoto(true);
-    try {
-      const path = `carousel/${Date.now()}_${file.name.replace(/[^a-z0-9.]/gi,"_")}`;
-      const sRef = storageRef(storage, path);
-      await uploadBytes(sRef, file);
-      const url = await getDownloadURL(sRef);
-      setEditSlide(v => ({...v, imageUrl: url, storagePath: path}));
-    } catch(e) {
-      alert("Erreur upload : " + e.message);
-    } finally {
-      setUploadingPhoto(false);
+    // Vérifier la taille (max 500KB pour Firestore)
+    if (file.size > 500 * 1024) {
+      alert("⚠️ Image trop grande. Maximum 500 KB. Compressez l'image et réessayez.");
+      return;
     }
+    setUploadingPhoto(true);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64 = e.target.result; // data:image/...;base64,...
+      setEditSlide(v => ({...v, imageUrl: base64, storagePath: ""}));
+      setUploadingPhoto(false);
+    };
+    reader.onerror = () => {
+      alert("❌ Erreur lors de la lecture de l'image.");
+      setUploadingPhoto(false);
+    };
+    reader.readAsDataURL(file);
   };
 
-  const handleDeletePhoto = async () => {
-    if (!editSlide?.storagePath) { setEditSlide(v=>({...v,imageUrl:"",storagePath:""})); return; }
-    try {
-      await deleteObject(storageRef(storage, editSlide.storagePath));
-      setEditSlide(v => ({...v, imageUrl:"", storagePath:""}));
-    } catch(e) { setEditSlide(v=>({...v,imageUrl:"",storagePath:""})); }
+  const handleDeletePhoto = () => {
+    setEditSlide(v => ({...v, imageUrl: "", storagePath: ""}));
   };
 
   const saveAndDispatch = (newSlides) => {
@@ -2043,7 +2054,6 @@ function Dashboard({store,activeSupplier,activeDepot,currentUser}){
       sub:         editSlide.sub,
       accent:      editSlide.accent,
       imageUrl:    editSlide.imageUrl    || "",
-      storagePath: editSlide.storagePath || "",
     } : s);
     saveAndDispatch(updated);
     setEditSlide(null);
@@ -4416,16 +4426,37 @@ function ActivitiesPage({store, currentUser}){
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [selected, setSelected] = useState(null); // activité sélectionnée pour détails
 
   const ENTITY_LABELS = {
     entry:"Bon d'entrée", return:"Bon de retour", inventory:"Inventaire",
     invoice:"Facture", product:"Produit", supplier:"Fournisseur",
     depot:"Dépôt", user:"Utilisateur", other:"Autre",
   };
+  const ENTITY_ICONS = {
+    entry:"📥", return:"↩️", inventory:"🗂️", invoice:"🧾",
+    product:"💊", supplier:"🏢", depot:"🏭", user:"👤", other:"📌",
+  };
   const ACTION_COLORS = {
-    create:{ bg:"#dcfce7", color:"#059669", label:"Création" },
-    update:{ bg:"#fef3c7", color:"#d97706", label:"Modification" },
-    delete:{ bg:"#fee2e2", color:"#ef4444", label:"Suppression" },
+    create:{ bg:"#dcfce7", color:"#059669", label:"Création",   icon:"➕" },
+    update:{ bg:"#fef3c7", color:"#d97706", label:"Modification", icon:"✏️" },
+    delete:{ bg:"#fee2e2", color:"#ef4444", label:"Suppression", icon:"🗑️" },
+  };
+
+  // Retrouver les données liées à l'activité
+  const getRelatedData = (a) => {
+    if(!a?.entity || !a?.entityId) return null;
+    switch(a.entity){
+      case "entry":     return store.entries.find(x=>x.id===a.entityId);
+      case "return":    return store.returns.find(x=>x.id===a.entityId);
+      case "inventory": return store.inventories.find(x=>x.id===a.entityId);
+      case "invoice":   return store.invoices.find(x=>x.id===a.entityId);
+      case "product":   return store.products.find(x=>x.id===a.entityId);
+      case "supplier":  return store.suppliers.find(x=>x.id===a.entityId);
+      case "depot":     return store.depots.find(x=>x.id===a.entityId);
+      case "user":      return store.users.find(x=>x.id===a.entityId);
+      default: return null;
+    }
   };
 
   const activities = (store.activities||[]).filter(a=>{
@@ -4447,8 +4478,144 @@ function ActivitiesPage({store, currentUser}){
     delete: (store.activities||[]).filter(a=>a.action==="delete").length,
   };
 
+  const fmtDate = (ts) => ts?.seconds
+    ? new Date(ts.seconds*1000).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit",second:"2-digit"})
+    : "—";
+
+  // Rendu des détails selon le type d'entité
+  const renderDetails = (a) => {
+    const rel = getRelatedData(a);
+    const ac = ACTION_COLORS[a.action]||ACTION_COLORS.update;
+    return(
+      <div>
+        {/* En-tête */}
+        <div style={{background:ac.bg,borderRadius:10,padding:"12px 16px",marginBottom:14,display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:28}}>{ac.icon}</span>
+          <div>
+            <div style={{fontWeight:800,color:ac.color,fontSize:15}}>{ac.label}</div>
+            <div style={{fontSize:12,color:"#64748b"}}>{ENTITY_ICONS[a.entity]||"📌"} {ENTITY_LABELS[a.entity]||a.entity}</div>
+          </div>
+        </div>
+
+        {/* Infos principales */}
+        <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
+          {[
+            ["👤 Utilisateur",  a.userName||"—"],
+            ["🕐 Date & heure", fmtDate(a.createdAt)],
+            ["📝 Description",  a.details||"—"],
+            ["🔑 ID entité",    a.entityId||"—"],
+          ].map(([label,value])=>(
+            <div key={label} style={{background:"#f8fafc",borderRadius:8,padding:"8px 12px"}}>
+              <div style={{fontSize:10,color:"#94a3b8",fontWeight:600,marginBottom:2}}>{label}</div>
+              <div style={{fontSize:13,color:"#1e293b",wordBreak:"break-all"}}>{value}</div>
+            </div>
+          ))}
+          {/* Ancien → Nouveau nom si disponible */}
+          {(a.oldName||a.newName)&&a.oldName!==a.newName&&(
+            <div style={{background:"#fef3c7",borderRadius:8,padding:"10px 12px",border:"1px solid #fcd34d"}}>
+              <div style={{fontSize:10,color:"#92400e",fontWeight:600,marginBottom:6}}>✏️ CHANGEMENT DE NOM</div>
+              <div style={{display:"flex",alignItems:"center",gap:8,fontSize:13}}>
+                <span style={{background:"#fee2e2",color:"#b91c1c",padding:"3px 10px",borderRadius:6,fontWeight:600}}>{a.oldName||"—"}</span>
+                <span style={{color:"#92400e",fontWeight:700}}>→</span>
+                <span style={{background:"#dcfce7",color:"#15803d",padding:"3px 10px",borderRadius:6,fontWeight:600}}>{a.newName||"—"}</span>
+              </div>
+            </div>
+          )}
+          {/* Ancien → Nouveau rôle si disponible */}
+          {(a.oldRole||a.newRole)&&a.oldRole!==a.newRole&&(
+            <div style={{background:"#f0f9ff",borderRadius:8,padding:"10px 12px",border:"1px solid #bae6fd"}}>
+              <div style={{fontSize:10,color:"#0369a1",fontWeight:600,marginBottom:6}}>🛡️ CHANGEMENT DE RÔLE</div>
+              <div style={{display:"flex",alignItems:"center",gap:8,fontSize:13}}>
+                <span style={{background:"#fee2e2",color:"#b91c1c",padding:"3px 10px",borderRadius:6,fontWeight:600}}>{a.oldRole||"—"}</span>
+                <span style={{color:"#0369a1",fontWeight:700}}>→</span>
+                <span style={{background:"#dcfce7",color:"#15803d",padding:"3px 10px",borderRadius:6,fontWeight:600}}>{a.newRole||"—"}</span>
+              </div>
+            </div>
+          )}
+          {/* Ancien nom supprimé */}
+          {a.action==="delete"&&a.oldName&&(
+            <div style={{background:"#fee2e2",borderRadius:8,padding:"10px 12px",border:"1px solid #fca5a5"}}>
+              <div style={{fontSize:10,color:"#b91c1c",fontWeight:600,marginBottom:4}}>🗑️ ÉLÉMENT SUPPRIMÉ</div>
+              <div style={{fontSize:13,color:"#7f1d1d",fontWeight:700}}>{a.oldName}{a.oldRole?` (${a.oldRole})`:""}</div>
+            </div>
+          )}
+        </div>
+
+        {/* Données liées si disponibles */}
+        {rel && (
+          <div style={{marginBottom:8}}>
+            <div style={{fontWeight:700,fontSize:13,color:"#1e293b",marginBottom:8}}>
+              📋 Données associées {a.action==="delete"?"(avant suppression)":"(actuelles)"}
+            </div>
+            <div style={{background:"#f1f5f9",borderRadius:8,padding:12,fontSize:11,fontFamily:"monospace",color:"#334155",maxHeight:220,overflowY:"auto",wordBreak:"break-all"}}>
+              {a.entity==="entry"||a.entity==="return" ? (
+                <div style={{fontFamily:"sans-serif",fontSize:12}}>
+                  <div style={{marginBottom:6}}><b>Référence :</b> {rel.reference||"—"}</div>
+                  <div style={{marginBottom:6}}><b>Date :</b> {rel.date||"—"}</div>
+                  <div style={{marginBottom:6}}><b>Dépôt :</b> {store.depots.find(d=>d.id===rel.depotId)?.name||rel.depotId||"—"}</div>
+                  <div style={{marginBottom:6}}><b>Articles ({rel.items?.length||0}) :</b></div>
+                  {(rel.items||[]).map((it,i)=>{
+                    const prod = store.products.find(p=>p.id===it.productId);
+                    return <div key={i} style={{paddingLeft:12,color:"#475569",marginBottom:3}}>
+                      • {prod?.name||it.productId} — Qté : {it.qty} — Prix : {Number(it.unitPrice||0).toLocaleString("fr-FR")} FCFA{it.lot?` — Lot : ${it.lot}`:""}
+                    </div>;
+                  })}
+                </div>
+              ) : a.entity==="inventory" ? (
+                <div style={{fontFamily:"sans-serif",fontSize:12}}>
+                  <div style={{marginBottom:6}}><b>Mois :</b> {rel.month||"—"}</div>
+                  <div style={{marginBottom:6}}><b>Total vendu :</b> {rel.totalSold||0} unités</div>
+                  <div style={{marginBottom:6}}><b>Statut :</b> {rel.validated?"🔒 Validé":"⏳ En cours"}</div>
+                  <div style={{marginBottom:6}}><b>Produits ({rel.data?.length||0}) :</b></div>
+                  {(rel.data||[]).filter(r=>r.sold>0).slice(0,10).map((r,i)=>(
+                    <div key={i} style={{paddingLeft:12,color:"#475569",marginBottom:3}}>
+                      • {r.product?.name||"—"} — Vendus : {r.sold} — Stock : {r.nw}
+                    </div>
+                  ))}
+                  {(rel.data||[]).filter(r=>r.sold>0).length>10&&<div style={{color:"#94a3b8",paddingLeft:12}}>...et {(rel.data||[]).filter(r=>r.sold>0).length-10} autres</div>}
+                </div>
+              ) : a.entity==="invoice" ? (
+                <div style={{fontFamily:"sans-serif",fontSize:12}}>
+                  <div style={{marginBottom:6}}><b>Référence :</b> {rel.reference||"—"}</div>
+                  <div style={{marginBottom:6}}><b>Total :</b> {Number(rel.total||0).toLocaleString("fr-FR")} FCFA</div>
+                  <div style={{marginBottom:6}}><b>Statut :</b> {rel.status||"—"}</div>
+                </div>
+              ) : a.entity==="product" ? (
+                <div style={{fontFamily:"sans-serif",fontSize:12}}>
+                  <div style={{marginBottom:6}}><b>Nom :</b> {rel.name||"—"}</div>
+                  <div style={{marginBottom:6}}><b>Prix :</b> {Number(rel.price||0).toLocaleString("fr-FR")} FCFA</div>
+                  <div style={{marginBottom:6}}><b>Unité :</b> {rel.unit||"—"}</div>
+                  <div style={{marginBottom:6}}><b>Stock :</b> {store.stock[rel.id]||0}</div>
+                </div>
+              ) : a.entity==="user" ? (
+                <div style={{fontFamily:"sans-serif",fontSize:12}}>
+                  <div style={{marginBottom:6}}><b>Nom :</b> {rel.name||"—"}</div>
+                  <div style={{marginBottom:6}}><b>Email :</b> {rel.email||"—"}</div>
+                  <div style={{marginBottom:6}}><b>Rôle :</b> {ROLES[rel.role]?.label||rel.role||"—"}</div>
+                </div>
+              ) : (
+                <pre style={{fontSize:11,whiteSpace:"pre-wrap"}}>{JSON.stringify(rel,null,2)}</pre>
+              )}
+            </div>
+          </div>
+        )}
+        {!rel && a.action==="delete" && (
+          <div style={{background:"#fef3c7",borderRadius:8,padding:"10px 12px",fontSize:12,color:"#92400e"}}>
+            ⚠️ Les données ont été supprimées et ne sont plus disponibles.
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return(
     <div style={{padding:0}}>
+      {/* Modal détail activité */}
+      <Modal open={!!selected} onClose={()=>setSelected(null)}
+        title={"📜 Détail de l'activité"}>
+        {selected && renderDetails(selected)}
+      </Modal>
+
       <PageHeader pageId="activites" title="📜 Journal d'activité" subtitle="Historique complet des actions utilisateurs"/>
       <div style={{padding:16}}>
 
@@ -4471,8 +4638,8 @@ function ActivitiesPage({store, currentUser}){
                 value={search} onChange={e=>setSearch(e.target.value)}/>
               <span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",fontSize:14}}>🔍</span>
             </div>
-            <input type="date" style={{...input,width:130,fontSize:11}} value={dateFrom} onChange={e=>setDateFrom(e.target.value)} placeholder="Du"/>
-            <input type="date" style={{...input,width:130,fontSize:11}} value={dateTo} onChange={e=>setDateTo(e.target.value)} placeholder="Au"/>
+            <input type="date" style={{...input,width:130,fontSize:11}} value={dateFrom} onChange={e=>setDateFrom(e.target.value)}/>
+            <input type="date" style={{...input,width:130,fontSize:11}} value={dateTo} onChange={e=>setDateTo(e.target.value)}/>
             {(search||dateFrom||dateTo||filter!=="all")&&(
               <button onClick={()=>{setSearch("");setDateFrom("");setDateTo("");setFilter("all");}}
                 style={{...btn(),background:"#fee2e2",color:"#ef4444",fontSize:11,padding:"5px 10px"}}>✕ Réinitialiser</button>
@@ -4489,14 +4656,15 @@ function ActivitiesPage({store, currentUser}){
           )}
           {activities.map((a,i)=>{
             const ac = ACTION_COLORS[a.action]||ACTION_COLORS.update;
-            const date = a.createdAt?.seconds
-              ? new Date(a.createdAt.seconds*1000).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})
-              : "—";
+            const date = fmtDate(a.createdAt);
             return(
-              <div key={a.id||i} style={{...card,padding:"10px 14px",display:"flex",alignItems:"flex-start",gap:10}}>
+              <div key={a.id||i} onClick={()=>setSelected(a)}
+                style={{...card,padding:"10px 14px",display:"flex",alignItems:"flex-start",gap:10,cursor:"pointer",transition:"box-shadow 0.15s, transform 0.15s"}}
+                onMouseEnter={e=>{e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,0.10)";e.currentTarget.style.transform="translateY(-1px)";}}
+                onMouseLeave={e=>{e.currentTarget.style.boxShadow="";e.currentTarget.style.transform="";}}>
                 <div style={{flexShrink:0,marginTop:2}}>
                   <span style={{background:ac.bg,color:ac.color,fontSize:10,fontWeight:700,borderRadius:99,padding:"2px 8px",whiteSpace:"nowrap"}}>
-                    {ac.label}
+                    {ac.icon} {ac.label}
                   </span>
                 </div>
                 <div style={{flex:1,minWidth:0}}>
@@ -4504,9 +4672,10 @@ function ActivitiesPage({store, currentUser}){
                   <div style={{display:"flex",gap:10,fontSize:11,color:"#94a3b8",flexWrap:"wrap"}}>
                     <span>👤 {a.userName||"—"}</span>
                     <span>🕐 {date}</span>
-                    {a.entity&&<span style={{color:"#7c3aed"}}>📂 {ENTITY_LABELS[a.entity]||a.entity}</span>}
+                    {a.entity&&<span style={{color:"#7c3aed"}}>{ENTITY_ICONS[a.entity]||"📌"} {ENTITY_LABELS[a.entity]||a.entity}</span>}
                   </div>
                 </div>
+                <div style={{color:"#cbd5e1",fontSize:16,flexShrink:0}}>›</div>
               </div>
             );
           })}
@@ -4514,7 +4683,7 @@ function ActivitiesPage({store, currentUser}){
 
         {activities.length>0&&(
           <div style={{textAlign:"center",fontSize:12,color:"#94a3b8",marginTop:10}}>
-            {activities.length} activité(s) affichée(s) sur {store.activities?.length||0} au total
+            {activities.length} activité(s) · cliquez sur une ligne pour voir les détails
           </div>
         )}
       </div>
@@ -4814,12 +4983,12 @@ function LoginPage({onLogin}){
 
   return(
     <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0f172a,#1e3a5f)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-      <div style={{background:"white",borderRadius:20,padding:32,width:"100%",maxWidth:400,boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
-        <div style={{textAlign:"center",marginBottom:28}}>
-          <img src={LOGO_B64} alt="CHNCAK" style={{width:100,height:100,borderRadius:"50%",objectFit:"cover",marginBottom:12,border:"3px solid #0891b2",boxShadow:"0 4px 20px rgba(8,145,178,0.3)"}}/>
-          <div style={{fontSize:11,fontWeight:700,color:"#64748b",letterSpacing:1,textTransform:"uppercase"}}>Centre Hospitalier National Cheikh Ahmadoul Khadim</div>
-          <div style={{fontSize:20,fontWeight:800,color:"#0f172a",marginTop:4}}>PharmaStock</div>
-          <div style={{fontSize:12,color:"#64748b",marginTop:2}}>Gestion des Inventaires Pharmaceutiques</div>
+      <div style={{background:"white",borderRadius:20,padding:32,width:"100%",maxWidth:420,boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
+        {/* Logo complet CHNCAK */}
+        <div style={{textAlign:"center",marginBottom:24}}>
+          <img src={LOGO_CHNCAK_B64} alt="CHNCAK PharmaStock"
+            style={{width:"100%",maxWidth:360,height:"auto",borderRadius:14,marginBottom:16,boxShadow:"0 4px 20px rgba(8,145,178,0.25)"}}/>
+          <div style={{fontSize:13,color:"#64748b",marginTop:4}}>Gestion des Inventaires Pharmaceutiques</div>
         </div>
         {err&&<Alert type="error">❌ {err}</Alert>}
         <div style={{marginBottom:14}}>
@@ -4847,7 +5016,7 @@ function LoginPage({onLogin}){
           {loading?"⏳ Connexion en cours...":"Se Connecter"}
         </button>
         <div style={{marginTop:16,fontSize:11,color:"#94a3b8",textAlign:"center"}}>
-          🔒 Authentification sécurisée Firebase
+          🔒 Authentification sécurisée
         </div>
       </div>
     </div>
@@ -4864,7 +5033,13 @@ export default function App(){
   const [menuOpen,        setMenuOpen]        = useState(false);
   const [aiOpen,          setAiOpen]          = useState(false);
   const [supplierModal,   setSupplierModal]   = useState(false);
-  const [activeSupplier,  setActiveSupplierState] = useState(null);
+  const [activeSupplier,  setActiveSupplierState] = useState(()=>{
+    // Restauration immédiate depuis localStorage au chargement
+    try {
+      const saved = localStorage.getItem("pharma_active_supplier");
+      return saved ? JSON.parse(saved) : null;
+    } catch(e) { return null; }
+  });
   const [pendingInvoiceId,setPendingInvoiceId] = useState(null);
   const [profileOpen,setProfileOpen] = useState(false);
   const [profilePw,setProfilePw]     = useState({current:"",next:"",confirm:""});
@@ -4917,18 +5092,25 @@ export default function App(){
   const store = useStore(user?.uid, user?.name || user?.email || "Inconnu");
   const ai    = useAI();
 
-  // ── Restaurer fournisseur actif depuis Firestore user doc ──
+  // ── Synchroniser activeSupplier avec les données fraîches de Firestore ──
+  // (au cas où le nom/email du fournisseur aurait changé)
   useEffect(()=>{
-    if(user?.activeSupplier && store.suppliers.length > 0){
-      const found = store.suppliers.find(s=>s.id===user.activeSupplier);
-      if(found) setActiveSupplierState(found);
+    if(!activeSupplier || store.suppliers.length === 0) return;
+    const fresh = store.suppliers.find(s => s.id === activeSupplier.id);
+    if(fresh && (fresh.name !== activeSupplier.name || fresh.email !== activeSupplier.email)){
+      setActiveSupplierState(fresh);
+      localStorage.setItem("pharma_active_supplier", JSON.stringify(fresh));
     }
-  },[user?.uid, store.suppliers.length]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[store.suppliers]);
 
   const setActiveSupplier = async (s) => {
     setActiveSupplierState(s);
+    // Sauvegarder dans localStorage pour restauration immédiate
+    if(s) localStorage.setItem("pharma_active_supplier", JSON.stringify(s));
+    else localStorage.removeItem("pharma_active_supplier");
     setSupplierModal(false); setMenuOpen(false);
-    // Persister dans le profil Firestore de l'utilisateur
+    // Persister aussi dans Firestore
     if(user?.uid) {
       try {
         await updateDoc(doc(db,"users",user.uid), { activeSupplier: s?.id || null });
@@ -4945,7 +5127,7 @@ export default function App(){
   const logout = async () => {
     await signOut(auth);
     setUser(null);
-    setActiveSupplierState(null);
+    // Ne pas effacer le fournisseur actif — sera restauré à la prochaine connexion
     setPage("dashboard");
   };
 
@@ -4965,7 +5147,7 @@ export default function App(){
     <div style={{minHeight:"100vh",background:"#f8fafc",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
       <img src={LOGO_B64} alt="CHNCAK" style={{width:70,height:70,borderRadius:"50%",objectFit:"cover",border:"3px solid #0891b2"}}/>
       <div style={{color:"#0891b2",fontWeight:700}}>Synchronisation des données...</div>
-      <div style={{color:"#94a3b8",fontSize:12}}>Connexion à Firebase en cours</div>
+      <div style={{color:"#94a3b8",fontSize:12}}>Connexion en cours...</div>
     </div>
   );
 
