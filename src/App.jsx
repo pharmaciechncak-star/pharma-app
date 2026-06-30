@@ -62,9 +62,9 @@ const db      = getFirestore(_app);
 //    {{to_email}}, {{to_name}}, {{from_name}}, {{subject}},
 //    {{message}}, {{invoice_details}}, {{extra_recipients}}
 // 4. Remplir les 3 constantes ci-dessous
-const EMAILJS_SERVICE_ID  = "service_wmx81ms";   // ex: "service_abc123"
-const EMAILJS_TEMPLATE_ID = "template_h74zhzk";  // ex: "template_xyz789"
-const EMAILJS_PUBLIC_KEY  = "Nc8I8RFeVEBvmJbdk";   // ex: "user_ABCDEFGH"
+const EMAILJS_SERVICE_ID  = "VOTRE_SERVICE_ID";   // ex: "service_abc123"
+const EMAILJS_TEMPLATE_ID = "VOTRE_TEMPLATE_ID";  // ex: "template_xyz789"
+const EMAILJS_PUBLIC_KEY  = "VOTRE_PUBLIC_KEY";   // ex: "user_ABCDEFGH"
 
 async function sendRealEmail({ to, toName, from, subject, body, invoiceDetails, extraRecipients }) {
   // Charger EmailJS dynamiquement si pas encore chargé
@@ -148,7 +148,7 @@ const ROLES = {
 };
 
 // Sections du logiciel avec les 3 droits possibles
-const LOGO_CHNCAK_B64 = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MjAgMTYwIj4KCiAgPCEtLSBGb25kIGTDqWdyYWTDqSAtLT4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iYmdHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6IzBjNGE2ZTtzdG9wLW9wYWNpdHk6MSIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMwZTc0OTA7c3RvcC1vcGFjaXR5OjEiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImNyb3NzR3JhZCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMyMmM1NWUiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMTZhMzRhIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGZpbHRlciBpZD0ic2hhZG93Ij4KICAgICAgPGZlRHJvcFNoYWRvdyBkeD0iMSIgZHk9IjEiIHN0ZERldmlhdGlvbj0iMiIgZmxvb2QtY29sb3I9InJnYmEoMCwwLDAsMC4zKSIvPgogICAgPC9maWx0ZXI+CiAgICA8ZmlsdGVyIGlkPSJnbG93Ij4KICAgICAgPGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMiIgcmVzdWx0PSJibHVyIi8+CiAgICAgIDxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0iYmx1ciIvPjxmZU1lcmdlTm9kZSBpbj0iU291cmNlR3JhcGhpYyIvPjwvZmVNZXJnZT4KICAgIDwvZmlsdGVyPgogIDwvZGVmcz4KCiAgPCEtLSBGb25kIGFycm9uZGkgLS0+CiAgPHJlY3Qgd2lkdGg9IjUyMCIgaGVpZ2h0PSIxNjAiIHJ4PSIxOCIgZmlsbD0idXJsKCNiZ0dyYWQpIi8+CgogIDwhLS0gTGlnbmUgZMOpY29yYXRpdmUgaGF1dCAtLT4KICA8cmVjdCB4PSIwIiB5PSIwIiB3aWR0aD0iNTIwIiBoZWlnaHQ9IjQiIHJ4PSIyIiBmaWxsPSIjMjJjNTVlIiBvcGFjaXR5PSIwLjgiLz4KICA8IS0tIExpZ25lIGTDqWNvcmF0aXZlIGJhcyAtLT4KICA8cmVjdCB4PSIwIiB5PSIxNTYiIHdpZHRoPSI1MjAiIGhlaWdodD0iNCIgcng9IjIiIGZpbGw9IiMyMmM1NWUiIG9wYWNpdHk9IjAuOCIvPgoKICA8IS0tIOKVkOKVkOKVkCBDUk9JWCBQSEFSTUFDRVVUSVFVRSDilZDilZDilZAgLS0+CiAgPGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMjAsIDE4KSIgZmlsdGVyPSJ1cmwoI3NoYWRvdykiPgogICAgPCEtLSBDcm9peCBwcmluY2lwYWxlIC0tPgogICAgPHJlY3QgeD0iMzciIHk9IjEwIiB3aWR0aD0iMjIiIGhlaWdodD0iNjYiIHJ4PSI1IiBmaWxsPSJ1cmwoI2Nyb3NzR3JhZCkiLz4KICAgIDxyZWN0IHg9IjEwIiB5PSIzNyIgd2lkdGg9IjY2IiBoZWlnaHQ9IjIyIiByeD0iNSIgZmlsbD0idXJsKCNjcm9zc0dyYWQpIi8+CiAgICA8IS0tIFJlZmxldCBzdXIgbGEgY3JvaXggLS0+CiAgICA8cmVjdCB4PSIzNyIgeT0iMTAiIHdpZHRoPSIxMCIgaGVpZ2h0PSI2NiIgcng9IjUiIGZpbGw9IndoaXRlIiBvcGFjaXR5PSIwLjEyIi8+CiAgICA8cmVjdCB4PSIxMCIgeT0iMzciIHdpZHRoPSI2NiIgaGVpZ2h0PSIxMCIgcng9IjUiIGZpbGw9IndoaXRlIiBvcGFjaXR5PSIwLjEyIi8+CgogICAgPCEtLSBDb3VwZSBkZSBIeWdpZSAtLT4KICAgIDwhLS0gUGllZCBkZSBsYSBjb3VwZSAtLT4KICAgIDxyZWN0IHg9IjQyIiB5PSI1MiIgd2lkdGg9IjEyIiBoZWlnaHQ9IjMiIHJ4PSIxLjUiIGZpbGw9IndoaXRlIi8+CiAgICA8cmVjdCB4PSI0NC41IiB5PSIzNiIgd2lkdGg9IjciIGhlaWdodD0iMTciIHJ4PSIxIiBmaWxsPSJ3aGl0ZSIvPgogICAgPCEtLSBWYXNxdWUgLS0+CiAgICA8cGF0aCBkPSJNMzYgMzggUTQzIDQ4IDQ4IDQ4IFE1MyA0OCA2MCAzOCIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyLjUiIGZpbGw9Im5vbmUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgoKICAgIDwhLS0gU2VycGVudCBkJ0VzY3VsYXBlIC0tPgogICAgPHBhdGggZD0iTTQ4IDM3IFE1NiA0MCA1MSA0NCBRNTcgNDcgNTEgNTEgUTU3IDU0IDUxIDU3IgogICAgICAgICAgc3Ryb2tlPSIjYmJmN2QwIiBzdHJva2Utd2lkdGg9IjIuOCIgZmlsbD0ibm9uZSIKICAgICAgICAgIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgogICAgPCEtLSBUw6p0ZSBkdSBzZXJwZW50IC0tPgogICAgPGNpcmNsZSBjeD0iNTEiIGN5PSIzNiIgcj0iMi41IiBmaWxsPSIjYmJmN2QwIi8+CiAgICA8Y2lyY2xlIGN4PSI0OS44IiBjeT0iMzUuMiIgcj0iMC44IiBmaWxsPSIjMGM0YTZlIi8+CiAgPC9nPgoKICA8IS0tIOKVkOKVkOKVkCBURVhURVMg4pWQ4pWQ4pWQIC0tPgoKICA8IS0tIE5vbSBwcmluY2lwYWwgLS0+CiAgPHRleHQgeD0iMTQwIiB5PSI1MiIKICAgICAgICBmb250LWZhbWlseT0iR2VvcmdpYSwgJ1RpbWVzIE5ldyBSb21hbicsIHNlcmlmIgogICAgICAgIGZvbnQtc2l6ZT0iMjIiIGZvbnQtd2VpZ2h0PSJib2xkIgogICAgICAgIGZpbGw9IndoaXRlIiBsZXR0ZXItc3BhY2luZz0iMS41IgogICAgICAgIGZpbHRlcj0idXJsKCNzaGFkb3cpIj4KICAgIENlbnRyZSBIb3NwaXRhbGllciBOYXRpb25hbAogIDwvdGV4dD4KCiAgPCEtLSBOb20gZW4gZ3JhbmQgLS0+CiAgPHRleHQgeD0iMTQwIiB5PSI4NSIKICAgICAgICBmb250LWZhbWlseT0iR2VvcmdpYSwgJ1RpbWVzIE5ldyBSb21hbicsIHNlcmlmIgogICAgICAgIGZvbnQtc2l6ZT0iMjgiIGZvbnQtd2VpZ2h0PSJib2xkIgogICAgICAgIGZpbGw9IiM0YWRlODAiIGxldHRlci1zcGFjaW5nPSIyIgogICAgICAgIGZpbHRlcj0idXJsKCNnbG93KSI+CiAgICBDaGVpa2ggQWhtYWRvdWwgS2hhZGltCiAgPC90ZXh0PgoKICA8IS0tIFPDqXBhcmF0ZXVyIC0tPgogIDxsaW5lIHgxPSIxNDAiIHkxPSI5NiIgeDI9IjUwMCIgeTI9Ijk2IiBzdHJva2U9IiMyMmM1NWUiIHN0cm9rZS13aWR0aD0iMS41IiBvcGFjaXR5PSIwLjUiLz4KCiAgPCEtLSBTb3VzLXRpdHJlIC0tPgogIDx0ZXh0IHg9IjE0MCIgeT0iMTE1IgogICAgICAgIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIKICAgICAgICBmb250LXNpemU9IjE0IiBmb250LXdlaWdodD0iNjAwIgogICAgICAgIGZpbGw9IiM3ZGQzZmMiIGxldHRlci1zcGFjaW5nPSIzIj4KICAgIFBIQVJNQUNJRSAgwrcgIENITkNBSwogIDwvdGV4dD4KCiAgPCEtLSBBcHBsaWNhdGlvbiBuYW1lIC0tPgogIDx0ZXh0IHg9IjE0MCIgeT0iMTQwIgogICAgICAgIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIKICAgICAgICBmb250LXNpemU9IjEzIgogICAgICAgIGZpbGw9InJnYmEoMjU1LDI1NSwyNTUsMC42KSIgbGV0dGVyLXNwYWNpbmc9IjEiPgogICAgUGhhcm1hU3RvY2sg4oCUIFN5c3TDqG1lIGRlIGdlc3Rpb24gZGVzIGludmVudGFpcmVzIHBoYXJtYWNldXRpcXVlcwogIDwvdGV4dD4KCiAgPCEtLSDDiXRvaWxlcyBkw6ljb3JhdGl2ZXMgLS0+CiAgPHRleHQgeD0iNDg4IiB5PSI0NSIgZm9udC1zaXplPSIxMiIgZmlsbD0iI2ZiYmYyNCIgb3BhY2l0eT0iMC44Ij7inKY8L3RleHQ+CiAgPHRleHQgeD0iNDk4IiB5PSI2MiIgZm9udC1zaXplPSI4IiBmaWxsPSIjZmJiZjI0IiBvcGFjaXR5PSIwLjUiPuKcpjwvdGV4dD4KICA8dGV4dCB4PSI0NzgiIHk9IjU4IiBmb250LXNpemU9IjYiIGZpbGw9IiNmYmJmMjQiIG9wYWNpdHk9IjAuNCI+4pymPC90ZXh0PgoKPC9zdmc+Cg==";
+const LOGO_CHNCAK_B64 = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2MDAgMTYwIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iYmdHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6IzBjNGE2ZTtzdG9wLW9wYWNpdHk6MSIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMwZTc0OTA7c3RvcC1vcGFjaXR5OjEiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImNyb3NzR3JhZCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMyMmM1NWUiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMTZhMzRhIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGZpbHRlciBpZD0ic2hhZG93Ij4KICAgICAgPGZlRHJvcFNoYWRvdyBkeD0iMSIgZHk9IjEiIHN0ZERldmlhdGlvbj0iMiIgZmxvb2QtY29sb3I9InJnYmEoMCwwLDAsMC4zKSIvPgogICAgPC9maWx0ZXI+CiAgPC9kZWZzPgoKICA8IS0tIEZvbmQgLS0+CiAgPHJlY3Qgd2lkdGg9IjYwMCIgaGVpZ2h0PSIxNjAiIHJ4PSIxOCIgZmlsbD0idXJsKCNiZ0dyYWQpIi8+CiAgPHJlY3QgeD0iMCIgeT0iMCIgd2lkdGg9IjYwMCIgaGVpZ2h0PSI0IiByeD0iMiIgZmlsbD0iIzIyYzU1ZSIgb3BhY2l0eT0iMC44Ii8+CiAgPHJlY3QgeD0iMCIgeT0iMTU2IiB3aWR0aD0iNjAwIiBoZWlnaHQ9IjQiIHJ4PSIyIiBmaWxsPSIjMjJjNTVlIiBvcGFjaXR5PSIwLjgiLz4KCiAgPCEtLSBDcm9peCBwaGFybWFjZXV0aXF1ZSAtLT4KICA8ZyB0cmFuc2Zvcm09InRyYW5zbGF0ZSgxOCwgMTgpIiBmaWx0ZXI9InVybCgjc2hhZG93KSI+CiAgICA8cmVjdCB4PSIzNyIgeT0iMTAiIHdpZHRoPSIyMiIgaGVpZ2h0PSI2NiIgcng9IjUiIGZpbGw9InVybCgjY3Jvc3NHcmFkKSIvPgogICAgPHJlY3QgeD0iMTAiIHk9IjM3IiB3aWR0aD0iNjYiIGhlaWdodD0iMjIiIHJ4PSI1IiBmaWxsPSJ1cmwoI2Nyb3NzR3JhZCkiLz4KICAgIDxyZWN0IHg9IjM3IiB5PSIxMCIgd2lkdGg9IjEwIiBoZWlnaHQ9IjY2IiByeD0iNSIgZmlsbD0id2hpdGUiIG9wYWNpdHk9IjAuMTIiLz4KICAgIDxyZWN0IHg9IjEwIiB5PSIzNyIgd2lkdGg9IjY2IiBoZWlnaHQ9IjEwIiByeD0iNSIgZmlsbD0id2hpdGUiIG9wYWNpdHk9IjAuMTIiLz4KICAgIDwhLS0gQ291cGUgLS0+CiAgICA8cmVjdCB4PSI0MiIgeT0iNTIiIHdpZHRoPSIxMiIgaGVpZ2h0PSIzIiByeD0iMS41IiBmaWxsPSJ3aGl0ZSIvPgogICAgPHJlY3QgeD0iNDQuNSIgeT0iMzYiIHdpZHRoPSI3IiBoZWlnaHQ9IjE3IiByeD0iMSIgZmlsbD0id2hpdGUiLz4KICAgIDxwYXRoIGQ9Ik0zNiAzOCBRNDMgNDggNDggNDggUTUzIDQ4IDYwIDM4IiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIuNSIgZmlsbD0ibm9uZSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+CiAgICA8IS0tIFNlcnBlbnQgLS0+CiAgICA8cGF0aCBkPSJNNDggMzcgUTU2IDQwIDUxIDQ0IFE1NyA0NyA1MSA1MSBRNTcgNTQgNTEgNTciCiAgICAgICAgICBzdHJva2U9IiNiYmY3ZDAiIHN0cm9rZS13aWR0aD0iMi44IiBmaWxsPSJub25lIgogICAgICAgICAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgICA8Y2lyY2xlIGN4PSI1MSIgY3k9IjM2IiByPSIyLjUiIGZpbGw9IiNiYmY3ZDAiLz4KICAgIDxjaXJjbGUgY3g9IjQ5LjgiIGN5PSIzNS4yIiByPSIwLjgiIGZpbGw9IiMwYzRhNmUiLz4KICA8L2c+CgogIDwhLS0gVGV4dGVzIC0tPgogIDx0ZXh0IHg9IjEyMiIgeT0iNTAiCiAgICAgICAgZm9udC1mYW1pbHk9Ikdlb3JnaWEsIHNlcmlmIgogICAgICAgIGZvbnQtc2l6ZT0iMTkiIGZvbnQtd2VpZ2h0PSJib2xkIgogICAgICAgIGZpbGw9IndoaXRlIiBsZXR0ZXItc3BhY2luZz0iMSI+CiAgICBDZW50cmUgSG9zcGl0YWxpZXIgTmF0aW9uYWwKICA8L3RleHQ+CgogIDx0ZXh0IHg9IjEyMiIgeT0iODIiCiAgICAgICAgZm9udC1mYW1pbHk9Ikdlb3JnaWEsIHNlcmlmIgogICAgICAgIGZvbnQtc2l6ZT0iMjUiIGZvbnQtd2VpZ2h0PSJib2xkIgogICAgICAgIGZpbGw9IiM0YWRlODAiIGxldHRlci1zcGFjaW5nPSIxLjUiPgogICAgQ2hlaWtoIEFobWFkb3VsIEtoYWRpbQogIDwvdGV4dD4KCiAgPGxpbmUgeDE9IjEyMiIgeTE9Ijk0IiB4Mj0iNTc4IiB5Mj0iOTQiIHN0cm9rZT0iIzIyYzU1ZSIgc3Ryb2tlLXdpZHRoPSIxLjUiIG9wYWNpdHk9IjAuNSIvPgoKICA8dGV4dCB4PSIxMjIiIHk9IjExNCIKICAgICAgICBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiCiAgICAgICAgZm9udC1zaXplPSIxMyIgZm9udC13ZWlnaHQ9IjYwMCIKICAgICAgICBmaWxsPSIjN2RkM2ZjIiBsZXR0ZXItc3BhY2luZz0iMyI+CiAgICBQSEFSTUFDSUUgIMK3ICBDSE5DQUsKICA8L3RleHQ+CgogIDx0ZXh0IHg9IjEyMiIgeT0iMTM4IgogICAgICAgIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIKICAgICAgICBmb250LXNpemU9IjEyIgogICAgICAgIGZpbGw9InJnYmEoMjU1LDI1NSwyNTUsMC41NSkiIGxldHRlci1zcGFjaW5nPSIwLjUiPgogICAgU3lzdMOobWUgZGUgZ2VzdGlvbiBkZXMgaW52ZW50YWlyZXMgcGhhcm1hY2V1dGlxdWVzCiAgPC90ZXh0PgoKICA8IS0tIMOJdG9pbGVzIC0tPgogIDx0ZXh0IHg9IjU2MCIgeT0iNDIiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiNmYmJmMjQiIG9wYWNpdHk9IjAuOCI+4pymPC90ZXh0PgogIDx0ZXh0IHg9IjU3MiIgeT0iNjAiIGZvbnQtc2l6ZT0iOCIgIGZpbGw9IiNmYmJmMjQiIG9wYWNpdHk9IjAuNSI+4pymPC90ZXh0PgogIDx0ZXh0IHg9IjU1MCIgeT0iNTUiIGZvbnQtc2l6ZT0iNiIgIGZpbGw9IiNmYmJmMjQiIG9wYWNpdHk9IjAuNCI+4pymPC90ZXh0Pgo8L3N2Zz4=";
 const ICON_CHNCAK_B64  = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgcng9IjE2IiBmaWxsPSIjMGM0YTZlIi8+CiAgPCEtLSBDcm9peCBwaGFybWFjZXV0aXF1ZSBzaW1wbGlmacOpZSAtLT4KICA8cmVjdCB4PSIzOCIgeT0iMTUiIHdpZHRoPSIyNCIgaGVpZ2h0PSI3MCIgcng9IjQiIGZpbGw9IiMyMmM1NWUiLz4KICA8cmVjdCB4PSIxNSIgeT0iMzgiIHdpZHRoPSI3MCIgaGVpZ2h0PSIyNCIgcng9IjQiIGZpbGw9IiMyMmM1NWUiLz4KICA8IS0tIENvdXBlIGRlIEh5Z2llIGNlbnRyYWxlIC0tPgogIDxlbGxpcHNlIGN4PSI1MCIgY3k9IjU2IiByeD0iOCIgcnk9IjMiIGZpbGw9IndoaXRlIi8+CiAgPHJlY3QgeD0iNDciIHk9IjQwIiB3aWR0aD0iNiIgaGVpZ2h0PSIxOCIgcng9IjEiIGZpbGw9IndoaXRlIi8+CiAgPCEtLSBTZXJwZW50IHN0eWxpc8OpIC0tPgogIDxwYXRoIGQ9Ik01MyA0MiBRNTggNDUgNTQgNTAgUTYwIDUzIDU0IDU4IiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIuNSIgZmlsbD0ibm9uZSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+Cjwvc3ZnPgo=";
 
 const SECTIONS = [
@@ -492,14 +492,29 @@ function useStore(userId, userName) {
     },
     addUser: async u => {
       try {
-        const cred = await createUserWithEmailAndPassword(auth, u.email, u.tempPw||"PharmaStock2025!");
-        await setDoc(doc(db,"users",cred.user.uid), {
-          name: u.name, email: u.email, role: u.role,
-          createdAt: serverTimestamp(),
+        // Appel à la Vercel Function qui utilise Firebase Admin SDK
+        const res = await fetch("/api/create-user", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name:   u.name,
+            email:  u.email,
+            role:   u.role,
+            tempPw: u.tempPw || "PharmaStock2025!",
+          }),
         });
-        await addDoc(collection(db,"activities"), { action:"create", entity:"user", details:`Utilisateur créé : ${u.name} (${u.role})`, userId, userName, createdAt:serverTimestamp() });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Erreur création utilisateur");
+        // Log activité
+        await addDoc(collection(db,"activities"), {
+          action:"create", entity:"user",
+          details:`Utilisateur créé : ${u.name} (${ROLES[u.role]?.label||u.role})`,
+          userId, userName, createdAt:serverTimestamp(),
+        });
+        return data;
       } catch(e) {
-        await addDoc(collection(db,"users"), { ...u, createdAt: serverTimestamp() });
+        console.error("addUser error:", e);
+        throw e;
       }
     },
     updateUser: async (id,u) => {
@@ -4740,9 +4755,21 @@ function UsersPage({store, currentUser}){
   const handleResetPassword = async () => {
     if(!newPw || newPw.length < 6) { setPwMsg("⚠️ Minimum 6 caractères."); return; }
     try {
-      // Stocker le mot de passe provisoire dans Firestore (l'user devra le changer)
-      await store.updateUser(resetPwU.id, { provisionalPw: newPw, mustChangePw: true });
-      setPwMsg("✅ Mot de passe provisoire défini. L'utilisateur verra le nouveau mot de passe à sa prochaine connexion.");
+      // Appel à la Vercel Function pour changer le mot de passe via Admin SDK
+      const res = await fetch("/api/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          uid:         resetPwU.id,
+          email:       resetPwU.email,
+          newPassword: newPw,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erreur");
+      // Mettre à jour mustChangePw dans Firestore côté client aussi
+      await store.updateUser(resetPwU.id, { mustChangePw: true, provisionalPw: newPw });
+      setPwMsg("✅ Mot de passe provisoire défini. L'utilisateur pourra se connecter avec ce mot de passe.");
       setTimeout(()=>{ setResetPwU(null); setPwMsg(""); setNewPw(""); setShowPwReset(false); }, 3500);
     } catch(e) {
       setPwMsg("❌ Erreur : " + e.message);
