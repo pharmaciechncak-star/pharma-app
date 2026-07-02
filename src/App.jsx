@@ -50,7 +50,10 @@ const firebaseConfig = {
 const _app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 const auth    = getAuth(_app);
 const db      = getFirestore(_app);
-// const storage = getStorage(_app); // non utilisé
+
+// Instance secondaire — pour créer des utilisateurs sans déconnecter l'admin
+const _appSecondary = getApps().find(a=>a.name==="secondary") || initializeApp(firebaseConfig, "secondary");
+const authSecondary = getAuth(_appSecondary);
 
 // ─────────────────────────────────────────────
 // EMAIL — Configuration EmailJS
@@ -62,9 +65,9 @@ const db      = getFirestore(_app);
 //    {{to_email}}, {{to_name}}, {{from_name}}, {{subject}},
 //    {{message}}, {{invoice_details}}, {{extra_recipients}}
 // 4. Remplir les 3 constantes ci-dessous
-const EMAILJS_SERVICE_ID  = "VOTRE_SERVICE_ID";   // ex: "service_abc123"
-const EMAILJS_TEMPLATE_ID = "VOTRE_TEMPLATE_ID";  // ex: "template_xyz789"
-const EMAILJS_PUBLIC_KEY  = "VOTRE_PUBLIC_KEY";   // ex: "user_ABCDEFGH"
+const EMAILJS_SERVICE_ID  = "service_wmx81ms";   // ex: "service_abc123"
+const EMAILJS_TEMPLATE_ID = "template_h74zhzk";  // ex: "template_xyz789"
+const EMAILJS_PUBLIC_KEY  = "Nc8I8RFeVEBvmJbdk";   // ex: "user_ABCDEFGH"
 
 async function sendRealEmail({ to, toName, from, subject, body, invoiceDetails, extraRecipients }) {
   // Charger EmailJS dynamiquement si pas encore chargé
@@ -163,15 +166,16 @@ const SECTIONS = [
   { id:"fournisseurs", label:"Fournisseurs" },
   { id:"depots",       label:"Dépôts" },
   { id:"activites",    label:"Journal d'activité", adminOnly:true },
+  { id:"assistant_ia", label:"Assistant IA" },
 ];
 
 // Permissions par défaut par rôle (utilisé si l'admin n'a pas personnalisé)
 const DEFAULT_PERMS = {
-  admin:        { entrees:{r:1,w:1,d:1}, retours:{r:1,w:1,d:1}, inventaire:{r:1,w:1,d:1}, factures:{r:1,w:1,d:1}, "hist-inv":{r:1,w:1,d:1}, "hist-fact":{r:1,w:1,d:1}, messagerie:{r:1,w:1,d:1}, produits:{r:1,w:1,d:1}, fournisseurs:{r:1,w:1,d:1}, depots:{r:1,w:1,d:1}, activites:{r:1,w:1,d:1} },
-  gestionnaire: { entrees:{r:1,w:1,d:0}, retours:{r:1,w:1,d:0}, inventaire:{r:1,w:1,d:0}, factures:{r:1,w:1,d:0}, "hist-inv":{r:1,w:0,d:0}, "hist-fact":{r:1,w:0,d:0}, messagerie:{r:1,w:1,d:0}, produits:{r:1,w:1,d:0}, fournisseurs:{r:1,w:1,d:0}, depots:{r:1,w:1,d:0}, activites:{r:0,w:0,d:0} },
-  pharmacien:   { entrees:{r:1,w:1,d:0}, retours:{r:1,w:1,d:0}, inventaire:{r:1,w:1,d:0}, factures:{r:1,w:1,d:0}, "hist-inv":{r:1,w:1,d:0}, "hist-fact":{r:1,w:1,d:0}, messagerie:{r:1,w:1,d:0}, produits:{r:1,w:1,d:0}, fournisseurs:{r:1,w:1,d:0}, depots:{r:1,w:1,d:0}, activites:{r:0,w:0,d:0} },
-  magasinier:   { entrees:{r:1,w:1,d:0}, retours:{r:1,w:1,d:0}, inventaire:{r:0,w:0,d:0}, factures:{r:0,w:0,d:0}, "hist-inv":{r:0,w:0,d:0}, "hist-fact":{r:0,w:0,d:0}, messagerie:{r:0,w:0,d:0}, produits:{r:1,w:0,d:0}, fournisseurs:{r:0,w:0,d:0}, depots:{r:1,w:0,d:0}, activites:{r:0,w:0,d:0} },
-  comptable:    { entrees:{r:1,w:0,d:0}, retours:{r:1,w:0,d:0}, inventaire:{r:1,w:1,d:0}, factures:{r:1,w:1,d:0}, "hist-inv":{r:1,w:0,d:0}, "hist-fact":{r:1,w:0,d:0}, messagerie:{r:1,w:1,d:0}, produits:{r:1,w:0,d:0}, fournisseurs:{r:1,w:0,d:0}, depots:{r:1,w:0,d:0}, activites:{r:0,w:0,d:0} },
+  admin:        { entrees:{r:1,w:1,d:1}, retours:{r:1,w:1,d:1}, inventaire:{r:1,w:1,d:1}, factures:{r:1,w:1,d:1}, "hist-inv":{r:1,w:1,d:1}, "hist-fact":{r:1,w:1,d:1}, messagerie:{r:1,w:1,d:1}, produits:{r:1,w:1,d:1}, fournisseurs:{r:1,w:1,d:1}, depots:{r:1,w:1,d:1}, activites:{r:1,w:1,d:1}, assistant_ia:{r:1,w:1,d:0} },
+  gestionnaire: { entrees:{r:1,w:1,d:0}, retours:{r:1,w:1,d:0}, inventaire:{r:1,w:1,d:0}, factures:{r:1,w:1,d:0}, "hist-inv":{r:1,w:0,d:0}, "hist-fact":{r:1,w:0,d:0}, messagerie:{r:1,w:1,d:0}, produits:{r:1,w:1,d:0}, fournisseurs:{r:1,w:1,d:0}, depots:{r:1,w:1,d:0}, activites:{r:0,w:0,d:0}, assistant_ia:{r:0,w:0,d:0} },
+  pharmacien:   { entrees:{r:1,w:1,d:0}, retours:{r:1,w:1,d:0}, inventaire:{r:1,w:1,d:0}, factures:{r:1,w:1,d:0}, "hist-inv":{r:1,w:1,d:0}, "hist-fact":{r:1,w:1,d:0}, messagerie:{r:1,w:1,d:0}, produits:{r:1,w:1,d:0}, fournisseurs:{r:1,w:1,d:0}, depots:{r:1,w:1,d:0}, activites:{r:0,w:0,d:0}, assistant_ia:{r:0,w:0,d:0} },
+  magasinier:   { entrees:{r:1,w:1,d:0}, retours:{r:1,w:1,d:0}, inventaire:{r:0,w:0,d:0}, factures:{r:0,w:0,d:0}, "hist-inv":{r:0,w:0,d:0}, "hist-fact":{r:0,w:0,d:0}, messagerie:{r:0,w:0,d:0}, produits:{r:1,w:0,d:0}, fournisseurs:{r:0,w:0,d:0}, depots:{r:1,w:0,d:0}, activites:{r:0,w:0,d:0}, assistant_ia:{r:0,w:0,d:0} },
+  comptable:    { entrees:{r:1,w:0,d:0}, retours:{r:1,w:0,d:0}, inventaire:{r:1,w:1,d:0}, factures:{r:1,w:1,d:0}, "hist-inv":{r:1,w:0,d:0}, "hist-fact":{r:1,w:0,d:0}, messagerie:{r:1,w:1,d:0}, produits:{r:1,w:0,d:0}, fournisseurs:{r:1,w:0,d:0}, depots:{r:1,w:0,d:0}, activites:{r:0,w:0,d:0}, assistant_ia:{r:0,w:0,d:0} },
 };
 
 // Helper: obtenir les permissions effectives d'un utilisateur
@@ -480,41 +484,42 @@ function useStore(userId, userName) {
     markRead: id => updateDoc(doc(db,"messages",id), { read: true }),
 
     addUser: async u => {
+      const password = (u.tempPw && u.tempPw.length >= 6) ? u.tempPw : "PharmaStock2025!";
       try {
-        const cred = await createUserWithEmailAndPassword(auth, u.email, "PharmaStock2025!");
-        await setDoc(doc(db,"users",cred.user.uid), {
-          name: u.name, email: u.email, role: u.role,
-          createdAt: serverTimestamp(),
+        // Utiliser l'instance Auth secondaire pour NE PAS déconnecter l'admin
+        const cred = await createUserWithEmailAndPassword(authSecondary, u.email, password);
+        const newUid = cred.user.uid;
+
+        // Déconnecter immédiatement l'instance secondaire
+        await signOut(authSecondary);
+
+        // Écrire le document Firestore avec l'UID Auth comme clé
+        await setDoc(doc(db, "users", newUid), {
+          name:         u.name,
+          email:        u.email,
+          role:         u.role,
+          mustChangePw: true,
+          createdAt:    serverTimestamp(),
         });
-      } catch(e) {
-        await addDoc(collection(db,"users"), { ...u, createdAt: serverTimestamp() });
-      }
-    },
-    addUser: async u => {
-      try {
-        // Appel à la Vercel Function qui utilise Firebase Admin SDK
-        const res = await fetch("/api/create-user", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name:   u.name,
-            email:  u.email,
-            role:   u.role,
-            tempPw: u.tempPw || "PharmaStock2025!",
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Erreur création utilisateur");
+
         // Log activité
         await addDoc(collection(db,"activities"), {
           action:"create", entity:"user",
           details:`Utilisateur créé : ${u.name} (${ROLES[u.role]?.label||u.role})`,
           userId, userName, createdAt:serverTimestamp(),
         });
-        return data;
+
+        return { success:true, uid:newUid };
       } catch(e) {
-        console.error("addUser error:", e);
-        throw e;
+        // Déconnecter l'instance secondaire en cas d'erreur aussi
+        try { await signOut(authSecondary); } catch(_){}
+        if(e.code === "auth/email-already-in-use")
+          throw new Error("Cet email est déjà utilisé.");
+        if(e.code === "auth/invalid-email")
+          throw new Error("Adresse email invalide.");
+        if(e.code === "auth/weak-password")
+          throw new Error("Mot de passe trop faible (min. 6 caractères).");
+        throw new Error(e.message || "Erreur inconnue");
       }
     },
     updateUser: async (id,u) => {
@@ -1634,7 +1639,8 @@ function Sidebar({open,onClose,page,onNav,user,unread,activeSupplier,onChangeSup
 // ─────────────────────────────────────────────
 // TOP BAR
 // ─────────────────────────────────────────────
-function TopBar({page,activeSupplier,onMenu,onAI,aiOpen,unread,onLogout,onChangeSupplier,onNav,onProfile,userName}){
+function TopBar({page,activeSupplier,onMenu,onAI,aiOpen,unread,onLogout,onChangeSupplier,onNav,onProfile,userName,currentUser}){
+  const hasAIAccess = can(currentUser,"assistant_ia","r");
   return(
     <div style={{background:"linear-gradient(90deg,#0f172a,#1e293b)",height:56,display:"flex",alignItems:"center",padding:"0 12px",gap:8,flexShrink:0,position:"sticky",top:0,zIndex:150,boxShadow:"0 2px 8px rgba(0,0,0,0.25)"}}>
       <button onClick={onMenu} style={{...btn(),background:"rgba(255,255,255,0.1)",color:"white",padding:"6px 11px",fontSize:17}}>☰</button>
@@ -1649,7 +1655,9 @@ function TopBar({page,activeSupplier,onMenu,onAI,aiOpen,unread,onLogout,onChange
       {unread>0&&page!=="messagerie"&&(
         <div onClick={()=>onNav&&onNav("messagerie")} style={{background:"#ef4444",color:"white",borderRadius:99,padding:"2px 7px",fontSize:11,fontWeight:700,cursor:"pointer",flexShrink:0}}>✉ {unread}</div>
       )}
-      <button onClick={onAI} style={{...btn(),background:aiOpen?"#7c3aed":"rgba(124,58,237,0.75)",color:"white",padding:"6px 10px",flexShrink:0}}>🤖</button>
+      {hasAIAccess && (
+        <button onClick={onAI} style={{...btn(),background:aiOpen?"#7c3aed":"rgba(124,58,237,0.75)",color:"white",padding:"6px 10px",flexShrink:0}}>🤖</button>
+      )}
       <button onClick={onProfile} title={"Mon profil : "+(userName||"")}
         style={{...btn(),background:"rgba(255,255,255,0.1)",color:"white",border:"1px solid rgba(255,255,255,0.2)",padding:"6px 10px",flexShrink:0,fontSize:15}}>👤</button>
       <button onClick={onLogout} title="Déconnexion"
@@ -1735,6 +1743,18 @@ function AIPanel({open,onClose,ai,onNav,store,page,activeSupplier,currentUser}){
   };
 
   if(!open) return null;
+  if(!can(currentUser,"assistant_ia","r")){
+    return(
+      <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={onClose}>
+        <div style={{background:"white",borderRadius:16,padding:24,maxWidth:340,textAlign:"center"}} onClick={e=>e.stopPropagation()}>
+          <div style={{fontSize:40,marginBottom:10}}>⛔</div>
+          <div style={{fontWeight:700,fontSize:15,color:"#1e293b",marginBottom:6}}>Accès non autorisé</div>
+          <div style={{fontSize:13,color:"#64748b",marginBottom:16}}>L'Assistant IA n'est pas activé pour votre compte. Contactez l'administrateur pour obtenir l'accès.</div>
+          <button onClick={onClose} style={{...btn(),background:"#0891b2",color:"white",width:"100%",padding:10}}>Fermer</button>
+        </div>
+      </div>
+    );
+  }
 
   // Construire le contexte complet avec données réelles
   const ctx = {
@@ -1917,10 +1937,11 @@ function ImageCarousel() {
       onMouseLeave={() => setPaused(false)}
       style={{
         position:"relative",
-        background: slide.imageUrl ? "none" : slide.bg,
-        backgroundImage: slide.imageUrl ? `url(${slide.imageUrl})` : "none",
-        backgroundSize: "cover",
+        backgroundColor: slide.imageUrl ? "transparent" : "transparent",
+        backgroundImage: slide.imageUrl ? `url(${slide.imageUrl})` : slide.bg,
+        backgroundSize: slide.imageUrl ? "cover" : "100% 100%",
         backgroundPosition: "center center",
+        backgroundRepeat: "no-repeat",
         overflow:"hidden",
         marginBottom:16,
         marginLeft:-16,
@@ -4730,10 +4751,26 @@ function UsersPage({store, currentUser}){
     setForm({name:u.name,email:u.email,role:u.role});
     setShow(true);
   };
+  const [saving,    setSaving]    = useState(false);
+  const [saveError, setSaveError] = useState("");
+
   const save = async () => {
-    if(editing) await store.updateUser(editing, form);
-    else await store.addUser(form);
-    setShow(false);
+    if(!form.name.trim()||!form.email.trim()){ setSaveError("⚠️ Nom et email obligatoires."); return; }
+    setSaving(true); setSaveError("");
+    try {
+      if(editing){
+        await store.updateUser(editing, form);
+      } else {
+        await store.addUser(form);
+      }
+      setShow(false);
+      setForm({name:"",email:"",role:"magasinier",tempPw:""});
+      setEditing(null);
+    } catch(e) {
+      setSaveError("❌ " + (e.message||"Erreur inconnue"));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const openPerms = (u) => {
@@ -4755,22 +4792,16 @@ function UsersPage({store, currentUser}){
   const handleResetPassword = async () => {
     if(!newPw || newPw.length < 6) { setPwMsg("⚠️ Minimum 6 caractères."); return; }
     try {
-      // Appel à la Vercel Function pour changer le mot de passe via Admin SDK
-      const res = await fetch("/api/reset-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          uid:         resetPwU.id,
-          email:       resetPwU.email,
-          newPassword: newPw,
-        }),
+      // Stocker le mot de passe provisoire dans Firestore
+      // L'utilisateur devra se reconnecter avec ce mot de passe
+      await store.updateUser(resetPwU.id, {
+        mustChangePw:  true,
+        provisionalPw: newPw,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Erreur");
-      // Mettre à jour mustChangePw dans Firestore côté client aussi
-      await store.updateUser(resetPwU.id, { mustChangePw: true, provisionalPw: newPw });
-      setPwMsg("✅ Mot de passe provisoire défini. L'utilisateur pourra se connecter avec ce mot de passe.");
-      setTimeout(()=>{ setResetPwU(null); setPwMsg(""); setNewPw(""); setShowPwReset(false); }, 3500);
+      // Envoyer aussi un email de réinitialisation en option
+      try { await sendPasswordResetEmail(auth, resetPwU.email); } catch(e){}
+      setPwMsg("✅ Mot de passe provisoire enregistré : " + newPw + " — Communiquez-le à l'utilisateur.");
+      setTimeout(()=>{ setResetPwU(null); setPwMsg(""); setNewPw(""); setShowPwReset(false); }, 5000);
     } catch(e) {
       setPwMsg("❌ Erreur : " + e.message);
     }
@@ -4819,9 +4850,10 @@ function UsersPage({store, currentUser}){
               </div>
             </div>
           )}
-          <button onClick={save} disabled={!form.name||!form.email}
-            style={{...btn(),background:"#0891b2",color:"white",width:"100%",padding:11}}>
-            {editing?"✏️ Enregistrer":"💾 Créer l'utilisateur"}
+          {saveError&&<div style={{background:"#fee2e2",color:"#b91c1c",borderRadius:8,padding:"8px 12px",fontSize:12,marginBottom:10}}>{saveError}</div>}
+          <button onClick={save} disabled={!form.name||!form.email||saving}
+            style={{...btn(),background:(!form.name||!form.email||saving)?"#cbd5e1":"#0891b2",color:"white",width:"100%",padding:11,fontSize:13}}>
+            {saving?"⏳ Création en cours...":(editing?"✏️ Enregistrer":"💾 Créer l'utilisateur")}
           </button>
         </Modal>
 
@@ -5258,7 +5290,10 @@ export default function App(){
   return(
     <div style={{display:"flex",flexDirection:"column",height:"100vh",background:"#f8fafc",fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",overflow:"hidden"}}>
       <TopBar page={page} activeSupplier={activeSupplier} onMenu={()=>setMenuOpen(true)}
-        onAI={()=>{setAiOpen(v=>!v);setMenuOpen(false);}} aiOpen={aiOpen}
+        onAI={()=>{
+          if(!can(user,"assistant_ia","r")){ alert("⛔ Accès à l'Assistant IA non autorisé. Contactez l'administrateur."); return; }
+          setAiOpen(v=>!v);setMenuOpen(false);
+        }} aiOpen={aiOpen} currentUser={user}
         unread={unread} onLogout={logout} onChangeSupplier={()=>setSupplierModal(true)} onNav={nav}
         onProfile={()=>setProfileOpen(true)} userName={user?.name||user?.email}/>
       <div id="main-scroll-area" style={{flex:1,overflowY:"auto"}}>
