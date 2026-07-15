@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ConfirmDelete, Modal } from "./ui/Modal";
 import { PageHeader } from "./ui/PageHeader";
-import { can } from "../permissions";
+import { can, visibleSuppliers } from "../permissions";
 import { btn, label, input, card } from "../helpers/styles";
 import { Badge } from "./ui/FormControls";
 
@@ -54,7 +54,7 @@ export function FournisseursPage({store,activeSupplier,onActivate,currentUser}){
       </Modal>
 
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
-        {store.suppliers.map(s=>{
+        {visibleSuppliers(currentUser,store.suppliers).map(s=>{
           const isActive=activeSupplier?.id===s.id;
           const depots=store.depots.filter(d=>d.supplierId===s.id);
           const prods=store.products.filter(p=>p.supplierId===s.id);

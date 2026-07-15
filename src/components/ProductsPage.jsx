@@ -3,7 +3,7 @@ import { downloadExcel } from "../helpers/exportUtils";
 import { scanDocumentWithAI } from "../hooks/useAI";
 import { PageHeader } from "./ui/PageHeader";
 import { btn, input, label, card } from "../helpers/styles";
-import { can } from "../permissions";
+import { can, hasSupplierAccess } from "../permissions";
 import { Alert, Badge } from "./ui/FormControls";
 import { BarcodeScanner, ScanReviewModal } from "./ui/ScanReviewModal";
 import { Modal, ConfirmDelete } from "./ui/Modal";
@@ -22,7 +22,13 @@ export function ProductsPage({store,activeSupplier,currentUser}){
   const [deletingProd,setDeletingProd]=useState(null);
   const scanProdRef=useRef(null);
 
-  const products=activeSupplier ? store.products.filter(p=>p.supplierId===activeSupplier.id) : store.products;
+  // Si aucun fournisseur actif choisi, on ne montre que les produits des
+  // fournisseurs auxquels l'utilisateur a accès (visibleSuppliers côté "tous"),
+  // pour éviter qu'un utilisateur restreint contourne sa restriction en
+  // désélectionnant simplement le fournisseur actif.
+  const products=activeSupplier
+    ? store.products.filter(p=>p.supplierId===activeSupplier.id)
+    : store.products.filter(p=>hasSupplierAccess(currentUser,p.supplierId));
   const filtered=search ? products.filter(p=>
     p.name.toLowerCase().includes(search.toLowerCase()) ||
     (p.barcode1&&p.barcode1.includes(search)) ||
@@ -34,21 +40,21 @@ export function ProductsPage({store,activeSupplier,currentUser}){
 
   const openAdd=()=>{
     setEditing(null);
-    setForm({name:"",price:"",unit:"",supplierId:activeSupplier?.id||"",barcode1:"",barcode2:"",barcode3:""});
+    setForm({name:"",price:"",unit:"",supplierId:activeSupplier?.id||"",barcode1:"",barcode2:"",barcode3:"",reorderThreshold:""});
     setShowAdd(true);
   };
   const openEdit=(p)=>{
     setEditing(p.id);
-    setForm({name:p.name,price:String(p.price||""),unit:p.unit||"",supplierId:p.supplierId,barcode1:p.barcode1||"",barcode2:p.barcode2||"",barcode3:p.barcode3||""});
+    setForm({name:p.name,price:String(p.price||""),unit:p.unit||"",supplierId:p.supplierId,barcode1:p.barcode1||"",barcode2:p.barcode2||"",barcode3:p.barcode3||"",reorderThreshold:p.reorderThreshold!=null?String(p.reorderThreshold):""});
     setShowAdd(true);
   };
   const openDuplicate=(p)=>{
     setEditing(null);
-    setForm({name:p.name,price:String(p.price||""),unit:p.unit||"",supplierId:activeSupplier?.id||p.supplierId,barcode1:"",barcode2:"",barcode3:""});
+    setForm({name:p.name,price:String(p.price||""),unit:p.unit||"",supplierId:activeSupplier?.id||p.supplierId,barcode1:"",barcode2:"",barcode3:"",reorderThreshold:p.reorderThreshold!=null?String(p.reorderThreshold):""});
     setShowAdd(true);
   };
   const save=()=>{
-    const data={...form,price:Number(form.price)||0,unit:form.unit||"Boîte",supplierId:form.supplierId||activeSupplier?.id||""};
+    const data={...form,price:Number(form.price)||0,unit:form.unit||"Boîte",supplierId:form.supplierId||activeSupplier?.id||"",reorderThreshold:form.reorderThreshold===""?null:Number(form.reorderThreshold)};
     if(editing) store.updateProduct(editing,data); else store.addProduct(data);
     setShowAdd(false);
   };
@@ -231,6 +237,14 @@ export function ProductsPage({store,activeSupplier,currentUser}){
             {store.suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
           {!form.supplierId&&activeSupplier&&<div style={{fontSize:11,color:"#0891b2",marginTop:4}}>Par défaut : {activeSupplier.name}</div>}
+        </div>
+
+        <div style={{marginBottom:16}}>
+          <label style={label}>Seuil de réapprovisionnement <span style={{fontWeight:400,color:"#94a3b8",fontSize:10}}>(optionnel)</span></label>
+          <input style={input} type="number" min="0" value={form.reorderThreshold||""}
+            onChange={e=>setForm(f=>({...f,reorderThreshold:e.target.value}))}
+            placeholder="Ex : 20 — alerte si le stock descend en dessous"/>
+          <div style={{fontSize:11,color:"#94a3b8",marginTop:3}}>Utilisé dans Statistiques → « Produits à commander »</div>
         </div>
 
         {/* ── Codes barres (optionnels) ── */}

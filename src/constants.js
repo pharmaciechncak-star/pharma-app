@@ -1,11 +1,12 @@
 export const ROLES = {
-  admin:         { label: "Administrateur",   color: "#7c3aed" },
-  gestionnaire:  { label: "Gestionnaire",     color: "#0891b2" },
-  pharmacien:    { label: "Pharmacien",       color: "#0d9488" },
-  magasinier:    { label: "Magasinier",       color: "#059669" },
-  comptable:     { label: "Comptable",        color: "#d97706" },
-  admin_service: { label: "Admin Service",    color: "#dc2626" },
-  agent_service: { label: "Agent Service",    color: "#ea580c" },
+  admin:          { label: "Administrateur",   color: "#7c3aed" },
+  admin_pharmacie:{ label: "Admin Pharmacie",  color: "#9333ea" },
+  gestionnaire:   { label: "Gestionnaire",     color: "#0891b2" },
+  pharmacien:     { label: "Pharmacien",       color: "#0d9488" },
+  magasinier:     { label: "Magasinier",       color: "#059669" },
+  comptable:      { label: "Comptable",        color: "#d97706" },
+  admin_service:  { label: "Admin Service",    color: "#dc2626" },
+  agent_service:  { label: "Agent Service",    color: "#ea580c" },
 };
 
 export const SECTIONS = [
@@ -38,12 +39,13 @@ export const P0={r:0,w:0,d:0}, P1={r:1,w:0,d:0}, P2={r:1,w:1,d:0}, P3={r:1,w:1,d
 
 export const DEFAULT_PERMS = {
   admin:         { entrees:P3,retours:P3,inventaire:P3,factures:P3,"hist-inv":P3,"hist-fact":P3,messagerie:P3,produits:P3,fournisseurs:P3,depots:P3,activites:P3,assistant_ia:P2,services:P3,transferts:P3,consommations:P3,"retours-service":P3,receptions:P3,"stock-service":P1,statistiques:P1 },
+  admin_pharmacie:{ entrees:P3,retours:P3,inventaire:P3,factures:P3,"hist-inv":P3,"hist-fact":P3,messagerie:P3,produits:P3,fournisseurs:P3,depots:P3,activites:P0,assistant_ia:P0,services:P1,transferts:P2,consommations:P1,"retours-service":P1,receptions:P2,"stock-service":P2,statistiques:P1 },
   gestionnaire:  { entrees:P2,retours:P2,inventaire:P2,factures:P2,"hist-inv":P1,"hist-fact":P1,messagerie:P2,produits:P2,fournisseurs:P2,depots:P2,activites:P0,assistant_ia:P0,services:P1,transferts:P2,consommations:P1,"retours-service":P2,receptions:P2,"stock-service":P1,statistiques:P1 },
   pharmacien:    { entrees:P2,retours:P2,inventaire:P2,factures:P2,"hist-inv":P2,"hist-fact":P2,messagerie:P2,produits:P2,fournisseurs:P2,depots:P2,activites:P0,assistant_ia:P0,services:P1,transferts:P2,consommations:P1,"retours-service":P2,receptions:P2,"stock-service":P1,statistiques:P0 },
   magasinier:    { entrees:P2,retours:P2,inventaire:P0,factures:P0,"hist-inv":P0,"hist-fact":P0,messagerie:P0,produits:P1,fournisseurs:P0,depots:P1,activites:P0,assistant_ia:P0,services:P0,transferts:P0,consommations:P0,"retours-service":P0,receptions:P0,"stock-service":P0 },
   comptable:     { entrees:P1,retours:P1,inventaire:P2,factures:P2,"hist-inv":P1,"hist-fact":P1,messagerie:P2,produits:P1,fournisseurs:P1,depots:P1,activites:P0,assistant_ia:P0,services:P1,transferts:P1,consommations:P1,"retours-service":P1,receptions:P1,"stock-service":P1,statistiques:P1 },
-  admin_service: { entrees:P0,retours:P0,inventaire:P0,factures:P0,"hist-inv":P0,"hist-fact":P0,messagerie:P2,produits:P1,fournisseurs:P0,depots:P0,activites:P0,assistant_ia:P0,services:P1,transferts:P1,consommations:P3,"retours-service":P2,receptions:P1,"stock-service":P1,statistiques:P0 },
-  agent_service: { entrees:P0,retours:P0,inventaire:P0,factures:P0,"hist-inv":P0,"hist-fact":P0,messagerie:P2,produits:P1,fournisseurs:P0,depots:P0,activites:P0,assistant_ia:P0,services:P1,transferts:P0,consommations:P2,"retours-service":P0,receptions:P0,"stock-service":P1 },
+  admin_service: { entrees:P0,retours:P0,inventaire:P0,factures:P0,"hist-inv":P0,"hist-fact":P0,messagerie:P2,produits:P1,fournisseurs:P0,depots:P0,activites:P0,assistant_ia:P0,services:P2,transferts:P2,consommations:P3,"retours-service":P2,receptions:P1,"stock-service":P1,statistiques:P1 },
+  agent_service: { entrees:P0,retours:P0,inventaire:P0,factures:P0,"hist-inv":P0,"hist-fact":P0,messagerie:P2,produits:P1,fournisseurs:P0,depots:P0,activites:P0,assistant_ia:P0,services:P1,transferts:P2,consommations:P2,"retours-service":P0,receptions:P0,"stock-service":P1 },
 };
 
 export const PAGE_LABELS = {

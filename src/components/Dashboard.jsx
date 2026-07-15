@@ -3,14 +3,15 @@ import { loadSlides, saveSlides, DEFAULT_CAROUSEL_SLIDES, ImageCarousel } from "
 import { PageHeader } from "./ui/PageHeader";
 import { monthLabel, fmtDate } from "../constants";
 import { card } from "../helpers/styles";
+import { hasSupplierAccess } from "../permissions";
 
 export function Dashboard({store,activeSupplier,activeDepot,currentUser}){
   const {entries,returns,inventories,invoices,products,stock,depots,suppliers}=store;
-  const supProds=activeSupplier ? products.filter(p=>p.supplierId===activeSupplier.id) : products;
+  const supProds=activeSupplier ? products.filter(p=>p.supplierId===activeSupplier.id) : products.filter(p=>hasSupplierAccess(currentUser,p.supplierId));
   const totalStock=supProds.reduce((a,p)=>a+(stock[p.id]||0),0);
   const month=new Date().getMonth(), year=new Date().getFullYear();
-  const mEntries=entries.filter(e=>new Date(e.date).getMonth()===month&&new Date(e.date).getFullYear()===year&&(!activeSupplier||e.supplierId===activeSupplier.id));
-  const mReturns=returns.filter(r=>new Date(r.date).getMonth()===month&&new Date(r.date).getFullYear()===year&&(!activeSupplier||r.supplierId===activeSupplier.id));
+  const mEntries=entries.filter(e=>new Date(e.date).getMonth()===month&&new Date(e.date).getFullYear()===year&&(activeSupplier?e.supplierId===activeSupplier.id:hasSupplierAccess(currentUser,e.supplierId)));
+  const mReturns=returns.filter(r=>new Date(r.date).getMonth()===month&&new Date(r.date).getFullYear()===year&&(activeSupplier?r.supplierId===activeSupplier.id:hasSupplierAccess(currentUser,r.supplierId)));
   const lowStock=supProds.filter(p=>(stock[p.id]||0)<30);
   const isAdmin = currentUser?.role==="admin";
 
@@ -100,7 +101,7 @@ export function Dashboard({store,activeSupplier,activeDepot,currentUser}){
     {label:"Stock Total",value:totalStock.toLocaleString(),icon:"📦",color:"#38bdf8"},
     {label:"Entrées ce mois",value:mEntries.length,icon:"📥",color:"#4ade80"},
     {label:"Retours ce mois",value:mReturns.length,icon:"↩️",color:"#fb923c"},
-    {label:"Inventaires",value:inventories.filter(i=>!activeSupplier||i.supplierId===activeSupplier?.id).length,icon:"🗂️",color:"#a78bfa"},
+    {label:"Inventaires",value:inventories.filter(i=>activeSupplier?i.supplierId===activeSupplier?.id:hasSupplierAccess(currentUser,i.supplierId)).length,icon:"🗂️",color:"#a78bfa"},
   ];
 
   return(
@@ -290,7 +291,7 @@ export function Dashboard({store,activeSupplier,activeDepot,currentUser}){
       {/* Activités récentes */}
       <div style={{...card}}>
         <div style={{fontWeight:700,color:"#1e293b",marginBottom:12,fontSize:14}}>🕐 Activités récentes</div>
-        {[...entries,...returns].filter(x=>!activeSupplier||x.supplierId===activeSupplier?.id).slice(0,5).map(x=>(
+        {[...entries,...returns].filter(x=>activeSupplier?x.supplierId===activeSupplier?.id:hasSupplierAccess(currentUser,x.supplierId)).slice(0,5).map(x=>(
           <div key={x.id} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #f8fafc",fontSize:12}}>
             <div><span style={{marginRight:6}}>{x.type==="entry"?"📥":"↩️"}</span><span style={{color:"#374151"}}>Bon #{x.id.slice(-5)}</span></div>
             <span style={{color:"#94a3b8"}}>{fmtDate(x.date)}</span>

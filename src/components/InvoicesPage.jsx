@@ -5,12 +5,12 @@ import { imageUrlToDataURL } from "../helpers/fileUtils";
 import { IMG_CARDIO_SRC, IMG_LABEL_SRC, IMG_CHNCAK_SRC, IMG_LOGO_CARDIO_B64, IMG_LABEL_QUALITE_B64, IMG_LOGO_CHNCAK_B64 } from "../images";
 import { PageHeader } from "./ui/PageHeader";
 import { btn, card } from "../helpers/styles";
-import { can } from "../permissions";
+import { can, hasSupplierAccess } from "../permissions";
 import { Badge } from "./ui/FormControls";
 
 export function InvoicesPage({store,activeSupplier,onNav,currentUser}){
   const [sel,setSel]=useState(null);
-  const invoices=activeSupplier ? store.invoices.filter(i=>i.supplierId===activeSupplier.id) : store.invoices;
+  const invoices=activeSupplier ? store.invoices.filter(i=>i.supplierId===activeSupplier.id) : store.invoices.filter(i=>hasSupplierAccess(currentUser,i.supplierId));
 
   // ── Génération Excel Situation (format CHNCAK) ──
   const downloadSituationExcel = async (inv) => {

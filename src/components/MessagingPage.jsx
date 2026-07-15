@@ -4,13 +4,14 @@ import { PageHeader } from "./ui/PageHeader";
 import { Alert } from "./ui/FormControls";
 import { card, label, input, btn } from "../helpers/styles";
 import { fmtDate } from "../constants";
+import { hasSupplierAccess } from "../permissions";
 
-export function MessagingPage({store,activeSupplier,pendingInvoiceId,onClearPending}){
+export function MessagingPage({store,activeSupplier,pendingInvoiceId,onClearPending,currentUser}){
   const [form,setForm]=useState({subject:"",body:"",attachInvoice:"",extraRecipients:""});
   const [sent,setSent]=useState(false);
   const [openMsg,setOpenMsg]=useState(null);
-  const invoices=activeSupplier ? store.invoices.filter(i=>i.supplierId===activeSupplier.id) : store.invoices;
-  const messages=activeSupplier ? store.messages.filter(m=>m.supplierId===activeSupplier.id) : store.messages;
+  const invoices=activeSupplier ? store.invoices.filter(i=>i.supplierId===activeSupplier.id) : store.invoices.filter(i=>hasSupplierAccess(currentUser,i.supplierId));
+  const messages=activeSupplier ? store.messages.filter(m=>m.supplierId===activeSupplier.id) : store.messages.filter(m=>hasSupplierAccess(currentUser,m.supplierId));
 
   // Pré-remplir si on arrive depuis une facture
   useEffect(()=>{

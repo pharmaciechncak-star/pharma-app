@@ -16,7 +16,7 @@ import { HistoryPage } from "./components/ui/HistoryPage";
 import { card, label, input, btn } from "./helpers/styles";
 import { pdfHeader, downloadPDF } from "./helpers/pdfUtils";
 import { openMailClient } from "./email";
-import { can } from "./permissions";
+import { can, visibleSuppliers, hasSupplierAccess } from "./permissions";
 import { MessagingPage } from "./components/MessagingPage";
 import { ProductsPage } from "./components/ProductsPage";
 import { ServicesPage } from "./components/services/ServicesPage";
@@ -107,13 +107,21 @@ export default function App(){
   // (au cas où le nom/email du fournisseur aurait changé)
   useEffect(()=>{
     if(!activeSupplier || store.suppliers.length === 0) return;
+    // Si l'admin a restreint entre-temps les fournisseurs autorisés pour cet
+    // utilisateur, et que le fournisseur actif sauvegardé n'en fait plus partie,
+    // on le désélectionne pour éviter un accès résiduel non autorisé.
+    if (!hasSupplierAccess(user, activeSupplier.id)) {
+      setActiveSupplierState(null);
+      localStorage.removeItem("pharma_active_supplier");
+      return;
+    }
     const fresh = store.suppliers.find(s => s.id === activeSupplier.id);
     if(fresh && (fresh.name !== activeSupplier.name || fresh.email !== activeSupplier.email)){
       setActiveSupplierState(fresh);
       localStorage.setItem("pharma_active_supplier", JSON.stringify(fresh));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[store.suppliers]);
+  },[store.suppliers, user]);
 
   const setActiveSupplier = async (s) => {
     setActiveSupplierState(s);
@@ -293,7 +301,7 @@ export default function App(){
         </div>
       </Modal>
 
-      <SupplierSelector open={supplierModal} suppliers={store.suppliers} current={activeSupplier}
+      <SupplierSelector open={supplierModal} suppliers={visibleSuppliers(user, store.suppliers)} current={activeSupplier}
         onSelect={setActiveSupplier} onClose={()=>setSupplierModal(false)}/>
     </div>
   );

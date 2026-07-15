@@ -4,7 +4,7 @@ import { IMG_CARDIO_SRC, IMG_LABEL_SRC, IMG_CHNCAK_SRC } from "../../images";
 import { imageUrlToDataURL } from "../../helpers/fileUtils";
 import { PageHeader } from "../ui/PageHeader";
 import { btn, card, label, input } from "../../helpers/styles";
-import { can } from "../../permissions";
+import { can, visibleSuppliers, hasSupplierAccess } from "../../permissions";
 import { Alert } from "../ui/FormControls";
 import { BarcodeScanner } from "../ui/ScanReviewModal";
 
@@ -21,11 +21,11 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
   const searchRef=useRef(null);
   const lastQtyRef=useRef(null);
 
-  const suppProds=activeSupplier?store.products.filter(p=>p.supplierId===activeSupplier.id):store.products;
+  const suppProds=activeSupplier?store.products.filter(p=>p.supplierId===activeSupplier.id):store.products.filter(p=>hasSupplierAccess(currentUser,p.supplierId));
   const filtered=search.trim()
     ?suppProds.filter(p=>p.name.toLowerCase().includes(search.toLowerCase())||[p.barcode1,p.barcode2,p.barcode3].some(b=>b&&b.includes(search)))
     :suppProds;
-  const receptions=(store.receptions||[]).filter(r=>!activeSupplier||r.supplierId===activeSupplier.id);
+  const receptions=(store.receptions||[]).filter(r=>activeSupplier?r.supplierId===activeSupplier.id:hasSupplierAccess(currentUser,r.supplierId));
 
   const openNew=()=>{
     setEditing(null);
@@ -191,7 +191,7 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
               {activeSupplier?<div style={{...input,background:"#f0fdf4",color:"#065f46",fontWeight:600}}>🏢 {activeSupplier.name}</div>:
               <select style={input} value={form.supplierId} onChange={e=>{const s=store.suppliers.find(x=>x.id===e.target.value);setForm(f=>({...f,supplierId:e.target.value,supplierName:s?.name||""}));}}>
                 <option value="">— Choisir —</option>
-                {store.suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                {visibleSuppliers(currentUser,store.suppliers).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
               </select>}
             </div>
             {/* Recherche produit */}

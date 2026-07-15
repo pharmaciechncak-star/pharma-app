@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { PageHeader } from "../ui/PageHeader";
-import { can } from "../../permissions";
+import { can, visibleServices, hasServiceAccess } from "../../permissions";
 import { btn, card, label, input } from "../../helpers/styles";
 import { Alert } from "../ui/FormControls";
 
@@ -47,7 +47,7 @@ export function RetoursServicePage({store,currentUser}){
     setSaving(false);
   };
 
-  const returns=(store.svcReturns||[]).filter(r=>!isServiceAgent||!userServiceId||r.serviceId===userServiceId);
+  const returns=(store.svcReturns||[]).filter(r=>(!isServiceAgent||!userServiceId||r.serviceId===userServiceId)&&hasServiceAccess(currentUser,r.serviceId));
 
   return(
     <div style={{padding:0}}>
@@ -64,7 +64,7 @@ export function RetoursServicePage({store,currentUser}){
                 <label style={label}>Service</label>
                 <select style={input} value={form.serviceId} onChange={e=>setForm(f=>({...f,serviceId:e.target.value,items:[]}))}>
                   <option value="">— Choisir —</option>
-                  {(store.services||[]).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                  {visibleServices(currentUser,store.services||[]).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
             )}

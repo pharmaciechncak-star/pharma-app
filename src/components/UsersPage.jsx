@@ -15,21 +15,27 @@ export function UsersPage({store, currentUser}){
   const [resetPwU,   setResetPwU]   = useState(null);  // user dont on reset le mdp
   const [newPw,      setNewPw]      = useState("");
   const [pwMsg,      setPwMsg]      = useState("");
-  const [form,       setForm]       = useState({name:"",email:"",role:"magasinier",tempPw:""});
+  const [form,       setForm]       = useState({name:"",email:"",role:"magasinier",tempPw:"",allowedServices:[],allowedSuppliers:[]});
   const [showTempPw, setShowTempPw] = useState(false);
   const [permForm,   setPermForm]   = useState({});
   const [showPwReset,setShowPwReset]= useState(false);
 
   const openAdd = () => {
     setEditing(null);
-    setForm({name:"",email:"",role:"magasinier",tempPw:""});
+    setForm({name:"",email:"",role:"magasinier",tempPw:"",allowedServices:[],allowedSuppliers:[]});
     setShowTempPw(false);
     setShow(true);
   };
   const openEdit = (u) => {
     setEditing(u.id);
-    setForm({name:u.name,email:u.email,role:u.role});
+    setForm({name:u.name,email:u.email,role:u.role,allowedServices:u.allowedServices||[],allowedSuppliers:u.allowedSuppliers||[]});
     setShow(true);
+  };
+  const toggleAllowed = (field, id) => {
+    setForm(f => {
+      const cur = f[field]||[];
+      return { ...f, [field]: cur.includes(id) ? cur.filter(x=>x!==id) : [...cur, id] };
+    });
   };
   const [saving,    setSaving]    = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -44,7 +50,7 @@ export function UsersPage({store, currentUser}){
         await store.addUser(form);
       }
       setShow(false);
-      setForm({name:"",email:"",role:"magasinier",tempPw:""});
+      setForm({name:"",email:"",role:"magasinier",tempPw:"",allowedServices:[],allowedSuppliers:[]});
       setEditing(null);
     } catch(e) {
       setSaveError("❌ " + (e.message||"Erreur inconnue"));
@@ -109,6 +115,34 @@ export function UsersPage({store, currentUser}){
             <select style={input} value={form.role} onChange={e=>setForm(f=>({...f,role:e.target.value}))}>
               {Object.entries(ROLES).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
             </select>
+          </div>
+
+          {/* Restriction par service — laisser vide = accès à tous les services autorisés par le rôle */}
+          <div style={{marginBottom:12}}>
+            <label style={label}>Services autorisés <span style={{fontWeight:400,color:"#94a3b8",fontSize:10}}>(aucun coché = tous)</span></label>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,background:"#f8fafc",borderRadius:8,padding:10,maxHeight:120,overflowY:"auto"}}>
+              {(store.services||[]).length===0&&<div style={{fontSize:11,color:"#94a3b8"}}>Aucun service créé.</div>}
+              {(store.services||[]).map(s=>(
+                <label key={s.id} style={{display:"flex",alignItems:"center",gap:4,fontSize:11,background:form.allowedServices.includes(s.id)?"#eef2ff":"white",border:"1px solid "+(form.allowedServices.includes(s.id)?"#818cf8":"#e2e8f0"),borderRadius:6,padding:"3px 8px",cursor:"pointer"}}>
+                  <input type="checkbox" checked={form.allowedServices.includes(s.id)} onChange={()=>toggleAllowed("allowedServices",s.id)}/>
+                  {s.name}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Restriction par fournisseur — laisser vide = accès à tous les fournisseurs autorisés par le rôle */}
+          <div style={{marginBottom:12}}>
+            <label style={label}>Fournisseurs autorisés <span style={{fontWeight:400,color:"#94a3b8",fontSize:10}}>(aucun coché = tous)</span></label>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,background:"#f8fafc",borderRadius:8,padding:10,maxHeight:120,overflowY:"auto"}}>
+              {(store.suppliers||[]).length===0&&<div style={{fontSize:11,color:"#94a3b8"}}>Aucun fournisseur créé.</div>}
+              {(store.suppliers||[]).map(s=>(
+                <label key={s.id} style={{display:"flex",alignItems:"center",gap:4,fontSize:11,background:form.allowedSuppliers.includes(s.id)?"#eef2ff":"white",border:"1px solid "+(form.allowedSuppliers.includes(s.id)?"#818cf8":"#e2e8f0"),borderRadius:6,padding:"3px 8px",cursor:"pointer"}}>
+                  <input type="checkbox" checked={form.allowedSuppliers.includes(s.id)} onChange={()=>toggleAllowed("allowedSuppliers",s.id)}/>
+                  {s.name}
+                </label>
+              ))}
+            </div>
           </div>
           {!editing&&(
             <div style={{marginBottom:16}}>

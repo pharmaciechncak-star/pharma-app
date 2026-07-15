@@ -1,26 +1,13 @@
 import { useState } from "react";
 import { PageHeader } from "../ui/PageHeader";
 import { card, label, input, btn } from "../../helpers/styles";
+import { getPharmacyStock2, getServiceStock2, sumItemsQty, sumConfirmedQty } from "../../helpers/stock2";
+import { visibleServices } from "../../permissions";
 
 export function StockServicePage({store,currentUser}){
   const [filterSuppliers,setFilterSuppliers]=useState([]);
   const [filterService,setFilterService]=useState("pharmacie"); // "pharmacie" | serviceId
   const [search,setSearch]=useState("");
-
-  // Stock pharmacie par produit = Σ réceptions - Σ transferts vers services
-  const getPharmacieStock=(productId)=>{
-    const recu   = (store.receptions||[]).reduce((s,r)=>s+(r.items||[]).find(i=>i.productId===productId)?Number((r.items||[]).find(i=>i.productId===productId)?.qty||0):0,0);
-    const transf = (store.transfers||[]).reduce((s,t)=>s+(t.items||[]).find(i=>i.productId===productId)?Number((t.items||[]).find(i=>i.productId===productId)?.qty||0):0,0);
-    return recu - transf;
-  };
-
-  // Stock service = Σ transferts reçus - Σ consommations - Σ retours service
-  const getServiceStock=(productId,serviceId)=>{
-    const transf = (store.transfers||[]).filter(t=>t.serviceId===serviceId).reduce((s,t)=>s+(t.items||[]).find(i=>i.productId===productId)?Number((t.items||[]).find(i=>i.productId===productId)?.qty||0):0,0);
-    const conso  = (store.consumptions||[]).filter(c=>c.serviceId===serviceId).reduce((s,c)=>s+(c.items||[]).find(i=>i.productId===productId)?Number((c.items||[]).find(i=>i.productId===productId)?.qty||0):0,0);
-    const retour = (store.svcReturns||[]).filter(r=>r.serviceId===serviceId).reduce((s,r)=>s+(r.items||[]).find(i=>i.productId===productId)?Number((r.items||[]).find(i=>i.productId===productId)?.qty||0):0,0);
-    return transf - conso - retour;
-  };
 
   // Produits filtrés
   const allProds = filterSuppliers.length>0
@@ -43,7 +30,7 @@ export function StockServicePage({store,currentUser}){
             <label style={label}>Vue</label>
             <select style={input} value={filterService} onChange={e=>setFilterService(e.target.value)}>
               <option value="pharmacie">📦 Stock Pharmacie (réceptions − transferts)</option>
-              {(store.services||[]).map(s=><option key={s.id} value={s.id}>🏥 {s.name} (transferts − consommations)</option>)}
+              {visibleServices(currentUser,store.services||[]).map(s=><option key={s.id} value={s.id}>🏥 {s.name} (transferts − consommations)</option>)}
             </select>
           </div>
           <div style={{marginBottom:8}}>
@@ -87,14 +74,14 @@ export function StockServicePage({store,currentUser}){
                 {filteredProds.map((p,i)=>{
                   let stockVal,col1,col2;
                   if(isPharmacieView){
-                    const recu  =(store.receptions||[]).reduce((s,r)=>s+(r.items||[]).find(it=>it.productId===p.id)?Number((r.items.find(it=>it.productId===p.id)||{}).qty||0):0,0);
-                    const transf=(store.transfers||[]).reduce((s,t)=>s+(t.items||[]).find(it=>it.productId===p.id)?Number((t.items.find(it=>it.productId===p.id)||{}).qty||0):0,0);
-                    stockVal=recu-transf; col1=recu; col2=transf;
+                    const recu  = sumItemsQty(store.receptions, p.id);
+                    const transf= sumItemsQty(store.transfers, p.id);
+                    stockVal=getPharmacyStock2(store,p.id); col1=recu; col2=transf;
                   } else {
-                    const transf =(store.transfers||[]).filter(t=>t.serviceId===filterService).reduce((s,t)=>s+(t.items||[]).find(it=>it.productId===p.id)?Number((t.items.find(it=>it.productId===p.id)||{}).qty||0):0,0);
-                    const conso  =(store.consumptions||[]).filter(c=>c.serviceId===filterService).reduce((s,c)=>s+(c.items||[]).find(it=>it.productId===p.id)?Number((c.items.find(it=>it.productId===p.id)||{}).qty||0):0,0);
-                    const retour =(store.svcReturns||[]).filter(r=>r.serviceId===filterService).reduce((s,r)=>s+(r.items||[]).find(it=>it.productId===p.id)?Number((r.items.find(it=>it.productId===p.id)||{}).qty||0):0,0);
-                    stockVal=transf-conso-retour; col1=transf; col2=conso+retour;
+                    const transf = sumConfirmedQty((store.transfers||[]).filter(t=>t.serviceId===filterService), p.id);
+                    const conso  = sumItemsQty((store.consumptions||[]).filter(c=>c.serviceId===filterService), p.id);
+                    const retour = sumItemsQty((store.svcReturns||[]).filter(r=>r.serviceId===filterService), p.id);
+                    stockVal=getServiceStock2(store,p.id,filterService); col1=transf; col2=conso+retour;
                   }
                   const isAlert=stockVal<=0;
                   return(

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ConfirmDelete, Modal } from "./ui/Modal";
 import { PageHeader } from "./ui/PageHeader";
-import { can } from "../permissions";
+import { can, visibleSuppliers, hasSupplierAccess } from "../permissions";
 import { btn, label, input, card } from "../helpers/styles";
 
 export function DepotsPage({store,activeSupplier,currentUser}){
@@ -9,7 +9,7 @@ export function DepotsPage({store,activeSupplier,currentUser}){
   const [editing,setEditing]=useState(null);
   const [form,setForm]=useState({name:"",location:"",supplierId:"",isPrincipal:false});
   const [deletingDepot,setDeletingDepot]=useState(null);
-  const depots=(activeSupplier ? store.depots.filter(d=>d.supplierId===activeSupplier.id) : store.depots).filter(d=>!d.isPrincipal && !d.isAutoCreated);
+  const depots=(activeSupplier ? store.depots.filter(d=>d.supplierId===activeSupplier.id) : store.depots.filter(d=>hasSupplierAccess(currentUser,d.supplierId))).filter(d=>!d.isPrincipal && !d.isAutoCreated);
   const getSupplierName=id=>store.suppliers.find(s=>s.id===id)?.name||"—";
 
   const open=(d=null)=>{
@@ -83,7 +83,7 @@ export function DepotsPage({store,activeSupplier,currentUser}){
             <select style={input} value={form.supplierId}
               onChange={e=>setForm(f=>({...f,supplierId:e.target.value}))}>
               <option value="">— Sélectionner un fournisseur —</option>
-              {store.suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+              {visibleSuppliers(currentUser,store.suppliers).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           )}
           {store.suppliers.length===0&&(

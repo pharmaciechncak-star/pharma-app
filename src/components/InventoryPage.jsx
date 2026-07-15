@@ -8,6 +8,7 @@ import { ScanReviewModal } from "./ui/ScanReviewModal";
 import { downloadExcel } from "../helpers/exportUtils";
 import { pdfHeader, downloadPDF } from "../helpers/pdfUtils";
 import { PrintModal } from "./print/PrintTemplates";
+import { hasSupplierAccess } from "../permissions";
 import { LOGO_B64 } from "../images";
 
 export function InventoryPage({store,activeSupplier,currentUser}){
@@ -62,14 +63,14 @@ export function InventoryPage({store,activeSupplier,currentUser}){
     ? store.depots.find(d=>d.supplierId===activeSupplier.id && (d.isPrincipal||d.isAutoCreated))
     : null;
   // All products of this supplier (no depotId filter — same products in all depots)
-  const suppProds = activeSupplier ? store.products.filter(p=>p.supplierId===activeSupplier.id) : store.products;
+  const suppProds = activeSupplier ? store.products.filter(p=>p.supplierId===activeSupplier.id) : store.products.filter(p=>hasSupplierAccess(currentUser,p.supplierId));
 
   const m=new Date().getMonth(), y=new Date().getFullYear();
 
   // Compute rows for one depot
   const computeDepot=(dId, phys)=>{
-    const mEnts=store.entries.filter(e=>new Date(e.date).getMonth()===m&&new Date(e.date).getFullYear()===y&&e.depotId===dId&&(!activeSupplier||e.supplierId===activeSupplier.id));
-    const mRets=store.returns.filter(r=>new Date(r.date).getMonth()===m&&new Date(r.date).getFullYear()===y&&r.depotId===dId&&(!activeSupplier||r.supplierId===activeSupplier.id));
+    const mEnts=store.entries.filter(e=>new Date(e.date).getMonth()===m&&new Date(e.date).getFullYear()===y&&e.depotId===dId&&(activeSupplier?e.supplierId===activeSupplier.id:hasSupplierAccess(currentUser,e.supplierId)));
+    const mRets=store.returns.filter(r=>new Date(r.date).getMonth()===m&&new Date(r.date).getFullYear()===y&&r.depotId===dId&&(activeSupplier?r.supplierId===activeSupplier.id:hasSupplierAccess(currentUser,r.supplierId)));
     return suppProds.map(p=>{
       const old=store.stock[p.id]||0;
       const ent=mEnts.reduce((s,e)=>s+(e.items?.find(i=>i.productId===p.id)?.qty||0)*1,0);
@@ -176,8 +177,8 @@ export function InventoryPage({store,activeSupplier,currentUser}){
       // Global mode: treat as single virtual depot containing all products
       const rows=suppProds.map(p=>{
         const m=new Date().getMonth(), y=new Date().getFullYear();
-        const mEnts=store.entries.filter(e=>new Date(e.date).getMonth()===m&&new Date(e.date).getFullYear()===y&&(!activeSupplier||e.supplierId===activeSupplier.id));
-        const mRets=store.returns.filter(r=>new Date(r.date).getMonth()===m&&new Date(r.date).getFullYear()===y&&(!activeSupplier||r.supplierId===activeSupplier.id));
+        const mEnts=store.entries.filter(e=>new Date(e.date).getMonth()===m&&new Date(e.date).getFullYear()===y&&(activeSupplier?e.supplierId===activeSupplier.id:hasSupplierAccess(currentUser,e.supplierId)));
+        const mRets=store.returns.filter(r=>new Date(r.date).getMonth()===m&&new Date(r.date).getFullYear()===y&&(activeSupplier?r.supplierId===activeSupplier.id:hasSupplierAccess(currentUser,r.supplierId)));
         const old=store.stock[p.id]||0;
         const ent=mEnts.reduce((s,e)=>s+(e.items?.find(i=>i.productId===p.id)?.qty||0)*1,0);
         const ret=mRets.reduce((s,r)=>s+(r.items?.find(i=>i.productId===p.id)?.qty||0)*1,0);

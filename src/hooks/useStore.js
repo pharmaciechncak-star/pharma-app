@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { signOut, createUserWithEmailAndPassword } from "firebase/auth";
-import { collection, doc, addDoc, getDoc, updateDoc, deleteDoc, query, orderBy, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
+import { collection, doc, addDoc, getDoc, getDocs, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import { db, authSecondary } from "../firebase";
 import { ROLES } from "../constants";
 
@@ -28,6 +28,65 @@ export async function adjustStockFB(items, sign) {
   }
 }
 
+// ─────────────────────────────────────────────
+// Lots de péremption (FEFO) — domaine Stock (2) uniquement
+// ─────────────────────────────────────────────
+// Un lot vit soit à la pharmacie ("pharmacy"), soit chez un service
+// ("service:<serviceId>"). Il est créé à la réception, migré (pharmacie→service)
+// lors d'un transfert, et réduit lors d'une consommation ou d'un retour service.
+// Ce système est indépendant du Stock (1) — bons d'entrée/retour/inventaire —
+// qui reste un simple compteur agrégé (products.stockQty), sans notion de lot.
+
+function locPharmacy() { return "pharmacy"; }
+function locService(serviceId) { return "service:" + serviceId; }
+
+export async function createBatch({ productId, productName, lot, expiry, qty, location, source, sourceRef, userId, userName }) {
+  if (!productId || !Number(qty)) return null;
+  const ref = await addDoc(collection(db, "batches"), {
+    productId, productName: productName || "",
+    lot: lot || "", expiry: expiry || "",
+    qtyInitial: Number(qty), qtyRemaining: Number(qty),
+    location, source, sourceRef,
+    createdBy: userId, createdByName: userName, createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+// Consomme les lots d'un produit, à un emplacement donné, en priorité sur ceux
+// dont la date de péremption est la plus proche (FEFO — First Expired, First
+// Out). Les lots sans date renseignée sont consommés en dernier. Si la
+// quantité demandée dépasse les lots suivis à cet emplacement (ex : stock
+// antérieur à l'introduction des lots), le solde non couvert ("shortfall")
+// est simplement ignoré : les compteurs dénormalisés (svcStock, formules
+// Stock 2) restent la source de vérité pour la quantité totale.
+export async function consumeFEFO(productId, qtyNeeded, location) {
+  if (!productId || !qtyNeeded || !location) return { consumed: [], shortfall: 0 };
+  const q = query(collection(db, "batches"),
+    where("productId", "==", productId),
+    where("location", "==", location),
+    where("qtyRemaining", ">", 0));
+  const snap = await getDocs(q);
+  const batches = snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => {
+      if (!a.expiry && !b.expiry) return 0;
+      if (!a.expiry) return 1;
+      if (!b.expiry) return -1;
+      return a.expiry.localeCompare(b.expiry);
+    });
+  let remaining = Number(qtyNeeded);
+  const consumed = [];
+  for (const b of batches) {
+    if (remaining <= 0) break;
+    const take = Math.min(b.qtyRemaining, remaining);
+    if (take <= 0) continue;
+    await updateDoc(doc(db, "batches", b.id), { qtyRemaining: b.qtyRemaining - take });
+    consumed.push({ batchId: b.id, lot: b.lot, expiry: b.expiry, qty: take });
+    remaining -= take;
+  }
+  return { consumed, shortfall: Math.max(0, remaining) };
+}
+
 export function useStore(userId, userName) {
   const [suppliers,    setSuppliers]    = useState([]);
   const [depots,       setDepots]       = useState([]);
@@ -44,6 +103,7 @@ export function useStore(userId, userName) {
   const [consumptions, setConsumptions] = useState([]);
   const [svcReturns,   setSvcReturns]   = useState([]);
   const [receptions,   setReceptions]   = useState([]);
+  const [batches,      setBatches]      = useState([]);
   const [svcStock,     setSvcStock]     = useState({}); // { "serviceId_productId": qty }
   const [stock,        setStock]        = useState({});
   const [loading,      setLoading]      = useState(true);
@@ -72,6 +132,7 @@ export function useStore(userId, userName) {
       safeLiveCol("consumptions", setConsumptions,orderBy("createdAt","desc")),
       safeLiveCol("svcReturns",   setSvcReturns,  orderBy("createdAt","desc")),
       safeLiveCol("receptions",   setReceptions,  orderBy("createdAt","desc")),
+      safeLiveCol("batches",      setBatches,     orderBy("expiry","asc")),
     ];
 
     // Listener svcStock avec gestion d'erreur
@@ -102,7 +163,7 @@ export function useStore(userId, userName) {
   return {
     suppliers, depots, products, users,
     entries, returns, inventories, invoices, messages, activities,
-    services, transfers, consumptions, svcReturns, receptions, svcStock,
+    services, transfers, consumptions, svcReturns, receptions, svcStock, batches,
     stock, loading,
 
     addSupplier:    s    => addDoc(collection(db,"suppliers"), { ...s, createdBy:userId, createdByName:userName, createdAt: serverTimestamp() }), // retourne Promise<DocumentReference>
@@ -215,6 +276,8 @@ export function useStore(userId, userName) {
           name:         u.name,
           email:        u.email,
           role:         u.role,
+          allowedServices:  u.allowedServices  || [],
+          allowedSuppliers: u.allowedSuppliers || [],
           mustChangePw: true,
           createdAt:    serverTimestamp(),
         });
@@ -282,19 +345,77 @@ export function useStore(userId, userName) {
 
     // ── Transferts Pharmacie → Service ──
     addTransfer: async t => {
-      const ref = await addDoc(collection(db,"transfers"), { ...t, transferredBy:userId, transferredByName:userName, status:"done", createdAt:serverTimestamp() });
-      // Décrémenter stock pharmacie + incrémenter stock service
+      // Statut "en_attente" : le transfert débite immédiatement le Stock (2)
+      // pharmacie (le produit part physiquement), mais ne crédite le Stock (2)
+      // service qu'après confirmation de réception (voir confirmTransfer).
+      // qtyConfirmed:null tant que la ligne n'a pas été contrôlée par le service.
+      const itemsInit = (t.items||[]).map(it => ({ ...it, qtyConfirmed:null, conforme:null, ecart:0 }));
+      const ref = await addDoc(collection(db,"transfers"), { ...t, items:itemsInit, transferredBy:userId, transferredByName:userName, status:"en_attente", createdAt:serverTimestamp() });
+      // NB : le Stock (1) — products.stockQty — n'est PAS touché ici : un transfert
+      // pharmacie→service relève uniquement du Stock (2), qui se déduit des
+      // collections receptions/transfers/consumptions/svcReturns (voir StockServicePage
+      // et helpers/stock2.js), sans compteur dédié.
       for(const it of (t.items||[])){
         if(!it.productId||!it.qty) continue;
-        const curSnap = await getDoc(doc(db,"products",it.productId));
-        const curQty = curSnap.data()?.stockQty || 0;
-        await updateDoc(doc(db,"products",it.productId), { stockQty: Math.max(0,curQty - Number(it.qty)) });
-        // Stock service : clé composite serviceId_productId
-        const sKey = t.serviceId+"_"+it.productId;
-        await setDoc(doc(db,"svcStock",sKey), { serviceId:t.serviceId, productId:it.productId, qty:(await getDoc(doc(db,"svcStock",sKey))).data()?.qty||0 + Number(it.qty) }, { merge:true });
+        // FEFO : on retire d'abord des lots pharmacie dont la péremption est la plus
+        // proche, et on fait "voyager" ces mêmes lots vers l'emplacement du service
+        // destinataire, pour que la traçabilité (et un futur FEFO côté service) suive.
+        const { consumed } = await consumeFEFO(it.productId, Number(it.qty), locPharmacy());
+        for (const c of consumed) {
+          await createBatch({
+            productId: it.productId, productName: it.productName,
+            lot: c.lot, expiry: c.expiry, qty: c.qty,
+            location: locService(t.serviceId), source: "transfer", sourceRef: ref.id,
+            userId, userName,
+          });
+        }
+        // NB : le Stock (2) service (svcStock) n'est PAS incrémenté ici — il ne le
+        // sera qu'à la confirmation de réception par le service (confirmTransfer).
       }
-      await addDoc(collection(db,"activities"), { action:"create", entity:"transfer", entityId:ref.id, details:`Transfert vers ${t.serviceName} : ${t.items?.length||0} produit(s)`, userId, userName, createdAt:serverTimestamp() });
+      await addDoc(collection(db,"activities"), { action:"create", entity:"transfer", entityId:ref.id, details:`Transfert envoyé vers ${t.serviceName} : ${t.items?.length||0} produit(s) (en attente de confirmation)`, userId, userName, createdAt:serverTimestamp() });
       return ref;
+    },
+
+    // Confirmation de réception par le service : contrôle ligne par ligne
+    // (conforme / non conforme + écart). Seule la quantité confirmée est
+    // créditée au Stock (2) du service — la partie non confirmée (écart) reste
+    // "perdue en transit" tant que la pharmacie n'a pas repris/corrigé le transfert.
+    confirmTransfer: async (transferId, lineResults) => {
+      // lineResults: [{ productId, conforme:boolean, ecart:number }]
+      const tSnap = await getDoc(doc(db,"transfers",transferId));
+      if (!tSnap.exists()) throw new Error("Transfert introuvable");
+      const t = tSnap.data();
+      const byProduct = Object.fromEntries(lineResults.map(l => [l.productId, l]));
+      let allConforme = true;
+      const newItems = (t.items||[]).map(it => {
+        const res = byProduct[it.productId];
+        if (!res) return it;
+        const ecart = res.conforme ? 0 : Math.max(0, Number(res.ecart)||0);
+        const qtyConfirmed = Math.max(0, Number(it.qty) - ecart);
+        if (!res.conforme) allConforme = false;
+        return { ...it, qtyConfirmed, conforme: res.conforme, ecart };
+      });
+      await updateDoc(doc(db,"transfers",transferId), {
+        items: newItems,
+        status: allConforme ? "confirme" : "non_conforme",
+        confirmedBy: userId, confirmedByName: userName, confirmedAt: serverTimestamp(),
+      });
+      // Crédit du Stock (2) service — uniquement la quantité confirmée
+      for (const it of newItems) {
+        if (!it.productId || !it.qtyConfirmed) continue;
+        const sKey = t.serviceId+"_"+it.productId;
+        const sSnap = await getDoc(doc(db,"svcStock",sKey));
+        const sCur = sSnap.data()?.qty || 0;
+        await setDoc(doc(db,"svcStock",sKey), { serviceId:t.serviceId, productId:it.productId, qty: sCur + Number(it.qtyConfirmed) }, { merge:true });
+      }
+      await addDoc(collection(db,"activities"), {
+        action:"update", entity:"transfer", entityId:transferId,
+        details: allConforme
+          ? `Réception confirmée conforme : transfert vers ${t.serviceName}`
+          : `Réception avec écart(s) signalée : transfert vers ${t.serviceName}`,
+        userId, userName, createdAt:serverTimestamp(),
+      });
+      return { allConforme };
     },
 
     // ── Consommations Service ──
@@ -307,6 +428,8 @@ export function useStore(userId, userName) {
         const snap = await getDoc(doc(db,"svcStock",sKey));
         const cur = snap.data()?.qty||0;
         await setDoc(doc(db,"svcStock",sKey), { serviceId:c.serviceId, productId:it.productId, qty:Math.max(0,cur-Number(it.qty)) }, { merge:true });
+        // FEFO : on consomme d'abord les lots du service dont la péremption est la plus proche
+        await consumeFEFO(it.productId, Number(it.qty), locService(c.serviceId));
       }
       await addDoc(collection(db,"activities"), { action:"create", entity:"consumption", entityId:ref.id, details:`Consommation ${c.serviceName} : ${c.items?.length||0} produit(s)${c.patientName?" — Patient: "+c.patientName:""}`, userId, userName, createdAt:serverTimestamp() });
       return ref;
@@ -315,6 +438,8 @@ export function useStore(userId, userName) {
     // ── Retours Service → Pharmacie ──
     addSvcReturn: async r => {
       const ref = await addDoc(collection(db,"svcReturns"), { ...r, returnedBy:userId, returnedByName:userName, createdAt:serverTimestamp() });
+      // NB : le Stock (1) n'est PAS touché ici — un retour service→pharmacie relève
+      // uniquement du Stock (2) (voir remarque dans addTransfer).
       for(const it of (r.items||[])){
         if(!it.productId||!it.qty) continue;
         // Décrémenter stock service
@@ -322,10 +447,17 @@ export function useStore(userId, userName) {
         const snap = await getDoc(doc(db,"svcStock",sKey));
         const cur = snap.data()?.qty||0;
         await setDoc(doc(db,"svcStock",sKey), { serviceId:r.serviceId, productId:it.productId, qty:Math.max(0,cur-Number(it.qty)) }, { merge:true });
-        // Incrémenter stock pharmacie
-        const pSnap = await getDoc(doc(db,"products",it.productId));
-        const pQty = pSnap.data()?.stockQty||0;
-        await updateDoc(doc(db,"products",it.productId), { stockQty: pQty+Number(it.qty) });
+        // FEFO : on retire d'abord des lots du service dont la péremption est la plus
+        // proche, et on les fait "revenir" vers l'emplacement pharmacie.
+        const { consumed } = await consumeFEFO(it.productId, Number(it.qty), locService(r.serviceId));
+        for (const c of consumed) {
+          await createBatch({
+            productId: it.productId, productName: it.productName,
+            lot: c.lot, expiry: c.expiry, qty: c.qty,
+            location: locPharmacy(), source: "svcReturn", sourceRef: ref.id,
+            userId, userName,
+          });
+        }
       }
       await addDoc(collection(db,"activities"), { action:"create", entity:"svcReturn", entityId:ref.id, details:`Retour de ${r.serviceName} vers pharmacie : ${r.items?.length||0} produit(s)`, userId, userName, createdAt:serverTimestamp() });
       return ref;
@@ -343,6 +475,18 @@ export function useStore(userId, userName) {
         ...r, receivedBy:userId, receivedByName:userName,
         status:"reçu", createdAt:serverTimestamp(),
       });
+      // Un lot est créé pour chaque article réceptionné (même sans date de
+      // péremption renseignée — il sera alors consommé en dernier par FEFO),
+      // à l'emplacement "pharmacy". C'est le point d'entrée du Stock (2).
+      for (const it of (r.items||[])) {
+        if (!it.productId || !Number(it.qty)) continue;
+        await createBatch({
+          productId: it.productId, productName: it.productName,
+          lot: it.lot, expiry: it.expiry, qty: it.qty,
+          location: locPharmacy(), source: "reception", sourceRef: ref.id,
+          userId, userName,
+        });
+      }
       await addDoc(collection(db,"activities"), {
         action:"create", entity:"reception", entityId:ref.id,
         details:`Réception : ${r.reference} — ${r.supplierName||""} (${r.items?.length||0} produit(s))`,

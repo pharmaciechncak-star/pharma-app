@@ -1,0 +1,258 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuth()  { return request.auth != null; }
+    function uid()     { return request.auth.uid; }
+    function userData(){ return get(/databases/$(database)/documents/users/$(uid())).data; }
+    function role()    { return userData().role; }
+    function isAdmin()        { return isAuth() && role() == 'admin'; }
+    function isAnyRole()      { return isAuth() && role() in ['admin','gestionnaire','pharmacien','magasinier','comptable','admin_service','agent_service']; }
+
+    // ── Permissions personnalisées (stockées sur le profil utilisateur) ──
+    // Reproduit exactement getUserPerms()/can() côté app (src/permissions.js) :
+    // une permission personnalisée explicite prévaut ; sinon on retombe sur le
+    // rôle par défaut (src/constants.js DEFAULT_PERMS). Sans ce repli, un
+    // utilisateur qui n'a PAS de permission personnalisée explicite (le cas de
+    // la grande majorité des comptes, qui s'appuient sur leur rôle) se
+    // retrouvait bloqué malgré des droits accordés par son rôle.
+    function defaultPermsMap() {
+      return {
+      'admin_pharmacie': {
+        'entrees':{'r':true,'w':true,'d':true},
+        'retours':{'r':true,'w':true,'d':true},
+        'inventaire':{'r':true,'w':true,'d':true},
+        'factures':{'r':true,'w':true,'d':true},
+        'messagerie':{'r':true,'w':true,'d':true},
+        'produits':{'r':true,'w':true,'d':true},
+        'fournisseurs':{'r':true,'w':true,'d':true},
+        'depots':{'r':true,'w':true,'d':true},
+        'activites':{'r':false,'w':false,'d':false},
+        'services':{'r':true,'w':false,'d':false},
+        'transferts':{'r':true,'w':true,'d':false},
+        'consommations':{'r':true,'w':false,'d':false},
+        'retours-service':{'r':true,'w':false,'d':false},
+        'receptions':{'r':true,'w':true,'d':false}
+      },
+      'gestionnaire': {
+        'entrees':{'r':true,'w':true,'d':false},
+        'retours':{'r':true,'w':true,'d':false},
+        'inventaire':{'r':true,'w':true,'d':false},
+        'factures':{'r':true,'w':true,'d':false},
+        'messagerie':{'r':true,'w':true,'d':false},
+        'produits':{'r':true,'w':true,'d':false},
+        'fournisseurs':{'r':true,'w':true,'d':false},
+        'depots':{'r':true,'w':true,'d':false},
+        'activites':{'r':false,'w':false,'d':false},
+        'services':{'r':true,'w':false,'d':false},
+        'transferts':{'r':true,'w':true,'d':false},
+        'consommations':{'r':true,'w':false,'d':false},
+        'retours-service':{'r':true,'w':true,'d':false},
+        'receptions':{'r':true,'w':true,'d':false}
+      },
+      'pharmacien': {
+        'entrees':{'r':true,'w':true,'d':false},
+        'retours':{'r':true,'w':true,'d':false},
+        'inventaire':{'r':true,'w':true,'d':false},
+        'factures':{'r':true,'w':true,'d':false},
+        'messagerie':{'r':true,'w':true,'d':false},
+        'produits':{'r':true,'w':true,'d':false},
+        'fournisseurs':{'r':true,'w':true,'d':false},
+        'depots':{'r':true,'w':true,'d':false},
+        'activites':{'r':false,'w':false,'d':false},
+        'services':{'r':true,'w':false,'d':false},
+        'transferts':{'r':true,'w':true,'d':false},
+        'consommations':{'r':true,'w':false,'d':false},
+        'retours-service':{'r':true,'w':true,'d':false},
+        'receptions':{'r':true,'w':true,'d':false}
+      },
+      'magasinier': {
+        'entrees':{'r':true,'w':true,'d':false},
+        'retours':{'r':true,'w':true,'d':false},
+        'inventaire':{'r':false,'w':false,'d':false},
+        'factures':{'r':false,'w':false,'d':false},
+        'messagerie':{'r':false,'w':false,'d':false},
+        'produits':{'r':true,'w':false,'d':false},
+        'fournisseurs':{'r':false,'w':false,'d':false},
+        'depots':{'r':true,'w':false,'d':false},
+        'activites':{'r':false,'w':false,'d':false},
+        'services':{'r':false,'w':false,'d':false},
+        'transferts':{'r':false,'w':false,'d':false},
+        'consommations':{'r':false,'w':false,'d':false},
+        'retours-service':{'r':false,'w':false,'d':false},
+        'receptions':{'r':false,'w':false,'d':false}
+      },
+      'comptable': {
+        'entrees':{'r':true,'w':false,'d':false},
+        'retours':{'r':true,'w':false,'d':false},
+        'inventaire':{'r':true,'w':true,'d':false},
+        'factures':{'r':true,'w':true,'d':false},
+        'messagerie':{'r':true,'w':true,'d':false},
+        'produits':{'r':true,'w':false,'d':false},
+        'fournisseurs':{'r':true,'w':false,'d':false},
+        'depots':{'r':true,'w':false,'d':false},
+        'activites':{'r':false,'w':false,'d':false},
+        'services':{'r':true,'w':false,'d':false},
+        'transferts':{'r':true,'w':false,'d':false},
+        'consommations':{'r':true,'w':false,'d':false},
+        'retours-service':{'r':true,'w':false,'d':false},
+        'receptions':{'r':true,'w':false,'d':false}
+      },
+      'admin_service': {
+        'entrees':{'r':false,'w':false,'d':false},
+        'retours':{'r':false,'w':false,'d':false},
+        'inventaire':{'r':false,'w':false,'d':false},
+        'factures':{'r':false,'w':false,'d':false},
+        'messagerie':{'r':true,'w':true,'d':false},
+        'produits':{'r':true,'w':false,'d':false},
+        'fournisseurs':{'r':false,'w':false,'d':false},
+        'depots':{'r':false,'w':false,'d':false},
+        'activites':{'r':false,'w':false,'d':false},
+        'services':{'r':true,'w':true,'d':false},
+        'transferts':{'r':true,'w':true,'d':false},
+        'consommations':{'r':true,'w':true,'d':true},
+        'retours-service':{'r':true,'w':true,'d':false},
+        'receptions':{'r':true,'w':false,'d':false}
+      },
+      'agent_service': {
+        'entrees':{'r':false,'w':false,'d':false},
+        'retours':{'r':false,'w':false,'d':false},
+        'inventaire':{'r':false,'w':false,'d':false},
+        'factures':{'r':false,'w':false,'d':false},
+        'messagerie':{'r':true,'w':true,'d':false},
+        'produits':{'r':true,'w':false,'d':false},
+        'fournisseurs':{'r':false,'w':false,'d':false},
+        'depots':{'r':false,'w':false,'d':false},
+        'activites':{'r':false,'w':false,'d':false},
+        'services':{'r':true,'w':false,'d':false},
+        'transferts':{'r':true,'w':true,'d':false},
+        'consommations':{'r':true,'w':true,'d':false},
+        'retours-service':{'r':false,'w':false,'d':false},
+        'receptions':{'r':false,'w':false,'d':false}
+      }
+      };
+    }
+
+    function hasCustomPerm(section, right) {
+      let u = userData();
+      return ('permissions' in u)
+        && u.permissions != null
+        && (section in u.permissions)
+        && (right in u.permissions[section]);
+    }
+
+    function customPerm(section, right) {
+      let u = userData();
+      return u.permissions[section][right] == true || u.permissions[section][right] == 1;
+    }
+
+    function defaultPerm(section, right) {
+      let m = defaultPermsMap();
+      let r = role();
+      return (r in m) && (section in m[r]) && (m[r][section][right] == true);
+    }
+
+    function getPerm(section, right) {
+      return hasCustomPerm(section, right) ? customPerm(section, right) : defaultPerm(section, right);
+    }
+
+    // Admin toujours autorisé ; sinon permission personnalisée ou, à défaut, rôle par défaut
+    function canAccess(section, right) {
+      return isAdmin() || (isAuth() && getPerm(section, right));
+    }
+
+    // ── Utilisateurs (gestion des comptes — réservé admin, sauf lecture/MAJ de soi-même) ──
+    match /users/{userId} {
+      allow read:   if isAuth() && (uid() == userId || isAdmin());
+      allow create: if isAdmin();
+      allow update: if isAdmin() || uid() == userId;
+      allow delete: if isAdmin();
+    }
+
+    // ── Pharmacie ──
+    match /suppliers/{id} {
+      allow read:           if isAnyRole();
+      allow create, update: if canAccess('fournisseurs','w');
+      allow delete:         if canAccess('fournisseurs','d');
+    }
+    match /depots/{id} {
+      allow read:           if isAnyRole();
+      allow create, update: if canAccess('depots','w');
+      allow delete:         if canAccess('depots','d');
+    }
+    match /products/{id} {
+      allow read:           if isAnyRole();
+      allow create, update: if canAccess('produits','w');
+      allow delete:         if canAccess('produits','d');
+    }
+    match /entries/{id} {
+      allow read:           if isAnyRole();
+      allow create, update: if canAccess('entrees','w');
+      allow delete:         if canAccess('entrees','d');
+    }
+    match /returns/{id} {
+      allow read:           if isAnyRole();
+      allow create, update: if canAccess('retours','w');
+      allow delete:         if canAccess('retours','d');
+    }
+    match /inventories/{id} {
+      allow read:           if isAnyRole();
+      allow create, update: if canAccess('inventaire','w');
+      allow delete:         if canAccess('inventaire','d');
+    }
+    match /invoices/{id} {
+      allow read:           if isAnyRole();
+      allow create, update: if canAccess('factures','w');
+      allow delete:         if canAccess('factures','d');
+    }
+    match /messages/{id} {
+      allow read:            if isAnyRole();
+      allow create, update:  if canAccess('messagerie','w');
+      allow delete:          if canAccess('messagerie','d');
+    }
+    match /activities/{id} {
+      allow read:            if canAccess('activites','r');
+      allow create:          if isAnyRole(); // journal auto-écrit par toute action tracée, par tout rôle
+      allow update, delete:  if canAccess('activites','d');
+    }
+
+    // ── Services hospitaliers ──
+    match /services/{id} {
+      allow read:           if isAnyRole();
+      allow create, update: if canAccess('services','w');
+      allow delete:         if canAccess('services','d');
+    }
+    match /transfers/{id} {
+      allow read:           if isAnyRole();
+      allow create, update: if canAccess('transferts','w');
+      allow delete:         if canAccess('transferts','d');
+    }
+    match /consumptions/{id} {
+      allow read:           if isAnyRole();
+      allow create, update: if canAccess('consommations','w');
+      allow delete:         if canAccess('consommations','d');
+    }
+    match /svcReturns/{id} {
+      allow read:           if isAnyRole();
+      allow create, update: if canAccess('retours-service','w');
+      allow delete:         if canAccess('retours-service','d');
+    }
+    match /receptions/{id} {
+      allow read:           if isAnyRole();
+      allow create, update: if canAccess('receptions','w');
+      allow delete:         if canAccess('receptions','d');
+    }
+    // Registre interne de stock par service : mis à jour automatiquement en
+    // sous-produit des opérations ci-dessus (déjà contrôlées individuellement) ;
+    // pas de section de permission dédiée dans l'app.
+    match /svcStock/{id} {
+      allow read, write: if isAnyRole();
+    }
+    // Lots de péremption (FEFO) : créés automatiquement lors des entrées en
+    // stock, décrémentés automatiquement lors des transferts/retours — déjà
+    // gatés via les collections entries/transfers/returns ci-dessus. Pas de
+    // section de permission dédiée, même logique que svcStock.
+    match /batches/{id} {
+      allow read, write: if isAnyRole();
+    }
+  }
+}

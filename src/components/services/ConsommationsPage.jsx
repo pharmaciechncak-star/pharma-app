@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { PageHeader } from "../ui/PageHeader";
-import { can } from "../../permissions";
+import { can, hasServiceAccess } from "../../permissions";
 import { btn, card, label, input } from "../../helpers/styles";
 import { Alert } from "../ui/FormControls";
 import { BarcodeScanner } from "../ui/ScanReviewModal";
@@ -19,12 +19,14 @@ export function ConsommationsPage({store,currentUser}){
   const searchRef=useRef(null);
   const lastQtyRef=useRef(null);
 
-  // Un agent_service voit uniquement son service
+  // Un agent_service voit uniquement son service ; tout utilisateur restreint
+  // par allowedServices ne voit que les services qui lui sont autorisés.
   const userServiceId=currentUser?.serviceId||"";
   const isServiceAgent=currentUser?.role==="agent_service"||currentUser?.role==="admin_service";
-  const visibleServices=isServiceAgent&&userServiceId
+  const visibleServicesList=(isServiceAgent&&userServiceId
     ?(store.services||[]).filter(s=>s.id===userServiceId)
-    :(store.services||[]);
+    :(store.services||[])
+  ).filter(s=>hasServiceAccess(currentUser,s.id));
 
   const svcProds=form.serviceId
     ?Object.keys(store.svcStock||{}).filter(k=>k.startsWith(form.serviceId+"_")&&store.svcStock[k]>0).map(k=>{
@@ -66,7 +68,7 @@ export function ConsommationsPage({store,currentUser}){
   };
 
   const consumptions=(store.consumptions||[]).filter(c=>
-    !isServiceAgent||!userServiceId||c.serviceId===userServiceId
+    (!isServiceAgent||!userServiceId||c.serviceId===userServiceId) && hasServiceAccess(currentUser,c.serviceId)
   );
 
   return(
@@ -85,7 +87,7 @@ export function ConsommationsPage({store,currentUser}){
                 <label style={label}>Service</label>
                 <select style={input} value={form.serviceId} onChange={e=>setForm(f=>({...f,serviceId:e.target.value,items:[]}))}>
                   <option value="">— Choisir —</option>
-                  {visibleServices.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                  {visibleServicesList.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
             )}

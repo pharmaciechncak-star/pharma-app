@@ -7,13 +7,13 @@ import { PageHeader } from "./ui/PageHeader";
 import { btn, card, label, input } from "../helpers/styles";
 import { Alert } from "./ui/FormControls";
 import { downloadExcel } from "../helpers/exportUtils";
-import { can } from "../permissions";
+import { can, hasSupplierAccess } from "../permissions";
 import { PrintModal, BonPrint } from "./print/PrintTemplates";
 
 export function DocumentForm({type,store,activeSupplier,activeDepot,ai,onNav,currentUser}){
   const isEntry=type==="entry";
-  const suppDepots=activeSupplier ? store.depots.filter(d=>d.supplierId===activeSupplier.id) : store.depots;
-  const suppProds=activeSupplier ? store.products.filter(p=>p.supplierId===activeSupplier.id) : store.products;
+  const suppDepots=activeSupplier ? store.depots.filter(d=>d.supplierId===activeSupplier.id) : store.depots.filter(d=>hasSupplierAccess(currentUser,d.supplierId));
+  const suppProds=activeSupplier ? store.products.filter(p=>p.supplierId===activeSupplier.id) : store.products.filter(p=>hasSupplierAccess(currentUser,p.supplierId));
 
   const blank=()=>({
     reference:`BON-${isEntry?"ENT":"RET"}-${genId()}`,
@@ -64,7 +64,7 @@ export function DocumentForm({type,store,activeSupplier,activeDepot,ai,onNav,cur
   const removeItem=i=>setForm(f=>({...f,items:f.items.filter((_,idx)=>idx!==i)}));
   const setItem=(i,field,val)=>setForm(f=>({...f,items:f.items.map((it,idx)=>idx===i?{...it,[field]:val}:it)}));
 
-  const recentBons=(isEntry?store.entries:store.returns).filter(b=>!activeSupplier||b.supplierId===activeSupplier?.id).slice(0,3);
+  const recentBons=(isEntry?store.entries:store.returns).filter(b=>activeSupplier?b.supplierId===activeSupplier?.id:hasSupplierAccess(currentUser,b.supplierId)).slice(0,3);
 
   const handleSave=()=>{
     const doc={...form,items:form.items.filter(it=>it.productId&&it.qty),supplierId:form.supplierId||activeSupplier?.id};

@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { label, input, card, btn } from "../helpers/styles";
 import { PageHeader } from "./ui/PageHeader";
+import { Modal } from "./ui/Modal";
+import { getPharmacyStock2, getServiceStock2 } from "../helpers/stock2";
+import { visibleServices } from "../permissions";
 
 export function StatistiquesPage({store,currentUser}){
   const [tab,setTab]=useState("rotation"); // rotation|user|mouvements|valeur_prescrite|valeur_stock|patient
@@ -11,6 +14,8 @@ export function StatistiquesPage({store,currentUser}){
     {id:"valeur_prescrite",label:"💰 Valeur prescrite"},
     {id:"valeur_stock",   label:"🏦 Valeur stock"},
     {id:"patient",        label:"🏥 Par patient"},
+    {id:"peremptions",    label:"⏳ Péremptions proches"},
+    {id:"reorder",        label:"🛒 Produits à commander"},
   ];
 
   // Filtres communs
@@ -114,27 +119,63 @@ export function StatistiquesPage({store,currentUser}){
 
   // ══ 2. ACTIVITÉ UTILISATEUR ══
   const UserTab=()=>{
+    const [detail,setDetail]=useState(null);
     const user=store.users.find(u=>u.id===selUser);
     if(!selUser) return <div><label style={label}>Choisir un utilisateur</label><select style={input} value={selUser} onChange={e=>setSelUser(e.target.value)}><option value="">— Sélectionner —</option>{store.users.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select></div>;
-    const acts=(store.activities||[]).filter(a=>a.userId===selUser&&inRange(a.createdAt));
-    const rows=acts.map(a=>[new Date((a.createdAt?.seconds||0)*1000).toLocaleString("fr-FR"),a.action,a.details||"—"]);
+
+    // Limité aux 4 opérations métier tracées individuellement (pas le journal
+    // "activités" générique, qui couvre aussi produits/utilisateurs/etc.) —
+    // chaque entrée reste cliquable pour voir le détail des articles.
+    const consos = (store.consumptions||[]).filter(c=>c.consumedBy===selUser&&inRange(c.createdAt)).map(c=>({type:"Consommation",icon:"💉",date:c.createdAt,label:c.serviceName+(c.patientName?" — "+c.patientName:""),nbArticles:(c.items||[]).length,doc:c,serviceId:c.serviceId||null}));
+    const receps = (store.receptions||[]).filter(r=>r.receivedBy===selUser&&inRange(r.createdAt)).map(r=>({type:"Réception",icon:"📥",date:r.createdAt,label:r.reference+(r.supplierName?" — "+r.supplierName:""),nbArticles:(r.items||[]).length,doc:r,serviceId:null}));
+    const transf = (store.transfers||[]).filter(t=>t.transferredBy===selUser&&inRange(t.createdAt)).map(t=>({type:"Transfert",icon:"🔀",date:t.createdAt,label:"Vers "+(t.serviceName||"—"),nbArticles:(t.items||[]).length,doc:t,serviceId:t.serviceId||null}));
+    const retours = (store.svcReturns||[]).filter(r=>r.returnedBy===selUser&&inRange(r.createdAt)).map(r=>({type:"Retour service",icon:"↩️",date:r.createdAt,label:"De "+(r.serviceName||"—"),nbArticles:(r.items||[]).length,doc:r,serviceId:r.serviceId||null}));
+
+    // Filtre service global (haut de page) — même convention que Mouvements :
+    // "pharmacie" ne concerne que les réceptions, un service précis filtre le reste.
+    const matchesScope=(a)=>{
+      if(selService==="") return true;
+      if(selService==="pharmacie") return a.type==="Réception";
+      return a.serviceId===selService;
+    };
+    const acts=[...consos,...receps,...transf,...retours].filter(matchesScope).sort((a,b)=>(b.date?.seconds||0)-(a.date?.seconds||0));
+    const headers=["Date","Type","Détail","Nb articles"];
+    const rows=acts.map(a=>[new Date((a.date?.seconds||0)*1000).toLocaleString("fr-FR"),a.type,a.label,a.nbArticles]);
     return(
       <div>
         <div style={{marginBottom:10}}><label style={label}>Utilisateur</label><select style={input} value={selUser} onChange={e=>setSelUser(e.target.value)}><option value="">—</option>{store.users.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
-        <div style={{fontWeight:700,fontSize:14,color:"#312e81",marginBottom:8}}>👤 {user?.name} — {acts.length} action(s)</div>
+        <div style={{fontWeight:700,fontSize:14,color:"#312e81",marginBottom:8}}>👤 {user?.name} — {acts.length} opération(s)</div>
         <div style={{maxHeight:300,overflowY:"auto",...card}}>
-          {acts.length===0?<div style={{padding:20,textAlign:"center",color:"#94a3b8"}}>Aucune activité sur cette période.</div>:
+          {acts.length===0?<div style={{padding:20,textAlign:"center",color:"#94a3b8"}}>Aucune réception, transfert, consommation ou retour sur cette période.</div>:
           acts.map((a,i)=>(
-            <div key={i} style={{padding:"8px 12px",borderBottom:"1px solid #f1f5f9",fontSize:11}}>
-              <div style={{fontWeight:600,color:"#1e293b"}}>{a.details||"—"}</div>
-              <div style={{color:"#94a3b8",fontSize:10}}>{new Date((a.createdAt?.seconds||0)*1000).toLocaleString("fr-FR")} · <span style={{color:a.action==="create"?"#059669":a.action==="delete"?"#ef4444":"#d97706"}}>{a.action}</span></div>
+            <div key={i} onClick={()=>setDetail(a)}
+              style={{padding:"8px 12px",borderBottom:"1px solid #f1f5f9",fontSize:11,cursor:"pointer",transition:"background 0.15s"}}
+              onMouseEnter={e=>e.currentTarget.style.background="#f8fafc"}
+              onMouseLeave={e=>e.currentTarget.style.background="transparent"}
+              title="Cliquer pour voir le détail">
+              <div style={{fontWeight:600,color:"#1e293b"}}>{a.icon} {a.type} — {a.label}</div>
+              <div style={{color:"#94a3b8",fontSize:10}}>{new Date((a.date?.seconds||0)*1000).toLocaleString("fr-FR")} · {a.nbArticles} article(s)</div>
             </div>
           ))}
         </div>
         <div style={{display:"flex",gap:8,marginTop:8}}>
-          <button onClick={()=>printTable("Activité — "+user?.name,["Date","Action","Détail"],rows)} style={{...btn(),background:"#fef3c7",color:"#92400e",border:"1px solid #fcd34d",fontSize:12}}>🖨️ Imprimer</button>
-          <button onClick={()=>exportCSV(rows,["Date","Action","Détail"],"activite_"+user?.name)} style={{...btn(),background:"#f0fdf4",color:"#059669",border:"1px solid #86efac",fontSize:12}}>⬇️ CSV</button>
+          <button onClick={()=>printTable("Activité — "+user?.name,headers,rows)} style={{...btn(),background:"#fef3c7",color:"#92400e",border:"1px solid #fcd34d",fontSize:12}}>🖨️ Imprimer</button>
+          <button onClick={()=>exportCSV(rows,headers,"activite_"+user?.name)} style={{...btn(),background:"#f0fdf4",color:"#059669",border:"1px solid #86efac",fontSize:12}}>⬇️ CSV</button>
         </div>
+        <Modal open={!!detail} onClose={()=>setDetail(null)} title={detail?detail.icon+" "+detail.type+" — "+detail.label:""}>
+          {detail&&(
+            <div>
+              <div style={{fontSize:11,color:"#64748b",marginBottom:12}}>{new Date((detail.date?.seconds||0)*1000).toLocaleString("fr-FR")}</div>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead><tr><th style={{textAlign:"left",padding:"4px 6px",borderBottom:"2px solid #e2e8f0",color:"#64748b",fontSize:10}}>Produit</th><th style={{textAlign:"right",padding:"4px 6px",borderBottom:"2px solid #e2e8f0",color:"#64748b",fontSize:10}}>Quantité</th></tr></thead>
+                <tbody>{(detail.doc.items||[]).map((it,j)=>(
+                  <tr key={j}><td style={{padding:"4px 6px",borderBottom:"1px solid #f1f5f9",fontWeight:600}}>{it.productName||"—"}</td><td style={{padding:"4px 6px",borderBottom:"1px solid #f1f5f9",textAlign:"right"}}>{it.qty}{it.lot?" · lot "+it.lot:""}{it.expiry?" · exp. "+it.expiry:""}</td></tr>
+                ))}</tbody>
+              </table>
+              {detail.doc.notes&&<div style={{fontSize:11,color:"#94a3b8",marginTop:10,fontStyle:"italic"}}>{detail.doc.notes}</div>}
+            </div>
+          )}
+        </Modal>
       </div>
     );
   };
@@ -150,12 +191,21 @@ export function StatistiquesPage({store,currentUser}){
         qty:Number(it.qty||0),
         user:x[field+"Name"]||x.consumedByName||"—",
         service:x.serviceName||"—",
+        serviceId:x.serviceId||null,
       })));
+    // Filtre service global (haut de page) : "pharmacie" ne concerne que les
+    // réceptions (seule opération sans service), un service précis filtre sur
+    // transferts/consommations de ce service ; réceptions exclues dans ce cas.
+    const matchesScope=(r)=>{
+      if(selService==="") return true;
+      if(selService==="pharmacie") return r.type==="Réception";
+      return r.serviceId===selService;
+    };
     const allRows=[
       ...(typeFilter==="tous"||typeFilter==="receptions"?getItems(store.receptions,"receivedBy"):[]),
       ...(typeFilter==="tous"||typeFilter==="transferts"?getItems(store.transfers,"transferredBy"):[]),
       ...(typeFilter==="tous"||typeFilter==="consommations"?getItems(store.consumptions,"consumedBy"):[]),
-    ].sort((a,b)=>a.date.localeCompare(b.date));
+    ].filter(matchesScope).sort((a,b)=>a.date.localeCompare(b.date));
     // Agrégation par produit pour le diagramme
     const byProd={};
     allRows.forEach(r=>{ byProd[r.produit]=(byProd[r.produit]||0)+r.qty; });
@@ -263,7 +313,7 @@ export function StatistiquesPage({store,currentUser}){
     }).filter(r=>r.qty>0);
     const pharmTotal=pharmacieRows.reduce((s,r)=>s+r.val,0);
     // Stock service = svcStock × prix
-    const svcRows=view!=="pharmacie"?(store.services||[]).filter(s=>!view||view==="tous"||s.id===view).flatMap(svc=>
+    const svcRows=view!=="pharmacie"?visibleServices(currentUser,store.services||[]).filter(s=>!view||view==="tous"||s.id===view).flatMap(svc=>
       Object.keys(store.svcStock||{}).filter(k=>k.startsWith(svc.id+"_")).map(k=>{
         const prodId=k.split("_")[1];
         const prod=store.products.find(p=>p.id===prodId);
@@ -284,7 +334,7 @@ export function StatistiquesPage({store,currentUser}){
             <select style={input} value={view} onChange={e=>setView(e.target.value)}>
               <option value="pharmacie">📦 Stock Pharmacie</option>
               <option value="tous">🏥 Tous les services</option>
-              {(store.services||[]).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+              {visibleServices(currentUser,store.services||[]).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
           {isPharm&&<div><label style={label}>Fournisseur</label>
@@ -376,10 +426,117 @@ export function StatistiquesPage({store,currentUser}){
     );
   };
 
+  // ══ 7. PÉREMPTIONS PROCHES ══
+  const PeremptionsTab=()=>{
+    const [horizon,setHorizon]=useState(90); // jours
+    const today=new Date();
+    const scopeLoc = selService==="" ? null : (selService==="pharmacie" ? "pharmacy" : "service:"+selService);
+    const scopeLabel = selService==="" ? "Tous emplacements" : (selService==="pharmacie" ? "Pharmacie" : (store.services.find(s=>s.id===selService)?.name||"—"));
+    const rowsRaw=(store.batches||[]).filter(b=>b.qtyRemaining>0 && b.expiry && (scopeLoc===null || b.location===scopeLoc)).map(b=>{
+      const exp=new Date(b.expiry);
+      const days=Math.ceil((exp-today)/(1000*60*60*24));
+      return {...b, days};
+    }).filter(b=>b.days<=horizon).sort((a,b)=>a.days-b.days);
+    const headers=["Produit","Lot","Date de péremption","Jours restants","Qté restante"];
+    const rows=rowsRaw.map(b=>[b.productName||"—", b.lot||"—", b.expiry, b.days<0?`Périmé (${Math.abs(b.days)}j)`:b.days+" j", b.qtyRemaining]);
+    return(
+      <div>
+        <div style={{fontSize:11,color:"#6366f1",marginBottom:8}}>📍 {scopeLabel}</div>
+        <div style={{marginBottom:10,maxWidth:220}}>
+          <label style={label}>Horizon</label>
+          <select style={input} value={horizon} onChange={e=>setHorizon(Number(e.target.value))}>
+            <option value={30}>30 jours</option>
+            <option value={60}>60 jours</option>
+            <option value={90}>90 jours</option>
+            <option value={180}>180 jours</option>
+            <option value={99999}>Tous (y compris périmés)</option>
+          </select>
+        </div>
+        <div style={{...card,background:"linear-gradient(135deg,#b91c1c,#ef4444)",padding:14,marginBottom:12,textAlign:"center"}}>
+          <div style={{fontSize:11,color:"rgba(255,255,255,0.7)"}}>Lots concernés</div>
+          <div style={{fontWeight:800,fontSize:24,color:"white"}}>{rowsRaw.length}</div>
+          <div style={{fontSize:10,color:"rgba(255,255,255,0.6)"}}>dans les {horizon>=99999?"—":horizon+" prochains jours"}</div>
+        </div>
+        <div style={{maxHeight:280,overflowY:"auto",...card,marginBottom:8}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+            <thead><tr>{headers.map(h=><th key={h} style={{background:"#b91c1c",color:"white",padding:"5px 8px",textAlign:"left"}}>{h}</th>)}</tr></thead>
+            <tbody>{rowsRaw.map((b,i)=>(
+              <tr key={i} style={{background:b.days<0?"#fee2e2":b.days<30?"#ffedd5":(i%2===0?"white":"#fef2f2")}}>
+                <td style={{padding:"4px 8px",borderBottom:"1px solid #f1f5f9",fontWeight:600}}>{b.productName||"—"}</td>
+                <td style={{padding:"4px 8px",borderBottom:"1px solid #f1f5f9",fontFamily:"monospace"}}>{b.lot||"—"}</td>
+                <td style={{padding:"4px 8px",borderBottom:"1px solid #f1f5f9"}}>{b.expiry}</td>
+                <td style={{padding:"4px 8px",borderBottom:"1px solid #f1f5f9",fontWeight:700,color:b.days<0?"#b91c1c":(b.days<30?"#c2410c":"#334155")}}>{b.days<0?`Périmé (${Math.abs(b.days)}j)`:b.days+" j"}</td>
+                <td style={{padding:"4px 8px",borderBottom:"1px solid #f1f5f9"}}>{b.qtyRemaining}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+          {rowsRaw.length===0&&<div style={{textAlign:"center",padding:20,color:"#94a3b8"}}>Aucun lot ne périme dans cette période.</div>}
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>printTable("Péremptions proches — "+scopeLabel,headers,rows)} style={{...btn(),background:"#fef3c7",color:"#92400e",border:"1px solid #fcd34d",fontSize:12}}>🖨️ Imprimer</button>
+          <button onClick={()=>exportCSV(rows,headers,"peremptions_proches")} style={{...btn(),background:"#f0fdf4",color:"#059669",border:"1px solid #86efac",fontSize:12}}>⬇️ CSV</button>
+        </div>
+      </div>
+    );
+  };
+
+  // ══ 8. PRODUITS À COMMANDER ══
+  const ReorderTab=()=>{
+    const scope = selService || "pharmacie"; // scope global (Période/Service en haut de page) — défaut Pharmacie si "Tous"
+    const scopeLabel = scope==="pharmacie" ? "Pharmacie" : (store.services.find(s=>s.id===scope)?.name||"—");
+    const getStock = (productId) => scope==="pharmacie" ? getPharmacyStock2(store,productId) : getServiceStock2(store,productId,scope);
+    const rowsRaw=store.products
+      .filter(p=>p.reorderThreshold!=null && getStock(p.id)<=p.reorderThreshold)
+      .map(p=>({
+        name:p.name,
+        supplier:store.suppliers.find(s=>s.id===p.supplierId)?.name||"—",
+        stock:getStock(p.id),
+        seuil:p.reorderThreshold,
+        manque:Math.max(0,p.reorderThreshold-getStock(p.id)),
+      }))
+      .sort((a,b)=>b.manque-a.manque);
+    const headers=["Produit","Fournisseur","Stock actuel ("+scopeLabel+")","Seuil","Quantité à commander"];
+    const rows=rowsRaw.map(r=>[r.name,r.supplier,r.stock,r.seuil,r.manque]);
+    const nbSansSeuil=store.products.filter(p=>p.reorderThreshold==null).length;
+    return(
+      <div>
+        {!selService&&<div style={{fontSize:11,color:"#6366f1",marginBottom:10,background:"#eef2ff",padding:8,borderRadius:8}}>ℹ️ Aucun service choisi en haut de page → vue Pharmacie par défaut.</div>}
+        <div style={{...card,background:"linear-gradient(135deg,#b45309,#f59e0b)",padding:14,marginBottom:12,textAlign:"center"}}>
+          <div style={{fontSize:11,color:"rgba(255,255,255,0.7)"}}>Produits sous leur seuil — {scopeLabel}</div>
+          <div style={{fontWeight:800,fontSize:24,color:"white"}}>{rowsRaw.length}</div>
+        </div>
+        <div style={{maxHeight:280,overflowY:"auto",...card,marginBottom:8}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+            <thead><tr>{headers.map(h=><th key={h} style={{background:"#b45309",color:"white",padding:"5px 8px",textAlign:"left"}}>{h}</th>)}</tr></thead>
+            <tbody>{rows.map((r,i)=><tr key={i} style={{background:i%2===0?"white":"#fffbeb"}}>{r.map((v,j)=><td key={j} style={{padding:"4px 8px",borderBottom:"1px solid #f1f5f9",fontWeight:j===4?700:400,color:j===4?"#b45309":"inherit"}}>{v}</td>)}</tr>)}</tbody>
+          </table>
+          {rows.length===0&&<div style={{textAlign:"center",padding:20,color:"#94a3b8"}}>Aucun produit sous son seuil pour cet emplacement.</div>}
+        </div>
+        {nbSansSeuil>0&&<div style={{fontSize:11,color:"#94a3b8",marginBottom:8}}>ℹ️ {nbSansSeuil} produit(s) sans seuil configuré (page Produits) — non pris en compte ici.</div>}
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>printTable("Produits à commander — "+scopeLabel,headers,rows)} style={{...btn(),background:"#fef3c7",color:"#92400e",border:"1px solid #fcd34d",fontSize:12}}>🖨️ Imprimer</button>
+          <button onClick={()=>exportCSV(rows,headers,"produits_a_commander")} style={{...btn(),background:"#f0fdf4",color:"#059669",border:"1px solid #86efac",fontSize:12}}>⬇️ CSV</button>
+        </div>
+      </div>
+    );
+  };
+
   return(
     <div style={{padding:0}}>
       <PageHeader pageId="statistiques" title="📈 Statistiques" subtitle="Analyses et rapports"/>
       <div style={{padding:16}}>
+        {/* Filtre service — limite les statistiques applicables au service (ou à la
+            pharmacie) sélectionné. Plus tard : croisé avec les permissions par service. */}
+        <div style={{...card,marginBottom:12,padding:12,border:"1px solid #c7d2fe"}}>
+          <div style={{fontWeight:700,fontSize:12,color:"#312e81",marginBottom:8}}>🏥 Service</div>
+          <select style={input} value={selService} onChange={e=>setSelService(e.target.value)}>
+            <option value="">Tous</option>
+            <option value="pharmacie">📦 Pharmacie</option>
+            {visibleServices(currentUser,store.services).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          {selService&&<div style={{fontSize:10,color:"#6366f1",marginTop:4}}>Applicable aux onglets Produits à commander, Péremptions proches, Mouvements et Activité utilisateur.</div>}
+        </div>
+
         {/* Filtres dates communs */}
         <div style={{...card,marginBottom:12,padding:12}}>
           <div style={{fontWeight:700,fontSize:12,color:"#312e81",marginBottom:8}}>📅 Période</div>
@@ -408,6 +565,8 @@ export function StatistiquesPage({store,currentUser}){
           {tab==="valeur_prescrite" && <ValeurPrescrite/>}
           {tab==="valeur_stock"     && <ValeurStock/>}
           {tab==="patient"          && <PatientTab/>}
+          {tab==="peremptions"      && <PeremptionsTab/>}
+          {tab==="reorder"          && <ReorderTab/>}
         </div>
       </div>
     </div>

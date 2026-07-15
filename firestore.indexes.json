@@ -1,0 +1,14 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "batches",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "productId", "order": "ASCENDING" },
+        { "fieldPath": "location", "order": "ASCENDING" },
+        { "fieldPath": "qtyRemaining", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
