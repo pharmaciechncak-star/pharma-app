@@ -512,7 +512,18 @@ export function useStore(userId, userName) {
       if (!tSnap.exists()) throw new Error("Transfert introuvable");
       const t = tSnap.data();
       if (t.status !== "confirme" && t.status !== "non_conforme") throw new Error("Ce transfert n'a pas encore été contrôlé.");
-      if (t.repris) throw new Error("Ce transfert a déjà été repris par la pharmacie — son contrôle ne peut plus être annulé.");
+      if (t.repris) throw new Error("Ce transfert a déjà été repris par la pharmacie — sa réception ne peut plus être annulée.");
+      // Vérifier qu'aucune partie de la quantité créditée n'a déjà été
+      // consommée par le service — sinon impossible de tout retirer proprement.
+      for (const it of (t.items||[])) {
+        if (!it.productId || !it.qtyConfirmed) continue;
+        const sKey = t.serviceId+"_"+it.productId;
+        const sSnap = await getDoc(doc(db,"svcStock",sKey));
+        const sCur = sSnap.data()?.qty || 0;
+        if (sCur < Number(it.qtyConfirmed)) {
+          throw new Error(`Impossible d'annuler la réception : "${it.productName||"produit"}" a déjà été (au moins en partie) consommé par le service.`);
+        }
+      }
       for (const it of (t.items||[])) {
         if (!it.productId || !it.qtyConfirmed) continue;
         const sKey = t.serviceId+"_"+it.productId;
@@ -525,7 +536,7 @@ export function useStore(userId, userName) {
         items: resetItems, status:"en_attente",
         confirmedBy:null, confirmedByName:null, confirmedAt:null,
       });
-      await addDoc(collection(db,"activities"), { action:"update", entity:"transfer", entityId:transferId, details:`Contrôle annulé (service) : transfert vers ${t.serviceName} redevient modifiable`, userId, userName, createdAt:serverTimestamp() });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"transfer", entityId:transferId, details:`Réception annulée (service) : transfert vers ${t.serviceName} redevient modifiable`, userId, userName, createdAt:serverTimestamp() });
     },
 
     // Marque un transfert non conforme comme "repris" par la pharmacie et

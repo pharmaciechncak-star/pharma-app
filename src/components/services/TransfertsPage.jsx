@@ -250,7 +250,7 @@ export function TransfertsPage({store,activeSupplier,currentUser}){
                 {can(currentUser,"transferts","w")&&<button onClick={e=>{e.stopPropagation();setCancelling(t);}} style={{...btn(),background:"#fee2e2",color:"#ef4444",border:"1px solid #fca5a5",fontSize:11}}>🚫 Annuler</button>}
               </div>
             )}
-            {(t.status==="confirme"||t.status==="non_conforme")&&!t.repris&&<div style={{fontSize:10,color:"#94a3b8",marginTop:6,fontStyle:"italic"}}>Déjà contrôlé par le service — non modifiable tant qu'il n'a pas annulé son contrôle.</div>}
+            {(t.status==="confirme"||t.status==="non_conforme")&&!t.repris&&<div style={{fontSize:10,color:"#94a3b8",marginTop:6,fontStyle:"italic"}}>Déjà reçu par le service — non modifiable tant qu'il n'a pas annulé sa réception.</div>}
           </div>
         ))}
       </div>

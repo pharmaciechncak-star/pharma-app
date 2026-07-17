@@ -65,7 +65,7 @@ export function StockServicePage({store,currentUser}){
                     <th style={{background:"#7f1d1d",color:"white",padding:"7px 10px",textAlign:"center",border:"1px solid #7f1d1d"}}>Transféré</th>
                     <th style={{background:"#0e7490",color:"white",padding:"7px 10px",textAlign:"center",border:"1px solid #0e7490"}}>Retourné</th>
                   </>:<>
-                    <th style={{background:"#065f46",color:"white",padding:"7px 10px",textAlign:"center",border:"1px solid #065f46"}}>Transféré</th>
+                    <th style={{background:"#065f46",color:"white",padding:"7px 10px",textAlign:"center",border:"1px solid #065f46"}}>Reçu</th>
                     <th style={{background:"#7f1d1d",color:"white",padding:"7px 10px",textAlign:"center",border:"1px solid #7f1d1d"}}>Consommé</th>
                     <th style={{background:"#0e7490",color:"white",padding:"7px 10px",textAlign:"center",border:"1px solid #0e7490"}}>Retourné</th>
                   </>}

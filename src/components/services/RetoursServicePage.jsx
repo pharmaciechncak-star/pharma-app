@@ -5,6 +5,8 @@ import { PrintModal, SvcReturnPrint } from "../print/PrintTemplates";
 import { btn, card, label, input } from "../../helpers/styles";
 import { Alert } from "../ui/FormControls";
 import { Modal } from "../ui/Modal";
+import { BarcodeScanner } from "../ui/ScanReviewModal";
+import { getServiceStock2 } from "../../helpers/stock2";
 
 export function RetoursServicePage({store,currentUser}){
   const [show,setShow]=useState(false);
@@ -16,6 +18,7 @@ export function RetoursServicePage({store,currentUser}){
   const [form,setForm]=useState({serviceId:"",items:[],notes:""});
   const [search,setSearch]=useState("");
   const [showResults,setShowResults]=useState(false);
+  const [showScanner,setShowScanner]=useState(false);
   const [saving,setSaving]=useState(false);
   const [printSel,setPrintSel]=useState(null);
   const [msg,setMsg]=useState("");
@@ -23,11 +26,13 @@ export function RetoursServicePage({store,currentUser}){
   const userServiceId=currentUser?.serviceId||"";
   const isServiceAgent=currentUser?.role==="agent_service"||currentUser?.role==="admin_service";
 
+  // Calculé directement via Stock(2) (formule réceptions/transferts/consommations/
+  // retours), pas via le compteur dénormalisé svcStock — évite toute divergence
+  // entre ce qui est affiché ici et ce que montre Stock Service/Statistiques.
   const svcProds=form.serviceId
-    ?Object.keys(store.svcStock||{}).filter(k=>k.startsWith(form.serviceId+"_")&&store.svcStock[k]>0).map(k=>{
-        const prodId=k.split("_")[1];
-        return {...(store.products.find(p=>p.id===prodId)||{}),svcQty:store.svcStock[k]};
-      }).filter(p=>p.id)
+    ?store.products
+      .map(p=>({...p, svcQty:getServiceStock2(store,p.id,form.serviceId)}))
+      .filter(p=>p.svcQty>0)
     :[];
   const filtered=search.trim()?svcProds.filter(p=>p.name?.toLowerCase().includes(search.toLowerCase())):svcProds;
 
@@ -126,10 +131,30 @@ export function RetoursServicePage({store,currentUser}){
             {form.serviceId&&(
               <div style={{position:"relative",marginBottom:10}}>
                 <label style={label}>Produit à retourner</label>
-                <input style={{...input,paddingLeft:32}} placeholder="Rechercher dans stock service..."
-                  value={search} onChange={e=>{setSearch(e.target.value);setShowResults(true);}}
-                  onFocus={()=>setShowResults(true)} onBlur={()=>setTimeout(()=>setShowResults(false),150)}/>
-                <span style={{position:"absolute",left:10,top:32,fontSize:14}}>🔍</span>
+                <div style={{display:"flex",gap:6}}>
+                  <div style={{position:"relative",flex:1}}>
+                    <input style={{...input,paddingLeft:32}} placeholder="Rechercher dans stock service..."
+                      value={search} onChange={e=>{setSearch(e.target.value);setShowResults(true);}}
+                      onFocus={()=>setShowResults(true)} onBlur={()=>setTimeout(()=>setShowResults(false),150)}/>
+                    <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:14,pointerEvents:"none"}}>🔍</span>
+                  </div>
+                  <button onClick={()=>setShowScanner(true)} title="Scanner un code barre"
+                    style={{...btn(),background:"#d97706",color:"white",padding:"8px 12px",flexShrink:0,fontSize:16}}>📷</button>
+                </div>
+                {showScanner&&(
+                  <BarcodeScanner
+                    onDetected={code=>{
+                      setShowScanner(false);
+                      const found=svcProds.find(p=>
+                        [p.barcode1,p.barcode2,p.barcode3].some(b=>b&&b===code)||
+                        p.name?.toLowerCase().includes(code.toLowerCase())
+                      );
+                      if(found) addItem(found);
+                      else { setSearch(code); setShowResults(true); }
+                    }}
+                    onClose={()=>setShowScanner(false)}
+                  />
+                )}
                 {showResults&&filtered.length>0&&(
                   <div style={{position:"absolute",left:0,right:0,top:"100%",background:"white",border:"1px solid #e2e8f0",borderRadius:8,zIndex:10,maxHeight:160,overflowY:"auto",boxShadow:"0 4px 16px rgba(0,0,0,0.1)"}}>
                     {filtered.map(p=>(

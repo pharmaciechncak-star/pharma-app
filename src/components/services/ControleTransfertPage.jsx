@@ -134,7 +134,7 @@ export function ControleTransfertPage({store,activeSupplier,currentUser}){
             </div>
             {t.repris&&<div style={{fontSize:11,color:"#059669",marginTop:6,fontWeight:600}}>✅ Repris par la pharmacie</div>}
             {(t.status==="confirme"||t.status==="non_conforme")&&!t.repris&&can(currentUser,"controle-transfert","w")&&(
-              <button onClick={e=>{e.stopPropagation();setCancellingControl(t);}} style={{...btn(),background:"#fee2e2",color:"#ef4444",border:"1px solid #fca5a5",fontSize:11,marginTop:8}}>🚫 Annuler le contrôle</button>
+              <button onClick={e=>{e.stopPropagation();setCancellingControl(t);}} style={{...btn(),background:"#fee2e2",color:"#ef4444",border:"1px solid #fca5a5",fontSize:11,marginTop:8}}>🚫 Annuler réception</button>
             )}
           </div>
         ))}
@@ -142,11 +142,11 @@ export function ControleTransfertPage({store,activeSupplier,currentUser}){
       <PrintModal open={!!printSel} onClose={()=>setPrintSel(null)} title="Bon de Transfert">
         <TransferPrint t={printSel}/>
       </PrintModal>
-      <Modal open={!!cancellingControl} onClose={()=>setCancellingControl(null)} title="🚫 Annuler ce contrôle ?">
+      <Modal open={!!cancellingControl} onClose={()=>setCancellingControl(null)} title="🚫 Annuler cette réception ?">
         {cancellingControl&&(
           <div>
             <div style={{fontSize:13,color:"#374151",marginBottom:12}}>
-              Le contrôle de ce transfert (vers <b>{cancellingControl.serviceName}</b>) sera annulé : la quantité créditée au stock du service sera retirée, et le transfert redevient modifiable côté pharmacie.
+              La réception de ce transfert (vers <b>{cancellingControl.serviceName}</b>) sera annulée : la quantité créditée au stock du service sera retirée, et le transfert redevient modifiable côté pharmacie. Impossible si une partie a déjà été consommée par le service.
             </div>
             <div style={{display:"flex",gap:8}}>
               <button onClick={async()=>{

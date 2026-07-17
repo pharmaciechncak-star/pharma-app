@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { PageHeader } from "../ui/PageHeader";
-import { can, visibleServices, hasServiceAccess, hasSupplierAccess } from "../../permissions";
+import { can, visibleServices, hasServiceAccess } from "../../permissions";
 import { btn, card, label, input } from "../../helpers/styles";
 import { Alert } from "../ui/FormControls";
 import { PrintModal, SvcReturnPrint } from "../print/PrintTemplates";
@@ -21,10 +21,10 @@ export function ControleRetourPage({store,activeSupplier,currentUser}){
   const [printSel,setPrintSel]=useState(null);
   const [cancellingControl,setCancellingControl]=useState(null);
 
-  const returns=(store.svcReturns||[]).filter(r=>
-    (activeSupplier?r.supplierId===activeSupplier?.id:hasSupplierAccess(currentUser,r.supplierId))
-    && hasServiceAccess(currentUser,r.serviceId)
-  );
+  // NB : un retour service n'est pas rattaché à un fournisseur (ce n'est pas
+  // une transaction fournisseur), donc pas de filtre par activeSupplier ici —
+  // seul le périmètre service s'applique (même logique que RetoursServicePage).
+  const returns=(store.svcReturns||[]).filter(r=>hasServiceAccess(currentUser,r.serviceId));
   const pending=returns.filter(r=>r.status==="en_attente");
   const done=returns.filter(r=>r.status!=="en_attente");
 

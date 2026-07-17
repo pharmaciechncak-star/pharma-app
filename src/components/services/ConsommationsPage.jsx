@@ -8,6 +8,7 @@ import { PrintModal, ConsumptionPrint } from "../print/PrintTemplates";
 import { Barcode } from "../ui/Barcode";
 import { Modal } from "../ui/Modal";
 import { computeAge, birthDateFromAge } from "../../helpers/age";
+import { getServiceStock2 } from "../../helpers/stock2";
 
 const EMPTY_FORM = {serviceId:"",patientId:"",patientName:"",patientBirthDate:"",patientAge:"",note:"",items:[]};
 
@@ -48,11 +49,13 @@ export function ConsommationsPage({store,currentUser}){
     :(store.services||[])
   ).filter(s=>hasServiceAccess(currentUser,s.id));
 
+  // Calculé directement via Stock(2), pas via le compteur dénormalisé svcStock
+  // — évite toute divergence avec Stock Service/Statistiques (même correctif
+  // que RetoursServicePage.jsx).
   const svcProds=form.serviceId
-    ?Object.keys(store.svcStock||{}).filter(k=>k.startsWith(form.serviceId+"_")&&store.svcStock[k]>0).map(k=>{
-        const prodId=k.split("_")[1];
-        return {...(store.products.find(p=>p.id===prodId)||{}), svcQty:store.svcStock[k]};
-      }).filter(p=>p.id)
+    ?store.products
+      .map(p=>({...p, svcQty:getServiceStock2(store,p.id,form.serviceId)}))
+      .filter(p=>p.svcQty>0)
     :[];
 
   const filtered=search.trim()
