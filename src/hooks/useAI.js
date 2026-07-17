@@ -3,6 +3,8 @@ import * as XLSX from "xlsx";
 import { SECTIONS, ROLES } from "../constants";
 import { can } from "../permissions";
 import { readExcelFile, readFileAsBase64 } from "../helpers/fileUtils";
+import { computeAge } from "../helpers/age";
+import { getPharmacyStock2, getServiceStock2 } from "../helpers/stock2";
 
 export function buildAIContext(store, currentUser, activeSupplier, page) {
   const isAdmin = currentUser?.role === "admin";
@@ -57,6 +59,120 @@ export function buildAIContext(store, currentUser, activeSupplier, page) {
     ctx.depots = store.depots.map(d=>({ nom:d.name, localisation:d.location,
       fournisseur:store.suppliers.find(s=>s.id===d.supplierId)?.name||"—" }));
   }
+
+  // ── Services hospitaliers (Stock 2) ──
+  if (can(currentUser,"services","r")) {
+    ctx.services = (store.services||[]).map(s=>({ nom:s.name }));
+  }
+  if (can(currentUser,"transferts","r") || can(currentUser,"controle-transfert","r")) {
+    const trs = (store.transfers||[]).filter(t=>t.status!=="annule");
+    ctx.transferts = {
+      total: trs.length,
+      enAttenteDeControle: trs.filter(t=>t.status==="en_attente").length,
+      nonConformes: trs.filter(t=>t.status==="non_conforme").length,
+      recents: trs.slice(0,15).map(t=>({
+        service:t.serviceName, statut:t.status, par:t.transferredByName,
+        date: t.createdAt?.seconds?new Date(t.createdAt.seconds*1000).toLocaleDateString("fr-FR"):"—",
+        articles:(t.items||[]).map(i=>i.productName+" x"+i.qty).join(", "),
+      })),
+    };
+  }
+  if (can(currentUser,"retours-service","r") || can(currentUser,"controle-retour","r")) {
+    const rets = (store.svcReturns||[]).filter(r=>r.status!=="annule");
+    ctx.retoursService = {
+      total: rets.length, nonConformes: rets.filter(r=>r.status==="non_conforme").length,
+      recents: rets.slice(0,15).map(r=>({
+        service:r.serviceName, statut:r.status, par:r.returnedByName,
+        articles:(r.items||[]).map(i=>i.productName+" x"+i.qty).join(", "),
+      })),
+    };
+  }
+  if (can(currentUser,"receptions","r")) {
+    const recs = (store.receptions||[]).filter(r=>r.status!=="annule");
+    ctx.receptionsService = {
+      total: recs.length,
+      recentes: recs.slice(0,15).map(r=>({ ref:r.reference, fournisseur:r.supplierName, articles:(r.items||[]).length, par:r.receivedByName })),
+    };
+  }
+  if (can(currentUser,"consommations","r")) {
+    const cons = (store.consumptions||[]).filter(c=>c.status!=="annule");
+    ctx.consommations = {
+      total: cons.length,
+      recentes: cons.slice(0,15).map(c=>({
+        service:c.serviceName, patient:c.patientName||"—", patientId:c.patientId||"—",
+        articles:(c.items||[]).map(i=>i.productName+" x"+i.qty).join(", "), par:c.consumedByName,
+        date: c.createdAt?.seconds?new Date(c.createdAt.seconds*1000).toLocaleDateString("fr-FR"):"—",
+      })),
+    };
+    // Vue indexée par patient — répond directement à "quelles consommations
+    // pour le patient X ?" sans que l'IA ait à recouper la liste brute.
+    const byPatient = {};
+    cons.forEach(c=>{
+      const key = (c.patientId||c.patientName||"").trim();
+      if (!key) return;
+      if (!byPatient[key]) byPatient[key] = {
+        patientId: c.patientId||"—", nom: c.patientName||"—",
+        age: c.patientBirthDate ? (computeAge(c.patientBirthDate)+" ans") : (c.patientAge||"—"),
+        nbConsommations: 0, consommations: [],
+      };
+      byPatient[key].nbConsommations++;
+      byPatient[key].consommations.push({
+        date: c.createdAt?.seconds?new Date(c.createdAt.seconds*1000).toLocaleString("fr-FR"):"—",
+        service: c.serviceName, produits: (c.items||[]).map(i=>i.productName+" x"+i.qty).join(", "),
+        par: c.consumedByName, note: c.note||"",
+      });
+    });
+    ctx.patientsConsommations = Object.values(byPatient).slice(0,300);
+  }
+
+  // ── Statistiques (mêmes calculs que la page Statistiques) ──
+  if (can(currentUser,"statistiques","r")) {
+    // Péremptions proches (90 jours), tous emplacements confondus
+    const today = new Date();
+    const perempt = (store.batches||[]).filter(b=>b.qtyRemaining>0 && b.expiry).map(b=>{
+      const days = Math.ceil((new Date(b.expiry)-today)/(1000*60*60*24));
+      return { ...b, days };
+    }).filter(b=>b.days<=90).sort((a,b)=>a.days-b.days);
+    ctx.peremptionsProches = perempt.slice(0,40).map(b=>({
+      produit:b.productName, lot:b.lot, expiration:b.expiry,
+      joursRestants:b.days, quantite:b.qtyRemaining,
+      emplacement: b.location==="pharmacy" ? "Pharmacie" : (store.services.find(s=>"service:"+s.id===b.location)?.name||b.location),
+    }));
+
+    // Produits à commander — seuil pharmacie (Stock 1) + seuils par service (Stock 2)
+    ctx.produitsACommanderPharmacie = store.products
+      .filter(p=>p.reorderThreshold!=null && (store.stock[p.id]||0)<=p.reorderThreshold)
+      .map(p=>({ produit:p.name, stock:store.stock[p.id]||0, seuil:p.reorderThreshold, manque:Math.max(0,p.reorderThreshold-(store.stock[p.id]||0)) }));
+    const parService = [];
+    store.products.forEach(p=>{
+      Object.entries(p.reorderThresholds||{}).forEach(([sid,seuil])=>{
+        if (seuil==null) return;
+        const stockSvc = getServiceStock2(store,p.id,sid);
+        if (stockSvc<=seuil) {
+          const svc = store.services.find(s=>s.id===sid);
+          parService.push({ produit:p.name, service:svc?.name||sid, stock:stockSvc, seuil, manque:Math.max(0,seuil-stockSvc) });
+        }
+      });
+    });
+    ctx.produitsACommanderParService = parService.slice(0,60);
+
+    // Activité utilisateur : totaux par utilisateur sur les 4 opérations tracées
+    const actByUser = {};
+    const bump = (uid, uname, label) => {
+      if (!uid) return;
+      if (!actByUser[uid]) actByUser[uid] = { nom:uname||uid, receptions:0, transferts:0, consommations:0, retours:0 };
+      actByUser[uid][label]++;
+    };
+    (store.receptions||[]).forEach(r=>bump(r.receivedBy, r.receivedByName, "receptions"));
+    (store.transfers||[]).forEach(t=>bump(t.transferredBy, t.transferredByName, "transferts"));
+    (store.consumptions||[]).forEach(c=>bump(c.consumedBy, c.consumedByName, "consommations"));
+    (store.svcReturns||[]).forEach(r=>bump(r.returnedBy, r.returnedByName, "retours"));
+    ctx.activiteParUtilisateur = Object.values(actByUser);
+
+    // Stock (2) pharmacie et par service, pour les produits les plus significatifs
+    ctx.stock2Pharmacie = store.products.slice(0,80).map(p=>({ produit:p.name, stock:getPharmacyStock2(store,p.id) }));
+  }
+
   return ctx;
 }
 
@@ -73,7 +189,39 @@ export function useAI() {
     const dataCtx = ctx.fullData ? JSON.stringify(ctx.fullData, null, 1) : "{}";
     const pagesAccess = (ctx.fullData?.pagesAccessibles || []);
 
-    const system = "Tu es l'assistant IA intelligent de CHNCAK PharmaStock (Centre Hospitalier National Cheikh Ahmadoul Khadim).\n\nUTILISATEUR : " + (ctx.fullData?.utilisateur?.nom||"—") + " | Rôle : " + (ctx.fullData?.utilisateur?.role||"—") + "\n\nNAVIGATION : Utilise [NAVIGATE:nom-page] pour ouvrir une page.\nPages accessibles : " + pagesAccess.join(", ") + "\n\nGÉNÉRATION DE FICHIERS :\n- Pour générer un fichier Excel : [EXCEL:nom_fichier.xlsx]\n  Suivi d'un tableau JSON : [DATA:[{...},{...}]]\n- Pour générer un PDF : [PDF:nom_fichier]\n  Suivi du contenu HTML : [PDFCONTENT:<table>...</table>]\n- Pour générer un CSV : [CSV:nom_fichier.csv]\n  Suivi d'un tableau JSON : [DATA:[{...},{...}]]\n\nEXEMPLES :\n- Rapport stock : génère un Excel avec tous les produits et leurs quantités.\n- Factures du mois : génère un PDF ou Excel avec la liste des factures.\n- Produits en alerte : génère un fichier CSV des produits sous le seuil.\n\nDONNÉES EN TEMPS RÉEL :\n" + dataCtx + "\n\nINSTRUCTIONS :\n1. Réponds en français, de façon précise et professionnelle.\n2. Utilise les données ci-dessus pour répondre sur stocks, quantités, dates, historiques, situations.\n3. Pour naviguer vers une page accessible : [NAVIGATE:nom-page].\n4. Si l'utilisateur demande un fichier, génère-le avec les balises appropriées.\n5. Fais des calculs, comparaisons, résumés à partir des données.\n6. Signale proactivement les stocks bas ou anomalies.\\n7. GÉNÉRATION DE FICHIERS : place TOUT le HTML dans [PDFCONTENT:...] et TOUT le JSON dans [DATA:[...]]. Ne répète JAMAIS le HTML ou JSON brut dans ta réponse.\\n8. IMPORTANT - DONNÉES COMPLÈTES : quand on te demande une liste ou un rapport, tu DOIS inclure la TOTALITÉ des éléments sans exception. Ne tronque JAMAIS une liste. Si on demande les 93 produits, génère les 93 lignes. Écris uniquement un message de confirmation court après les balises.";
+    const system = "Tu es l'assistant IA intelligent de CHNCAK PharmaStock (Centre Hospitalier National Cheikh Ahmadoul Khadim)."
+      + "\n\nUTILISATEUR : " + (ctx.fullData?.utilisateur?.nom||"—") + " | Rôle : " + (ctx.fullData?.utilisateur?.role||"—")
+      + "\n\nNAVIGATION : Utilise [NAVIGATE:nom-page] pour ouvrir une page.\nPages accessibles : " + pagesAccess.join(", ")
+      + "\n\nDOMAINES DE DONNÉES DISPONIBLES (selon les droits de l'utilisateur) :"
+      + "\n- Pharmacie : produits, stocks, entrées, retours fournisseur, inventaires, situations/factures, fournisseurs, dépôts."
+      + "\n- Services hospitaliers : services, transferts (avec statut en_attente/confirmé/non conforme), retours service, réceptions."
+      + "\n- consommations : liste récente des consommations par service."
+      + "\n- patientsConsommations : historique COMPLET des consommations regroupé PAR PATIENT (patientId, nom, âge, liste détaillée avec date/service/produits/agent). Utilise ceci en PRIORITÉ dès qu'on te demande les consommations d'un patient précis (par nom ou Patient ID) — cherche une correspondance exacte ou partielle sur patientId/nom."
+      + "\n- peremptionsProches : lots dont la péremption est dans les 90 jours, avec emplacement (Pharmacie ou service)."
+      + "\n- produitsACommanderPharmacie / produitsACommanderParService : produits sous leur seuil de réapprovisionnement."
+      + "\n- activiteParUtilisateur : nombre de réceptions/transferts/consommations/retours par utilisateur — équivalent de l'onglet Statistiques > Activité utilisateur."
+      + "\n- stock2Pharmacie : stock (2) réel en temps réel par produit (réceptionné - transféré + retourné confirmé), distinct du stock (1) agrégé classique."
+      + "\n\nGÉNÉRATION DE FICHIERS (RAPPORTS) :\n- Excel : [EXCEL:nom_fichier.xlsx] suivi de [DATA:[{...},{...}]]\n- PDF : [PDF:nom_fichier] suivi de [PDFCONTENT:<table>...</table>]\n- CSV : [CSV:nom_fichier.csv] suivi de [DATA:[{...},{...}]]"
+      + "\n\nEXEMPLES DE DEMANDES QUE TU DOIS SAVOIR TRAITER :"
+      + "\n- \"Consommations du patient PAT-001\" ou \"qu'a reçu M. Diop ?\" → cherche dans patientsConsommations, réponds avec le détail (dates, services, produits), propose un export si utile."
+      + "\n- \"Rapport des péremptions proches\" → utilise peremptionsProches, génère un Excel/PDF trié par urgence."
+      + "\n- \"Quels produits sont à commander ?\" → croise produitsACommanderPharmacie et produitsACommanderParService selon le contexte demandé (pharmacie ou tel service)."
+      + "\n- \"Qui a fait le plus de consommations ce mois ?\" → utilise activiteParUtilisateur."
+      + "\n- \"Rapport stock\" : génère un Excel avec tous les produits et leurs quantités (stock (1) ou stock (2) selon la demande)."
+      + "\n- \"Factures du mois\" : génère un PDF ou Excel avec la liste des factures."
+      + "\n- \"Produits en alerte\" : génère un fichier CSV des produits sous le seuil."
+      + "\n- \"Transferts en attente\" ou \"non conformes\" : utilise ctx.transferts."
+      + "\n\nDONNÉES EN TEMPS RÉEL :\n" + dataCtx
+      + "\n\nINSTRUCTIONS :"
+      + "\n1. Réponds en français, de façon précise et professionnelle."
+      + "\n2. Utilise les données ci-dessus pour répondre sur stocks, quantités, dates, historiques, situations, consommations patients, péremptions, réapprovisionnement, activité des utilisateurs."
+      + "\n3. Pour naviguer vers une page accessible : [NAVIGATE:nom-page]."
+      + "\n4. Si l'utilisateur demande un fichier ou un rapport, génère-le avec les balises appropriées plutôt que de tout écrire en texte."
+      + "\n5. Fais des calculs, comparaisons, résumés à partir des données — y compris des croisements (ex: consommations d'un patient sur une période, produits à commander pour un service précis)."
+      + "\n6. Signale proactivement les stocks bas, péremptions proches ou anomalies pertinentes à la question posée."
+      + "\n7. GÉNÉRATION DE FICHIERS : place TOUT le HTML dans [PDFCONTENT:...] et TOUT le JSON dans [DATA:[...]]. Ne répète JAMAIS le HTML ou JSON brut dans ta réponse."
+      + "\n8. IMPORTANT - DONNÉES COMPLÈTES : quand on te demande une liste ou un rapport, tu DOIS inclure la TOTALITÉ des éléments sans exception. Ne tronque JAMAIS une liste. Écris uniquement un message de confirmation court après les balises."
+      + "\n9. Si une information demandée n'est pas dans les données fournies (ex : historique très ancien, patient introuvable), dis-le clairement plutôt que d'inventer.";
 
     try {
       const res = await fetch("/api/chat", {

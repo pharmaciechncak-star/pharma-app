@@ -21,8 +21,11 @@ export const SECTIONS = [
   // Services
   { id:"services",        label:"Services",                group:"services" },
   { id:"transferts",      label:"Transferts",              group:"services" },
+  { id:"controle-transfert", label:"Contrôle Transfert",   group:"services" },
   { id:"consommations",   label:"Consommations",           group:"services" },
   { id:"retours-service", label:"Retours Service",         group:"services" },
+  { id:"controle-retour", label:"Contrôle Retour",         group:"services" },
+  { id:"seuil",           label:"Seuil",                   group:"services" },
   { id:"receptions",      label:"Réceptions Service",      group:"services" },
   { id:"stock-service",   label:"Stock Services",          group:"services" },
   { id:"statistiques",    label:"Statistiques",            group:"services" },
@@ -31,6 +34,7 @@ export const SECTIONS = [
   { id:"fournisseurs",    label:"Fournisseurs",            group:"catalogue" },
   { id:"depots",          label:"Dépôts",                  group:"catalogue" },
   // Admin
+  { id:"utilisateurs",     label:"Utilisateurs",            group:"admin" },
   { id:"activites",       label:"Journal d'activité",      group:"admin", adminOnly:true },
   { id:"assistant_ia",    label:"Assistant IA",            group:"admin" },
 ];
@@ -38,14 +42,14 @@ export const SECTIONS = [
 export const P0={r:0,w:0,d:0}, P1={r:1,w:0,d:0}, P2={r:1,w:1,d:0}, P3={r:1,w:1,d:1};
 
 export const DEFAULT_PERMS = {
-  admin:         { entrees:P3,retours:P3,inventaire:P3,factures:P3,"hist-inv":P3,"hist-fact":P3,messagerie:P3,produits:P3,fournisseurs:P3,depots:P3,activites:P3,assistant_ia:P2,services:P3,transferts:P3,consommations:P3,"retours-service":P3,receptions:P3,"stock-service":P1,statistiques:P1 },
-  admin_pharmacie:{ entrees:P3,retours:P3,inventaire:P3,factures:P3,"hist-inv":P3,"hist-fact":P3,messagerie:P3,produits:P3,fournisseurs:P3,depots:P3,activites:P0,assistant_ia:P0,services:P1,transferts:P2,consommations:P1,"retours-service":P1,receptions:P2,"stock-service":P2,statistiques:P1 },
-  gestionnaire:  { entrees:P2,retours:P2,inventaire:P2,factures:P2,"hist-inv":P1,"hist-fact":P1,messagerie:P2,produits:P2,fournisseurs:P2,depots:P2,activites:P0,assistant_ia:P0,services:P1,transferts:P2,consommations:P1,"retours-service":P2,receptions:P2,"stock-service":P1,statistiques:P1 },
-  pharmacien:    { entrees:P2,retours:P2,inventaire:P2,factures:P2,"hist-inv":P2,"hist-fact":P2,messagerie:P2,produits:P2,fournisseurs:P2,depots:P2,activites:P0,assistant_ia:P0,services:P1,transferts:P2,consommations:P1,"retours-service":P2,receptions:P2,"stock-service":P1,statistiques:P0 },
-  magasinier:    { entrees:P2,retours:P2,inventaire:P0,factures:P0,"hist-inv":P0,"hist-fact":P0,messagerie:P0,produits:P1,fournisseurs:P0,depots:P1,activites:P0,assistant_ia:P0,services:P0,transferts:P0,consommations:P0,"retours-service":P0,receptions:P0,"stock-service":P0 },
-  comptable:     { entrees:P1,retours:P1,inventaire:P2,factures:P2,"hist-inv":P1,"hist-fact":P1,messagerie:P2,produits:P1,fournisseurs:P1,depots:P1,activites:P0,assistant_ia:P0,services:P1,transferts:P1,consommations:P1,"retours-service":P1,receptions:P1,"stock-service":P1,statistiques:P1 },
-  admin_service: { entrees:P0,retours:P0,inventaire:P0,factures:P0,"hist-inv":P0,"hist-fact":P0,messagerie:P2,produits:P1,fournisseurs:P0,depots:P0,activites:P0,assistant_ia:P0,services:P2,transferts:P2,consommations:P3,"retours-service":P2,receptions:P1,"stock-service":P1,statistiques:P1 },
-  agent_service: { entrees:P0,retours:P0,inventaire:P0,factures:P0,"hist-inv":P0,"hist-fact":P0,messagerie:P2,produits:P1,fournisseurs:P0,depots:P0,activites:P0,assistant_ia:P0,services:P1,transferts:P2,consommations:P2,"retours-service":P0,receptions:P0,"stock-service":P1 },
+  admin:         { utilisateurs:P3, entrees:P3,retours:P3,inventaire:P3,factures:P3,"hist-inv":P3,"hist-fact":P3,messagerie:P3,produits:P3,fournisseurs:P3,depots:P3,activites:P3,assistant_ia:P2,services:P3,transferts:P3,"controle-transfert":P3,consommations:P3,"retours-service":P3,"controle-retour":P3,seuil:P3,receptions:P3,"stock-service":P1,statistiques:P1 },
+  admin_pharmacie:{ utilisateurs:P2, entrees:P3,retours:P3,inventaire:P3,factures:P3,"hist-inv":P3,"hist-fact":P3,messagerie:P3,produits:P3,fournisseurs:P3,depots:P3,activites:P0,assistant_ia:P0,services:P1,transferts:P2,"controle-transfert":P0,consommations:P1,"retours-service":P1,"controle-retour":P2,seuil:P0,receptions:P2,"stock-service":P2,statistiques:P1 },
+  gestionnaire:  { utilisateurs:P0, entrees:P2,retours:P2,inventaire:P2,factures:P2,"hist-inv":P1,"hist-fact":P1,messagerie:P2,produits:P2,fournisseurs:P2,depots:P2,activites:P0,assistant_ia:P0,services:P1,transferts:P2,"controle-transfert":P0,consommations:P1,"retours-service":P1,"controle-retour":P2,seuil:P0,receptions:P2,"stock-service":P1,statistiques:P1 },
+  pharmacien:    { utilisateurs:P0, entrees:P2,retours:P2,inventaire:P2,factures:P2,"hist-inv":P2,"hist-fact":P2,messagerie:P2,produits:P2,fournisseurs:P2,depots:P2,activites:P0,assistant_ia:P0,services:P1,transferts:P2,"controle-transfert":P0,consommations:P1,"retours-service":P1,"controle-retour":P2,seuil:P0,receptions:P2,"stock-service":P1,statistiques:P0 },
+  magasinier:    { utilisateurs:P0, entrees:P2,retours:P2,inventaire:P0,factures:P0,"hist-inv":P0,"hist-fact":P0,messagerie:P0,produits:P1,fournisseurs:P0,depots:P1,activites:P0,assistant_ia:P0,services:P0,transferts:P0,"controle-transfert":P0,consommations:P0,"retours-service":P0,"controle-retour":P1,seuil:P0,receptions:P0,"stock-service":P0 },
+  comptable:     { utilisateurs:P0, entrees:P1,retours:P1,inventaire:P2,factures:P2,"hist-inv":P1,"hist-fact":P1,messagerie:P2,produits:P1,fournisseurs:P1,depots:P1,activites:P0,assistant_ia:P0,services:P1,transferts:P1,"controle-transfert":P0,consommations:P1,"retours-service":P1,"controle-retour":P1,seuil:P0,receptions:P1,"stock-service":P1,statistiques:P1 },
+  admin_service: { utilisateurs:P2, entrees:P0,retours:P0,inventaire:P0,factures:P0,"hist-inv":P0,"hist-fact":P0,messagerie:P2,produits:P1,fournisseurs:P0,depots:P0,activites:P0,assistant_ia:P0,services:P2,transferts:P0,"controle-transfert":P3,consommations:P3,"retours-service":P2,"controle-retour":P0,seuil:P2,receptions:P1,"stock-service":P1,statistiques:P1 },
+  agent_service: { utilisateurs:P0, entrees:P0,retours:P0,inventaire:P0,factures:P0,"hist-inv":P0,"hist-fact":P0,messagerie:P2,produits:P1,fournisseurs:P0,depots:P0,activites:P0,assistant_ia:P0,services:P1,transferts:P0,"controle-transfert":P2,consommations:P2,"retours-service":P2,"controle-retour":P0,seuil:P2,receptions:P0,"stock-service":P1 },
 };
 
 export const PAGE_LABELS = {
@@ -63,8 +67,11 @@ export const PAGE_LABELS = {
   "activites":       "Journal d'activité",
   "services":        "Services Hospitaliers",
   "transferts":      "Transferts",
+  "controle-transfert": "Contrôle Transfert",
   "consommations":   "Consommations",
   "retours-service": "Retours Service",
+  "controle-retour": "Contrôle Retour",
+  "seuil":           "Seuil",
   "receptions":      "Réceptions Service",
   "stock-service":   "Stock Services",
   "statistiques":    "Statistiques",
@@ -108,8 +115,11 @@ export const PAGE_COLORS = {
   "activites":    { bg:"linear-gradient(135deg,#1e1b4b,#312e81)", accent:"#a5b4fc", icon:"📜" },
   "services":        { bg:"linear-gradient(135deg,#7f1d1d,#991b1b)", accent:"#fca5a5", icon:"🏥" },
   "transferts":      { bg:"linear-gradient(135deg,#14532d,#166534)", accent:"#86efac", icon:"🔄" },
+  "controle-transfert": { bg:"linear-gradient(135deg,#7c2d12,#9a3412)", accent:"#fdba74", icon:"🔍" },
   "consommations":   { bg:"linear-gradient(135deg,#1e1b4b,#3730a3)", accent:"#c7d2fe", icon:"💉" },
   "retours-service": { bg:"linear-gradient(135deg,#78350f,#92400e)", accent:"#fcd34d", icon:"↩️" },
+  "controle-retour": { bg:"linear-gradient(135deg,#134e4a,#0f766e)", accent:"#5eead4", icon:"🔍" },
+  "seuil":           { bg:"linear-gradient(135deg,#581c87,#7e22ce)", accent:"#d8b4fe", icon:"🎚️" },
   "receptions":      { bg:"linear-gradient(135deg,#065f46,#047857)", accent:"#6ee7b7", icon:"📦" },
   "stock-service":   { bg:"linear-gradient(135deg,#1e3a5f,#1d4ed8)", accent:"#93c5fd", icon:"📊" },
   "statistiques":    { bg:"linear-gradient(135deg,#312e81,#4f46e5)", accent:"#a5b4fc", icon:"📈" },

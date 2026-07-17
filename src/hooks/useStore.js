@@ -87,6 +87,72 @@ export async function consumeFEFO(productId, qtyNeeded, location) {
   return { consumed, shortfall: Math.max(0, remaining) };
 }
 
+// Récupère tous les lots créés par une opération donnée (transfert, retour,
+// réception), via leur source/sourceRef — utilisé pour la modification et
+// l'annulation (jamais de suppression, on retrouve ce qui a été créé pour le
+// réajuster ou le neutraliser).
+async function getBatchesFor(source, sourceRef) {
+  const q = query(collection(db, "batches"), where("source", "==", source), where("sourceRef", "==", sourceRef));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+// Fait "revenir" tous les lots créés par une opération (transfert ou retour)
+// vers un emplacement donné : cherche un lot compatible (même produit/lot/
+// péremption) à cet emplacement pour lui recréditer la quantité, ou en crée un
+// nouveau si aucun ne correspond — puis neutralise le lot d'origine (jamais de
+// suppression). Utilisé par cancelTransfer/updateTransfer et
+// cancelSvcReturn/updateSvcReturn : la logique est strictement symétrique,
+// seul l'emplacement de destination change.
+async function reverseBatchesOf(source, sourceRef, targetLocation, userId, userName) {
+  const batches = await getBatchesFor(source, sourceRef);
+  for (const b of batches) {
+    if (!b.qtyRemaining) continue;
+    const q = query(collection(db, "batches"),
+      where("productId", "==", b.productId),
+      where("location", "==", targetLocation),
+      where("lot", "==", b.lot || ""),
+      where("expiry", "==", b.expiry || ""));
+    const snap = await getDocs(q);
+    const existing = snap.docs[0];
+    if (existing) {
+      const ed = existing.data();
+      await updateDoc(doc(db, "batches", existing.id), {
+        qtyRemaining: (ed.qtyRemaining||0) + b.qtyRemaining,
+        qtyInitial: (ed.qtyInitial||0) + b.qtyRemaining,
+      });
+    } else {
+      await createBatch({
+        productId: b.productId, productName: b.productName, lot: b.lot, expiry: b.expiry,
+        qty: b.qtyRemaining, location: targetLocation, source: "reversal", sourceRef: b.id,
+        userId, userName,
+      });
+    }
+    await updateDoc(doc(db, "batches", b.id), { qtyRemaining: 0, qtyInitial: 0 });
+  }
+}
+
+// Restaure exactement l'effet stock d'une consommation (svcStock + lots FEFO
+// précisément consommés, via consumedBatches enregistré à la création) —
+// utilisé par cancelConsumption et updateConsumption (annule puis réapplique).
+async function restoreConsumptionStock(c) {
+  for (const it of (c.items||[])) {
+    if (!it.productId || !it.qty) continue;
+    const sKey = c.serviceId+"_"+it.productId;
+    const sSnap = await getDoc(doc(db,"svcStock",sKey));
+    const sCur = sSnap.data()?.qty || 0;
+    await setDoc(doc(db,"svcStock",sKey), { serviceId:c.serviceId, productId:it.productId, qty: sCur + Number(it.qty) }, { merge:true });
+  }
+  for (const grp of (c.consumedBatches||[])) {
+    for (const b of (grp.batches||[])) {
+      const bSnap = await getDoc(doc(db,"batches",b.batchId));
+      if (bSnap.exists()) {
+        await updateDoc(doc(db,"batches",b.batchId), { qtyRemaining: (bSnap.data().qtyRemaining||0) + b.qty });
+      }
+    }
+  }
+}
+
 export function useStore(userId, userName) {
   const [suppliers,    setSuppliers]    = useState([]);
   const [depots,       setDepots]       = useState([]);
@@ -104,6 +170,7 @@ export function useStore(userId, userName) {
   const [svcReturns,   setSvcReturns]   = useState([]);
   const [receptions,   setReceptions]   = useState([]);
   const [batches,      setBatches]      = useState([]);
+  const [patients,     setPatients]     = useState([]);
   const [svcStock,     setSvcStock]     = useState({}); // { "serviceId_productId": qty }
   const [stock,        setStock]        = useState({});
   const [loading,      setLoading]      = useState(true);
@@ -133,6 +200,7 @@ export function useStore(userId, userName) {
       safeLiveCol("svcReturns",   setSvcReturns,  orderBy("createdAt","desc")),
       safeLiveCol("receptions",   setReceptions,  orderBy("createdAt","desc")),
       safeLiveCol("batches",      setBatches,     orderBy("expiry","asc")),
+      safeLiveCol("patients",     setPatients),
     ];
 
     // Listener svcStock avec gestion d'erreur
@@ -163,7 +231,7 @@ export function useStore(userId, userName) {
   return {
     suppliers, depots, products, users,
     entries, returns, inventories, invoices, messages, activities,
-    services, transfers, consumptions, svcReturns, receptions, svcStock, batches,
+    services, transfers, consumptions, svcReturns, receptions, svcStock, batches, patients,
     stock, loading,
 
     addSupplier:    s    => addDoc(collection(db,"suppliers"), { ...s, createdBy:userId, createdByName:userName, createdAt: serverTimestamp() }), // retourne Promise<DocumentReference>
@@ -171,14 +239,6 @@ export function useStore(userId, userName) {
 
     addDepot:    d    => addDoc(collection(db,"depots"), { ...d, createdBy:userId, createdByName:userName, createdAt: serverTimestamp() }),
     updateDepot: (id,d)=> updateDoc(doc(db,"depots",id), d),
-
-    addProduct: async p => {
-      const ref = await addDoc(collection(db,"products"), {
-        ...p, stockQty: 0, createdBy:userId, createdByName:userName, createdAt: serverTimestamp(),
-      });
-      return ref.id;
-    },
-    updateProduct: (id,p) => updateDoc(doc(db,"products",id), p),
 
     addEntry: async e => {
       const ref = await addDoc(collection(db,"entries"), {
@@ -232,6 +292,27 @@ export function useStore(userId, userName) {
       await addDoc(collection(db,"activities"), { action:"update", entity:"product", entityId:id, details, oldName, newName:p.name||id, userId, userName, createdAt:serverTimestamp() });
     },
 
+    // Utilisée par la rubrique "Seuil" — un agent de service n'a pas le droit
+    // général d'édition produit (permission "produits"), mais peut, via cette
+    // fonction dédiée, définir le seuil de réapprovisionnement DE SON SERVICE
+    // (reorderThresholds.<serviceId>, distinct du seuil pharmacie global) et
+    // ajouter/corriger un code-barre. Volontairement limitée à ces champs pour
+    // que les règles Firestore puissent les distinguer d'une édition produit
+    // complète (nom, prix, fournisseur...) et n'autoriser qu'eux.
+    updateProductThreshold: async (productId, serviceId, { threshold, barcode1, barcode2, barcode3 }) => {
+      const patch = {};
+      if (threshold !== undefined) patch["reorderThresholds." + serviceId] = threshold===""||threshold==null ? null : Number(threshold);
+      if (barcode1 !== undefined) patch.barcode1 = barcode1;
+      if (barcode2 !== undefined) patch.barcode2 = barcode2;
+      if (barcode3 !== undefined) patch.barcode3 = barcode3;
+      await updateDoc(doc(db,"products",productId), patch);
+      await addDoc(collection(db,"activities"), {
+        action:"update", entity:"product", entityId:productId,
+        details:`Seuil/code-barre mis à jour (service) : ${productId}`,
+        userId, userName, createdAt:serverTimestamp(),
+      });
+    },
+
     deleteEntry: async id => {
       await addDoc(collection(db,"activities"), { action:"delete", entity:"entry", entityId:id, details:`Bon d'entrée supprimé : ${id}`, userId, userName, createdAt:serverTimestamp() });
       return deleteDoc(doc(db,"entries",id));
@@ -276,6 +357,7 @@ export function useStore(userId, userName) {
           name:         u.name,
           email:        u.email,
           role:         u.role,
+          serviceId:    u.serviceId || null,
           allowedServices:  u.allowedServices  || [],
           allowedSuppliers: u.allowedSuppliers || [],
           mustChangePw: true,
@@ -377,11 +459,12 @@ export function useStore(userId, userName) {
     },
 
     // Confirmation de réception par le service : contrôle ligne par ligne
-    // (conforme / non conforme + écart). Seule la quantité confirmée est
-    // créditée au Stock (2) du service — la partie non confirmée (écart) reste
-    // "perdue en transit" tant que la pharmacie n'a pas repris/corrigé le transfert.
+    // (contrôle ligne par ligne : écart signé — négatif = manquant, positif =
+    // surplus reçu, 0 = conforme). Seule la quantité confirmée est créditée au
+    // Stock (2) du service — l'écart négatif reste "perdu en transit" tant que
+    // la pharmacie n'a pas repris/corrigé le transfert.
     confirmTransfer: async (transferId, lineResults) => {
-      // lineResults: [{ productId, conforme:boolean, ecart:number }]
+      // lineResults: [{ productId, ecart:number }]  (ecart peut être négatif ou positif)
       const tSnap = await getDoc(doc(db,"transfers",transferId));
       if (!tSnap.exists()) throw new Error("Transfert introuvable");
       const t = tSnap.data();
@@ -390,10 +473,11 @@ export function useStore(userId, userName) {
       const newItems = (t.items||[]).map(it => {
         const res = byProduct[it.productId];
         if (!res) return it;
-        const ecart = res.conforme ? 0 : Math.max(0, Number(res.ecart)||0);
-        const qtyConfirmed = Math.max(0, Number(it.qty) - ecart);
-        if (!res.conforme) allConforme = false;
-        return { ...it, qtyConfirmed, conforme: res.conforme, ecart };
+        const ecart = Number(res.ecart)||0;
+        const conforme = ecart === 0;
+        const qtyConfirmed = Math.max(0, Number(it.qty) + ecart);
+        if (!conforme) allConforme = false;
+        return { ...it, qtyConfirmed, conforme, ecart };
       });
       await updateDoc(doc(db,"transfers",transferId), {
         items: newItems,
@@ -418,10 +502,130 @@ export function useStore(userId, userName) {
       return { allConforme };
     },
 
-    // ── Consommations Service ──
+    // Annule le CONTRÔLE (confirmation) d'un transfert, côté service — préalable
+    // obligatoire avant que la pharmacie puisse modifier/annuler le transfert
+    // d'origine. Retire le crédit donné au Stock (2) service et remet le
+    // transfert "en_attente" (le lot reste physiquement chez le service tant
+    // que la pharmacie ne l'a pas repris).
+    cancelTransferConfirmation: async (transferId) => {
+      const tSnap = await getDoc(doc(db,"transfers",transferId));
+      if (!tSnap.exists()) throw new Error("Transfert introuvable");
+      const t = tSnap.data();
+      if (t.status !== "confirme" && t.status !== "non_conforme") throw new Error("Ce transfert n'a pas encore été contrôlé.");
+      if (t.repris) throw new Error("Ce transfert a déjà été repris par la pharmacie — son contrôle ne peut plus être annulé.");
+      for (const it of (t.items||[])) {
+        if (!it.productId || !it.qtyConfirmed) continue;
+        const sKey = t.serviceId+"_"+it.productId;
+        const sSnap = await getDoc(doc(db,"svcStock",sKey));
+        const sCur = sSnap.data()?.qty || 0;
+        await setDoc(doc(db,"svcStock",sKey), { serviceId:t.serviceId, productId:it.productId, qty: Math.max(0, sCur - Number(it.qtyConfirmed)) }, { merge:true });
+      }
+      const resetItems = (t.items||[]).map(it => ({ ...it, qtyConfirmed:null, conforme:null, ecart:0 }));
+      await updateDoc(doc(db,"transfers",transferId), {
+        items: resetItems, status:"en_attente",
+        confirmedBy:null, confirmedByName:null, confirmedAt:null,
+      });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"transfer", entityId:transferId, details:`Contrôle annulé (service) : transfert vers ${t.serviceName} redevient modifiable`, userId, userName, createdAt:serverTimestamp() });
+    },
+
+    // Marque un transfert non conforme comme "repris" par la pharmacie et
+    // réconcilie le Stock (2) pharmacie : la quantité manquante (écart négatif)
+    // n'a en réalité jamais quitté la pharmacie, donc on corrige rétroactivement
+    // la quantité "envoyée" (item.qty) du transfert d'origine pour qu'elle
+    // corresponde à ce qui a vraiment été confirmé reçu. Comme la formule
+    // Stock(2) pharmacie soustrait Σ transferts.qty, cette correction fait
+    // automatiquement "revenir" la quantité manquante dans le stock — sans
+    // toucher qtyConfirmed/ecart, qui restent l'historique de ce qui s'est passé.
+    // Un transfert déjà repris ne peut pas l'être une seconde fois.
+    reprendreTransfer: async (transferId) => {
+      const tSnap = await getDoc(doc(db,"transfers",transferId));
+      if (!tSnap.exists()) throw new Error("Transfert introuvable");
+      const t = tSnap.data();
+      if (t.repris) throw new Error("Ce transfert a déjà été repris.");
+      if (t.status !== "non_conforme") throw new Error("Seul un transfert non conforme peut être repris.");
+      const reconciledItems = (t.items||[]).map(it => {
+        if (it.ecart < 0) {
+          // La quantité réellement partie = ce qui a été confirmé reçu par le service.
+          // On garde qtyOriginal pour l'affichage/traçabilité (ce qui avait été
+          // annoncé comme envoyé avant la réconciliation).
+          return { ...it, qtyOriginal: it.qty, qty: it.qtyConfirmed };
+        }
+        return it;
+      });
+      await updateDoc(doc(db,"transfers",transferId), {
+        items: reconciledItems,
+        repris: true, reprisBy: userId, reprisByName: userName, reprisAt: serverTimestamp(),
+      });
+      await addDoc(collection(db,"activities"), {
+        action:"update", entity:"transfer", entityId:transferId,
+        details: `Transfert repris : quantité manquante réconciliée avec le stock pharmacie (vers ${t.serviceName})`,
+        userId, userName, createdAt:serverTimestamp(),
+      });
+    },
+
+    // Annule un transfert "en_attente" (pas encore contrôlé). Fait revenir les
+    // lots physiquement à la pharmacie. Jamais de suppression : status:"annule".
+    cancelTransfer: async (transferId) => {
+      const tSnap = await getDoc(doc(db,"transfers",transferId));
+      if (!tSnap.exists()) throw new Error("Transfert introuvable");
+      const t = tSnap.data();
+      if (t.status === "annule") throw new Error("Ce transfert est déjà annulé.");
+      if (t.status !== "en_attente") throw new Error("Ce transfert a déjà été contrôlé par le service — demandez-lui d'abord d'annuler le contrôle.");
+      await reverseBatchesOf("transfer", transferId, locPharmacy(), userId, userName);
+      await updateDoc(doc(db,"transfers",transferId), { status:"annule", cancelledBy:userId, cancelledByName:userName, cancelledAt:serverTimestamp() });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"transfer", entityId:transferId, details:`Transfert annulé (vers ${t.serviceName}) — quantités retournées au stock pharmacie`, userId, userName, createdAt:serverTimestamp() });
+    },
+
+    // Modifie les articles d'un transfert "en_attente" : on annule d'abord
+    // proprement l'effet stock du transfert existant (lots restitués à la
+    // pharmacie), puis on réapplique la nouvelle liste d'articles comme un
+    // nouvel envoi — méthode simple et robuste plutôt qu'un delta fragile.
+    updateTransfer: async (transferId, newData) => {
+      const tSnap = await getDoc(doc(db,"transfers",transferId));
+      if (!tSnap.exists()) throw new Error("Transfert introuvable");
+      const t = tSnap.data();
+      if (t.status !== "en_attente") throw new Error("Ce transfert a déjà été contrôlé par le service — demandez-lui d'abord d'annuler le contrôle.");
+      await reverseBatchesOf("transfer", transferId, locPharmacy(), userId, userName);
+      const itemsInit = (newData.items||[]).map(it => ({ ...it, qtyConfirmed:null, conforme:null, ecart:0 }));
+      for (const it of (newData.items||[])) {
+        if (!it.productId || !it.qty) continue;
+        const { consumed } = await consumeFEFO(it.productId, Number(it.qty), locPharmacy());
+        for (const c of consumed) {
+          await createBatch({
+            productId: it.productId, productName: it.productName,
+            lot: c.lot, expiry: c.expiry, qty: c.qty,
+            location: locService(t.serviceId), source: "transfer", sourceRef: transferId,
+            userId, userName,
+          });
+        }
+      }
+      await updateDoc(doc(db,"transfers",transferId), { items: itemsInit, notes: newData.notes ?? t.notes });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"transfer", entityId:transferId, details:`Transfert modifié (vers ${t.serviceName})`, userId, userName, createdAt:serverTimestamp() });
+    },
+
+    // Dossier patient persistant (indépendant de chaque consommation) — clé =
+    // Patient ID directement, pour un accès direct sans requête. Utilisé pour
+    // la suggestion de filiation à la ressaisie d'un Patient ID déjà connu.
+    getPatient: async (patientId) => {
+      const pid = (patientId||"").trim();
+      if (!pid) return null;
+      const snap = await getDoc(doc(db,"patients",pid));
+      return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+    },
+    upsertPatient: async (patientId, { name, birthDate }) => {
+      const pid = (patientId||"").trim();
+      if (!pid) return;
+      await setDoc(doc(db,"patients",pid), {
+        patientId: pid, name: name||"", birthDate: birthDate||"",
+        updatedBy:userId, updatedByName:userName, updatedAt:serverTimestamp(),
+      }, { merge:true });
+    },
+
     addConsumption: async c => {
-      const ref = await addDoc(collection(db,"consumptions"), { ...c, consumedBy:userId, consumedByName:userName, createdAt:serverTimestamp() });
-      // Décrémenter stock service
+      const ref = await addDoc(collection(db,"consumptions"), { ...c, consumedBy:userId, consumedByName:userName, status:"actif", createdAt:serverTimestamp() });
+      // Décrémenter stock service, en gardant la trace des lots FEFO consommés
+      // (consumedBatches) pour pouvoir les restaurer exactement en cas d'annulation.
+      const consumedBatches = [];
       for(const it of (c.items||[])){
         if(!it.productId||!it.qty) continue;
         const sKey = c.serviceId+"_"+it.productId;
@@ -429,17 +633,62 @@ export function useStore(userId, userName) {
         const cur = snap.data()?.qty||0;
         await setDoc(doc(db,"svcStock",sKey), { serviceId:c.serviceId, productId:it.productId, qty:Math.max(0,cur-Number(it.qty)) }, { merge:true });
         // FEFO : on consomme d'abord les lots du service dont la péremption est la plus proche
-        await consumeFEFO(it.productId, Number(it.qty), locService(c.serviceId));
+        const { consumed } = await consumeFEFO(it.productId, Number(it.qty), locService(c.serviceId));
+        consumedBatches.push({ productId: it.productId, batches: consumed });
       }
+      await updateDoc(ref, { consumedBatches });
       await addDoc(collection(db,"activities"), { action:"create", entity:"consumption", entityId:ref.id, details:`Consommation ${c.serviceName} : ${c.items?.length||0} produit(s)${c.patientName?" — Patient: "+c.patientName:""}`, userId, userName, createdAt:serverTimestamp() });
       return ref;
     },
 
+    // Annule une consommation : jamais supprimée (status:"annule"), le stock
+    // service ET les lots FEFO exactement consommés sont restaurés.
+    cancelConsumption: async (consumptionId) => {
+      const cSnap = await getDoc(doc(db,"consumptions",consumptionId));
+      if (!cSnap.exists()) throw new Error("Consommation introuvable");
+      const c = cSnap.data();
+      if (c.status === "annule") throw new Error("Cette consommation est déjà annulée.");
+      await restoreConsumptionStock(c);
+      await updateDoc(doc(db,"consumptions",consumptionId), { status:"annule", cancelledBy:userId, cancelledByName:userName, cancelledAt:serverTimestamp() });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"consumption", entityId:consumptionId, details:`Consommation annulée (${c.serviceName}) — quantités restituées au stock service`, userId, userName, createdAt:serverTimestamp() });
+    },
+
+    // Modifie une consommation : on restaure d'abord l'effet stock existant,
+    // puis on réapplique les nouveaux articles (même logique "annule + réapplique"
+    // que pour les transferts/retours).
+    updateConsumption: async (consumptionId, newData) => {
+      const cSnap = await getDoc(doc(db,"consumptions",consumptionId));
+      if (!cSnap.exists()) throw new Error("Consommation introuvable");
+      const c = cSnap.data();
+      if (c.status === "annule") throw new Error("Cette consommation est annulée — impossible de la modifier.");
+      await restoreConsumptionStock(c);
+      const consumedBatches = [];
+      for (const it of (newData.items||[])) {
+        if(!it.productId||!it.qty) continue;
+        const sKey = c.serviceId+"_"+it.productId;
+        const snap = await getDoc(doc(db,"svcStock",sKey));
+        const cur = snap.data()?.qty||0;
+        await setDoc(doc(db,"svcStock",sKey), { serviceId:c.serviceId, productId:it.productId, qty:Math.max(0,cur-Number(it.qty)) }, { merge:true });
+        const { consumed } = await consumeFEFO(it.productId, Number(it.qty), locService(c.serviceId));
+        consumedBatches.push({ productId: it.productId, batches: consumed });
+      }
+      await updateDoc(doc(db,"consumptions",consumptionId), {
+        items:newData.items, patientId:newData.patientId, patientName:newData.patientName,
+        patientBirthDate:newData.patientBirthDate, patientAge:newData.patientAge,
+        note:newData.note, consumedBatches,
+      });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"consumption", entityId:consumptionId, details:`Consommation modifiée (${c.serviceName})`, userId, userName, createdAt:serverTimestamp() });
+    },
+
     // ── Retours Service → Pharmacie ──
     addSvcReturn: async r => {
-      const ref = await addDoc(collection(db,"svcReturns"), { ...r, returnedBy:userId, returnedByName:userName, createdAt:serverTimestamp() });
+      const itemsInit = (r.items||[]).map(it => ({ ...it, qtyConfirmed:null, conforme:null, ecart:0 }));
+      const ref = await addDoc(collection(db,"svcReturns"), { ...r, items:itemsInit, returnedBy:userId, returnedByName:userName, status:"en_attente", createdAt:serverTimestamp() });
       // NB : le Stock (1) n'est PAS touché ici — un retour service→pharmacie relève
-      // uniquement du Stock (2) (voir remarque dans addTransfer).
+      // uniquement du Stock (2) (voir remarque dans addTransfer). Comme pour les
+      // transferts, le côté émetteur (ici le service) est débité immédiatement ;
+      // le côté receveur (la pharmacie) n'est crédité qu'après confirmation
+      // (voir confirmSvcReturn) — getPharmacyStock2 ne compte que qtyConfirmed.
       for(const it of (r.items||[])){
         if(!it.productId||!it.qty) continue;
         // Décrémenter stock service
@@ -459,8 +708,153 @@ export function useStore(userId, userName) {
           });
         }
       }
-      await addDoc(collection(db,"activities"), { action:"create", entity:"svcReturn", entityId:ref.id, details:`Retour de ${r.serviceName} vers pharmacie : ${r.items?.length||0} produit(s)`, userId, userName, createdAt:serverTimestamp() });
+      await addDoc(collection(db,"activities"), { action:"create", entity:"svcReturn", entityId:ref.id, details:`Retour de ${r.serviceName} vers pharmacie : ${r.items?.length||0} produit(s) (en attente de contrôle)`, userId, userName, createdAt:serverTimestamp() });
       return ref;
+    },
+
+    // Contrôle de réception d'un retour service, par la pharmacie. Même logique
+    // que confirmTransfer : écart signé (négatif=manquant, positif=surplus, 0=conforme).
+    confirmSvcReturn: async (returnId, lineResults) => {
+      const rSnap = await getDoc(doc(db,"svcReturns",returnId));
+      if (!rSnap.exists()) throw new Error("Retour introuvable");
+      const r = rSnap.data();
+      const byProduct = Object.fromEntries(lineResults.map(l => [l.productId, l]));
+      let allConforme = true;
+      const newItems = (r.items||[]).map(it => {
+        const res = byProduct[it.productId];
+        if (!res) return it;
+        const ecart = Number(res.ecart)||0;
+        const conforme = ecart === 0;
+        const qtyConfirmed = Math.max(0, Number(it.qty) + ecart);
+        if (!conforme) allConforme = false;
+        return { ...it, qtyConfirmed, conforme, ecart };
+      });
+      await updateDoc(doc(db,"svcReturns",returnId), {
+        items: newItems,
+        status: allConforme ? "confirme" : "non_conforme",
+        confirmedBy: userId, confirmedByName: userName, confirmedAt: serverTimestamp(),
+      });
+      // Pas d'écriture supplémentaire nécessaire côté stock : getPharmacyStock2
+      // se base directement sur qtyConfirmed pour le terme "retour".
+      await addDoc(collection(db,"activities"), {
+        action:"update", entity:"svcReturn", entityId:returnId,
+        details: allConforme
+          ? `Réception du retour confirmée conforme : de ${r.serviceName}`
+          : `Réception du retour avec écart(s) signalée : de ${r.serviceName}`,
+        userId, userName, createdAt:serverTimestamp(),
+      });
+      return { allConforme };
+    },
+
+    // Annule le CONTRÔLE (confirmation) d'un retour, côté pharmacie — préalable
+    // obligatoire avant que le service puisse modifier/annuler le retour
+    // d'origine. Le crédit "retour" côté Stock (2) pharmacie disparaît
+    // automatiquement dès que qtyConfirmed repasse à null (getPharmacyStock2
+    // ne compte que les retours confirmés).
+    cancelSvcReturnConfirmation: async (returnId) => {
+      const rSnap = await getDoc(doc(db,"svcReturns",returnId));
+      if (!rSnap.exists()) throw new Error("Retour introuvable");
+      const r = rSnap.data();
+      if (r.status !== "confirme" && r.status !== "non_conforme") throw new Error("Ce retour n'a pas encore été contrôlé.");
+      if (r.repris) throw new Error("Ce retour a déjà été repris par le service — son contrôle ne peut plus être annulé.");
+      const resetItems = (r.items||[]).map(it => ({ ...it, qtyConfirmed:null, conforme:null, ecart:0 }));
+      await updateDoc(doc(db,"svcReturns",returnId), {
+        items: resetItems, status:"en_attente",
+        confirmedBy:null, confirmedByName:null, confirmedAt:null,
+      });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"svcReturn", entityId:returnId, details:`Contrôle annulé (pharmacie) : retour de ${r.serviceName} redevient modifiable`, userId, userName, createdAt:serverTimestamp() });
+    },
+
+    // Marque un retour non conforme comme "repris" par le service et réconcilie
+    // le Stock (2) service : la quantité manquante (écart négatif) n'a en
+    // réalité jamais quitté le service, donc on corrige rétroactivement la
+    // quantité "retournée" (item.qty) du retour d'origine, et on la recrédite
+    // à svcStock (le compteur dénormalisé utilisé par Consommations/Retours).
+    reprendreSvcReturn: async (returnId) => {
+      const rSnap = await getDoc(doc(db,"svcReturns",returnId));
+      if (!rSnap.exists()) throw new Error("Retour introuvable");
+      const r = rSnap.data();
+      if (r.repris) throw new Error("Ce retour a déjà été repris.");
+      if (r.status !== "non_conforme") throw new Error("Seul un retour non conforme peut être repris.");
+      const reconciledItems = (r.items||[]).map(it => {
+        if (it.ecart < 0) {
+          return { ...it, qtyOriginal: it.qty, qty: it.qtyConfirmed };
+        }
+        return it;
+      });
+      for (const it of (r.items||[])) {
+        if (it.ecart < 0 && it.productId) {
+          const manque = Math.abs(it.ecart);
+          const sKey = r.serviceId+"_"+it.productId;
+          const sSnap = await getDoc(doc(db,"svcStock",sKey));
+          const sCur = sSnap.data()?.qty || 0;
+          await setDoc(doc(db,"svcStock",sKey), { serviceId:r.serviceId, productId:it.productId, qty: sCur + manque }, { merge:true });
+        }
+      }
+      await updateDoc(doc(db,"svcReturns",returnId), {
+        items: reconciledItems,
+        repris: true, reprisBy: userId, reprisByName: userName, reprisAt: serverTimestamp(),
+      });
+      await addDoc(collection(db,"activities"), {
+        action:"update", entity:"svcReturn", entityId:returnId,
+        details: `Retour repris : quantité manquante recréditée au stock service (${r.serviceName})`,
+        userId, userName, createdAt:serverTimestamp(),
+      });
+    },
+
+    // Annule un retour "en_attente" (pas encore contrôlé). Fait revenir les
+    // lots physiquement au service et recrédite svcStock. Jamais de suppression.
+    cancelSvcReturn: async (returnId) => {
+      const rSnap = await getDoc(doc(db,"svcReturns",returnId));
+      if (!rSnap.exists()) throw new Error("Retour introuvable");
+      const r = rSnap.data();
+      if (r.status === "annule") throw new Error("Ce retour est déjà annulé.");
+      if (r.status !== "en_attente") throw new Error("Ce retour a déjà été contrôlé par la pharmacie — demandez-lui d'abord d'annuler le contrôle.");
+      await reverseBatchesOf("svcReturn", returnId, locService(r.serviceId), userId, userName);
+      for (const it of (r.items||[])) {
+        if (!it.productId || !it.qty) continue;
+        const sKey = r.serviceId+"_"+it.productId;
+        const sSnap = await getDoc(doc(db,"svcStock",sKey));
+        const sCur = sSnap.data()?.qty || 0;
+        await setDoc(doc(db,"svcStock",sKey), { serviceId:r.serviceId, productId:it.productId, qty: sCur + Number(it.qty) }, { merge:true });
+      }
+      await updateDoc(doc(db,"svcReturns",returnId), { status:"annule", cancelledBy:userId, cancelledByName:userName, cancelledAt:serverTimestamp() });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"svcReturn", entityId:returnId, details:`Retour annulé (${r.serviceName}) — quantités restituées au stock service`, userId, userName, createdAt:serverTimestamp() });
+    },
+
+    // Modifie les articles d'un retour "en_attente" — même principe qu'updateTransfer.
+    updateSvcReturn: async (returnId, newData) => {
+      const rSnap = await getDoc(doc(db,"svcReturns",returnId));
+      if (!rSnap.exists()) throw new Error("Retour introuvable");
+      const r = rSnap.data();
+      if (r.status !== "en_attente") throw new Error("Ce retour a déjà été contrôlé par la pharmacie — demandez-lui d'abord d'annuler le contrôle.");
+      await reverseBatchesOf("svcReturn", returnId, locService(r.serviceId), userId, userName);
+      for (const it of (r.items||[])) {
+        if (!it.productId || !it.qty) continue;
+        const sKey = r.serviceId+"_"+it.productId;
+        const sSnap = await getDoc(doc(db,"svcStock",sKey));
+        const sCur = sSnap.data()?.qty || 0;
+        await setDoc(doc(db,"svcStock",sKey), { serviceId:r.serviceId, productId:it.productId, qty: sCur + Number(it.qty) }, { merge:true });
+      }
+      const itemsInit = (newData.items||[]).map(it => ({ ...it, qtyConfirmed:null, conforme:null, ecart:0 }));
+      for (const it of (newData.items||[])) {
+        if (!it.productId || !it.qty) continue;
+        const sKey = r.serviceId+"_"+it.productId;
+        const sSnap = await getDoc(doc(db,"svcStock",sKey));
+        const sCur = sSnap.data()?.qty || 0;
+        await setDoc(doc(db,"svcStock",sKey), { serviceId:r.serviceId, productId:it.productId, qty: Math.max(0,sCur - Number(it.qty)) }, { merge:true });
+        const { consumed } = await consumeFEFO(it.productId, Number(it.qty), locService(r.serviceId));
+        for (const c of consumed) {
+          await createBatch({
+            productId: it.productId, productName: it.productName,
+            lot: c.lot, expiry: c.expiry, qty: c.qty,
+            location: locPharmacy(), source: "svcReturn", sourceRef: returnId,
+            userId, userName,
+          });
+        }
+      }
+      await updateDoc(doc(db,"svcReturns",returnId), { items: itemsInit, notes: newData.notes ?? r.notes });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"svcReturn", entityId:returnId, details:`Retour modifié (${r.serviceName})`, userId, userName, createdAt:serverTimestamp() });
     },
 
     getSvcStock: (serviceId, productId) => {
@@ -468,7 +862,6 @@ export function useStore(userId, userName) {
       return 0; // sera calculé depuis svcStock
     },
 
-    // ── Listener stock service (dans App) ──
     // ── Réceptions Service (Fournisseur → Pharmacie pour traçabilité service) ──
     addReception: async r => {
       const ref = await addDoc(collection(db,"receptions"), {
@@ -494,12 +887,68 @@ export function useStore(userId, userName) {
       });
       return ref;
     },
-    updateReception: (id,data) => updateDoc(doc(db,"receptions",id), data),
-    deleteReception: id => deleteDoc(doc(db,"receptions",id)),
 
-    // ── Méthodes manquantes store ──
-    deleteTransfer: id => deleteDoc(doc(db,"transfers",id)),
-    updateTransfer: (id,data) => updateDoc(doc(db,"transfers",id), data),
+    // Annule une réception : bloqué si une partie a déjà été transférée
+    // ailleurs (le lot correspondant a alors qtyRemaining < qtyInitial).
+    // Jamais de suppression : status:"annule", lots neutralisés (mis à zéro).
+    cancelReception: async (receptionId) => {
+      const rSnap = await getDoc(doc(db,"receptions",receptionId));
+      if (!rSnap.exists()) throw new Error("Réception introuvable");
+      const r = rSnap.data();
+      if (r.status === "annule") throw new Error("Cette réception est déjà annulée.");
+      const batches = await getBatchesFor("reception", receptionId);
+      for (const b of batches) {
+        if (b.qtyRemaining < b.qtyInitial) {
+          throw new Error(`Impossible d'annuler : quantité insuffisante (${b.productName||"produit"} déjà transférée).`);
+        }
+      }
+      for (const b of batches) {
+        await updateDoc(doc(db,"batches",b.id), { qtyRemaining:0, qtyInitial:0 });
+      }
+      await updateDoc(doc(db,"receptions",receptionId), { status:"annule", cancelledBy:userId, cancelledByName:userName, cancelledAt:serverTimestamp() });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"reception", entityId:receptionId, details:`Réception annulée : ${r.reference}`, userId, userName, createdAt:serverTimestamp() });
+    },
+
+    // Modifie les articles d'une réception : bloqué article par article si la
+    // nouvelle quantité est inférieure à ce qui a déjà été transféré depuis le
+    // lot correspondant (même contrainte que l'annulation, mais localisée).
+    updateReception: async (receptionId, newData) => {
+      const rSnap = await getDoc(doc(db,"receptions",receptionId));
+      if (!rSnap.exists()) throw new Error("Réception introuvable");
+      const r = rSnap.data();
+      if (r.status === "annule") throw new Error("Cette réception est annulée — impossible de la modifier.");
+      const batches = await getBatchesFor("reception", receptionId);
+      const newItems = newData.items||[];
+      for (const b of batches) {
+        const consumedSoFar = b.qtyInitial - b.qtyRemaining;
+        const target = newItems.find(i=>i.productId===b.productId);
+        const targetQty = target ? Number(target.qty||0) : 0;
+        if (consumedSoFar > targetQty) {
+          throw new Error(`Impossible de modifier "${b.productName||"produit"}" : quantité insuffisante (déjà transférée).`);
+        }
+      }
+      // Ajuster chaque lot existant au nouveau montant ; créer un lot pour un
+      // article ajouté qui n'existait pas dans la réception d'origine.
+      for (const it of newItems) {
+        if (!it.productId) continue;
+        const b = batches.find(x=>x.productId===it.productId);
+        const newQty = Number(it.qty||0);
+        if (b) {
+          const consumedSoFar = b.qtyInitial - b.qtyRemaining;
+          await updateDoc(doc(db,"batches",b.id), { qtyInitial:newQty, qtyRemaining: newQty - consumedSoFar, lot:it.lot||b.lot, expiry:it.expiry||b.expiry });
+        } else if (newQty > 0) {
+          await createBatch({ productId:it.productId, productName:it.productName, lot:it.lot, expiry:it.expiry, qty:newQty, location:locPharmacy(), source:"reception", sourceRef:receptionId, userId, userName });
+        }
+      }
+      // Article retiré de la réception (absent des newItems) : neutraliser son lot.
+      for (const b of batches) {
+        if (!newItems.some(i=>i.productId===b.productId)) {
+          await updateDoc(doc(db,"batches",b.id), { qtyInitial:0, qtyRemaining:0 });
+        }
+      }
+      await updateDoc(doc(db,"receptions",receptionId), { items:newItems, notes:newData.notes ?? r.notes });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"reception", entityId:receptionId, details:`Réception modifiée : ${r.reference}`, userId, userName, createdAt:serverTimestamp() });
+    },
 
     logActivity: (action, details) =>
       addDoc(collection(db,"activities"), {

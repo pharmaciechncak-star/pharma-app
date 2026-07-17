@@ -25,8 +25,11 @@ export function Sidebar({open,onClose,page,onNav,user,unread,activeSupplier,onCh
     { id:"services", label:"Services",   icon:"🏥", items:[
       { id:"services",        label:"Services",       icon:"🏥", perm:"services" },
       { id:"transferts",      label:"Transferts",     icon:"🔄", perm:"transferts" },
+      { id:"controle-transfert", label:"Contrôle Transfert", icon:"🔍", perm:"controle-transfert" },
       { id:"consommations",   label:"Consommations",  icon:"💉", perm:"consommations" },
       { id:"retours-service", label:"Retours Service",  icon:"↩️", perm:"retours-service" },
+      { id:"controle-retour", label:"Contrôle Retour",  icon:"🔍", perm:"controle-retour" },
+      { id:"seuil",           label:"Seuil",            icon:"🎚️", perm:"seuil" },
       { id:"receptions",      label:"Réceptions",      icon:"📦", perm:"receptions" },
       { id:"stock-service",   label:"Stock Services",  icon:"📊", perm:"stock-service" },
       { id:"statistiques",    label:"Statistiques",    icon:"📈", perm:"statistiques" },
@@ -37,7 +40,7 @@ export function Sidebar({open,onClose,page,onNav,user,unread,activeSupplier,onCh
       { id:"depots",       label:"Dépôts",       icon:"🏭", perm:"depots" },
     ]},
     { id:"admin", label:"Administration", icon:"⚙️", items:[
-      { id:"utilisateurs", label:"Utilisateurs",      icon:"👥", adminOnly:true },
+      { id:"utilisateurs", label:"Utilisateurs",      icon:"👥", perm:"utilisateurs" },
       { id:"activites",    label:"Journal d'activité",icon:"📜", adminOnly:true },
       { id:"assistant_ia", label:"Assistant IA",      icon:"🤖", perm:"assistant_ia" },
     ]},

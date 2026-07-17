@@ -6,7 +6,15 @@ service cloud.firestore {
     function userData(){ return get(/databases/$(database)/documents/users/$(uid())).data; }
     function role()    { return userData().role; }
     function isAdmin()        { return isAuth() && role() == 'admin'; }
-    function isAnyRole()      { return isAuth() && role() in ['admin','gestionnaire','pharmacien','magasinier','comptable','admin_service','agent_service']; }
+    function isAnyRole()      { return isAuth() && role() in ['admin','admin_pharmacie','gestionnaire','pharmacien','magasinier','comptable','admin_service','agent_service']; }
+    function isAdminPharmacie() { return isAuth() && role() == 'admin_pharmacie'; }
+    function isAdminService()   { return isAuth() && role() == 'admin_service'; }
+    // Rôles qu'un admin secondaire a le droit d'assigner à un nouvel utilisateur
+    // (miroir de PHARMACY_ASSIGNABLE_ROLES / SERVICE_ASSIGNABLE_ROLES côté app,
+    // src/components/UsersPage.jsx) — empêche un admin secondaire de créer un
+    // pair ou de s'auto-élever en écrivant directement sur l'API.
+    function pharmacyAssignableRoles() { return ['gestionnaire','pharmacien','magasinier','comptable']; }
+    function serviceAssignableRoles()  { return ['agent_service']; }
 
     // ── Permissions personnalisées (stockées sur le profil utilisateur) ──
     // Reproduit exactement getUserPerms()/can() côté app (src/permissions.js) :
@@ -18,6 +26,7 @@ service cloud.firestore {
     function defaultPermsMap() {
       return {
       'admin_pharmacie': {
+        'utilisateurs':{'r':true,'w':true,'d':false},
         'entrees':{'r':true,'w':true,'d':true},
         'retours':{'r':true,'w':true,'d':true},
         'inventaire':{'r':true,'w':true,'d':true},
@@ -29,11 +38,15 @@ service cloud.firestore {
         'activites':{'r':false,'w':false,'d':false},
         'services':{'r':true,'w':false,'d':false},
         'transferts':{'r':true,'w':true,'d':false},
+        'controle-transfert':{'r':false,'w':false,'d':false},
         'consommations':{'r':true,'w':false,'d':false},
         'retours-service':{'r':true,'w':false,'d':false},
+        'controle-retour':{'r':true,'w':true,'d':false},
+        'seuil':{'r':false,'w':false,'d':false},
         'receptions':{'r':true,'w':true,'d':false}
       },
       'gestionnaire': {
+        'utilisateurs':{'r':false,'w':false,'d':false},
         'entrees':{'r':true,'w':true,'d':false},
         'retours':{'r':true,'w':true,'d':false},
         'inventaire':{'r':true,'w':true,'d':false},
@@ -45,11 +58,15 @@ service cloud.firestore {
         'activites':{'r':false,'w':false,'d':false},
         'services':{'r':true,'w':false,'d':false},
         'transferts':{'r':true,'w':true,'d':false},
+        'controle-transfert':{'r':false,'w':false,'d':false},
         'consommations':{'r':true,'w':false,'d':false},
-        'retours-service':{'r':true,'w':true,'d':false},
+        'retours-service':{'r':true,'w':false,'d':false},
+        'controle-retour':{'r':true,'w':true,'d':false},
+        'seuil':{'r':false,'w':false,'d':false},
         'receptions':{'r':true,'w':true,'d':false}
       },
       'pharmacien': {
+        'utilisateurs':{'r':false,'w':false,'d':false},
         'entrees':{'r':true,'w':true,'d':false},
         'retours':{'r':true,'w':true,'d':false},
         'inventaire':{'r':true,'w':true,'d':false},
@@ -61,11 +78,15 @@ service cloud.firestore {
         'activites':{'r':false,'w':false,'d':false},
         'services':{'r':true,'w':false,'d':false},
         'transferts':{'r':true,'w':true,'d':false},
+        'controle-transfert':{'r':false,'w':false,'d':false},
         'consommations':{'r':true,'w':false,'d':false},
-        'retours-service':{'r':true,'w':true,'d':false},
+        'retours-service':{'r':true,'w':false,'d':false},
+        'controle-retour':{'r':true,'w':true,'d':false},
+        'seuil':{'r':false,'w':false,'d':false},
         'receptions':{'r':true,'w':true,'d':false}
       },
       'magasinier': {
+        'utilisateurs':{'r':false,'w':false,'d':false},
         'entrees':{'r':true,'w':true,'d':false},
         'retours':{'r':true,'w':true,'d':false},
         'inventaire':{'r':false,'w':false,'d':false},
@@ -77,11 +98,15 @@ service cloud.firestore {
         'activites':{'r':false,'w':false,'d':false},
         'services':{'r':false,'w':false,'d':false},
         'transferts':{'r':false,'w':false,'d':false},
+        'controle-transfert':{'r':false,'w':false,'d':false},
         'consommations':{'r':false,'w':false,'d':false},
         'retours-service':{'r':false,'w':false,'d':false},
+        'controle-retour':{'r':true,'w':false,'d':false},
+        'seuil':{'r':false,'w':false,'d':false},
         'receptions':{'r':false,'w':false,'d':false}
       },
       'comptable': {
+        'utilisateurs':{'r':false,'w':false,'d':false},
         'entrees':{'r':true,'w':false,'d':false},
         'retours':{'r':true,'w':false,'d':false},
         'inventaire':{'r':true,'w':true,'d':false},
@@ -93,11 +118,15 @@ service cloud.firestore {
         'activites':{'r':false,'w':false,'d':false},
         'services':{'r':true,'w':false,'d':false},
         'transferts':{'r':true,'w':false,'d':false},
+        'controle-transfert':{'r':false,'w':false,'d':false},
         'consommations':{'r':true,'w':false,'d':false},
         'retours-service':{'r':true,'w':false,'d':false},
+        'controle-retour':{'r':true,'w':false,'d':false},
+        'seuil':{'r':false,'w':false,'d':false},
         'receptions':{'r':true,'w':false,'d':false}
       },
       'admin_service': {
+        'utilisateurs':{'r':true,'w':true,'d':false},
         'entrees':{'r':false,'w':false,'d':false},
         'retours':{'r':false,'w':false,'d':false},
         'inventaire':{'r':false,'w':false,'d':false},
@@ -108,12 +137,16 @@ service cloud.firestore {
         'depots':{'r':false,'w':false,'d':false},
         'activites':{'r':false,'w':false,'d':false},
         'services':{'r':true,'w':true,'d':false},
-        'transferts':{'r':true,'w':true,'d':false},
+        'transferts':{'r':false,'w':false,'d':false},
+        'controle-transfert':{'r':true,'w':true,'d':true},
         'consommations':{'r':true,'w':true,'d':true},
         'retours-service':{'r':true,'w':true,'d':false},
+        'controle-retour':{'r':false,'w':false,'d':false},
+        'seuil':{'r':true,'w':true,'d':false},
         'receptions':{'r':true,'w':false,'d':false}
       },
       'agent_service': {
+        'utilisateurs':{'r':false,'w':false,'d':false},
         'entrees':{'r':false,'w':false,'d':false},
         'retours':{'r':false,'w':false,'d':false},
         'inventaire':{'r':false,'w':false,'d':false},
@@ -124,9 +157,12 @@ service cloud.firestore {
         'depots':{'r':false,'w':false,'d':false},
         'activites':{'r':false,'w':false,'d':false},
         'services':{'r':true,'w':false,'d':false},
-        'transferts':{'r':true,'w':true,'d':false},
+        'transferts':{'r':false,'w':false,'d':false},
+        'controle-transfert':{'r':true,'w':true,'d':false},
         'consommations':{'r':true,'w':true,'d':false},
-        'retours-service':{'r':false,'w':false,'d':false},
+        'retours-service':{'r':true,'w':true,'d':false},
+        'controle-retour':{'r':false,'w':false,'d':false},
+        'seuil':{'r':true,'w':true,'d':false},
         'receptions':{'r':false,'w':false,'d':false}
       }
       };
@@ -162,10 +198,28 @@ service cloud.firestore {
 
     // ── Utilisateurs (gestion des comptes — réservé admin, sauf lecture/MAJ de soi-même) ──
     match /users/{userId} {
-      allow read:   if isAuth() && (uid() == userId || isAdmin());
-      allow create: if isAdmin();
-      allow update: if isAdmin() || uid() == userId;
-      allow delete: if isAdmin();
+      allow read:   if isAnyRole();
+      // Admin principal : sans restriction. Admin secondaire (pharmacie/service) :
+      // uniquement les rôles de son périmètre, et pour un admin service, unique-
+      // ment pour SON propre service (serviceId doit correspondre au sien).
+      allow create: if isAdmin()
+        || (isAdminPharmacie() && request.resource.data.role in pharmacyAssignableRoles())
+        || (isAdminService() && request.resource.data.role in serviceAssignableRoles()
+            && request.resource.data.serviceId == userData().serviceId);
+      allow update: if isAdmin()
+        || uid() == userId
+        || (isAdminPharmacie()
+            && resource.data.role in pharmacyAssignableRoles()
+            && request.resource.data.role in pharmacyAssignableRoles())
+        || (isAdminService()
+            && resource.data.role in serviceAssignableRoles()
+            && resource.data.serviceId == userData().serviceId
+            && request.resource.data.role in serviceAssignableRoles()
+            && request.resource.data.serviceId == userData().serviceId);
+      allow delete: if isAdmin()
+        || (isAdminPharmacie() && resource.data.role in pharmacyAssignableRoles())
+        || (isAdminService() && resource.data.role in serviceAssignableRoles()
+            && resource.data.serviceId == userData().serviceId);
     }
 
     // ── Pharmacie ──
@@ -180,9 +234,18 @@ service cloud.firestore {
       allow delete:         if canAccess('depots','d');
     }
     match /products/{id} {
-      allow read:           if isAnyRole();
-      allow create, update: if canAccess('produits','w');
-      allow delete:         if canAccess('produits','d');
+      allow read:   if isAnyRole();
+      allow create: if canAccess('produits','w');
+      // Édition complète (nom, prix, fournisseur...) via "produits" ; ou mise à
+      // jour RESTREINTE aux seuls champs reorderThresholds/barcode1-3 via
+      // "seuil" (rubrique dédiée à l'agent de service — il n'a pas le droit
+      // d'édition produit générale). hasOnly() empêche que ce chemin touche
+      // le moindre autre champ (nom, prix, fournisseur, stockQty...).
+      allow update: if canAccess('produits','w')
+        || (canAccess('seuil','w')
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['reorderThresholds','barcode1','barcode2','barcode3']));
+      allow delete: if canAccess('produits','d');
     }
     match /entries/{id} {
       allow read:           if isAnyRole();
@@ -222,9 +285,14 @@ service cloud.firestore {
       allow delete:         if canAccess('services','d');
     }
     match /transfers/{id} {
-      allow read:           if isAnyRole();
-      allow create, update: if canAccess('transferts','w');
-      allow delete:         if canAccess('transferts','d');
+      allow read:   if isAnyRole();
+      allow create: if canAccess('transferts','w');
+      // update couvre à la fois la reprise/correction par la pharmacie (droit
+      // "transferts") et la confirmation de réception par le service (droit
+      // dédié "controle-transfert") — deux permissions distinctes, l'une des
+      // deux suffit.
+      allow update: if canAccess('transferts','w') || canAccess('controle-transfert','w');
+      allow delete: if canAccess('transferts','d');
     }
     match /consumptions/{id} {
       allow read:           if isAnyRole();
@@ -232,9 +300,14 @@ service cloud.firestore {
       allow delete:         if canAccess('consommations','d');
     }
     match /svcReturns/{id} {
-      allow read:           if isAnyRole();
-      allow create, update: if canAccess('retours-service','w');
-      allow delete:         if canAccess('retours-service','d');
+      allow read:   if isAnyRole();
+      allow create: if canAccess('retours-service','w');
+      // update couvre à la fois la reprise/correction par le service (droit
+      // "retours-service") et la confirmation de réception par la pharmacie
+      // (droit dédié "controle-retour") — deux permissions distinctes, l'une
+      // des deux suffit.
+      allow update: if canAccess('retours-service','w') || canAccess('controle-retour','w');
+      allow delete: if canAccess('retours-service','d');
     }
     match /receptions/{id} {
       allow read:           if isAnyRole();
@@ -253,6 +326,12 @@ service cloud.firestore {
     // section de permission dédiée, même logique que svcStock.
     match /batches/{id} {
       allow read, write: if isAnyRole();
+    }
+    // Dossier patient persistant (filiation) — écriture réservée à ceux qui
+    // peuvent saisir des consommations (même droit que la collection consumptions).
+    match /patients/{id} {
+      allow read:  if isAnyRole();
+      allow write: if canAccess('consommations','w');
     }
   }
 }

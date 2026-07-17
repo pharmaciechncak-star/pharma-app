@@ -7,27 +7,40 @@
 
 export function sumItemsQty(docs, productId) {
   return (docs || []).reduce((s, d) => {
+    if (d.status === "annule") return s; // jamais compté, quel que soit son contenu
     const it = (d.items || []).find(i => i.productId === productId);
     return s + (it ? Number(it.qty || 0) : 0);
   }, 0);
 }
 
-// Comme sumItemsQty, mais somme la quantité CONFIRMÉE par le service à
-// réception (qtyConfirmed), pas la quantité envoyée par la pharmacie (qty).
-// Tant qu'un transfert n'a pas été contrôlé (qtyConfirmed:null), il contribue
-// pour 0 : le produit est "en transit", ni à la pharmacie ni encore au service.
+// Comme sumItemsQty, mais somme la quantité CONFIRMÉE à réception
+// (qtyConfirmed), pas la quantité envoyée/annoncée (qty). Trois cas possibles
+// pour un article :
+//  - qtyConfirmed est un nombre  -> déjà contrôlé, on prend cette valeur
+//  - qtyConfirmed === null       -> en attente de contrôle (nouveau workflow),
+//                                    contribue pour 0 : le produit est "en
+//                                    transit", ni d'un côté ni de l'autre
+//  - qtyConfirmed absent (undefined) -> document créé AVANT l'introduction du
+//                                    contrôle (l'ancien système créditait tout
+//                                    immédiatement) : traité comme déjà
+//                                    confirmé pour ne pas faire "disparaître"
+//                                    du stock historique existant
 export function sumConfirmedQty(docs, productId) {
   return (docs || []).reduce((s, d) => {
+    if (d.status === "annule") return s;
     const it = (d.items || []).find(i => i.productId === productId);
-    return s + (it && it.qtyConfirmed != null ? Number(it.qtyConfirmed) : 0);
+    if (!it) return s;
+    if (it.qtyConfirmed === undefined) return s + Number(it.qty || 0);
+    if (it.qtyConfirmed === null) return s;
+    return s + Number(it.qtyConfirmed);
   }, 0);
 }
 
-// Stock (2) pharmacie = Σ réceptionné − Σ transféré (vers service) + Σ retourné (par le service)
+// Stock (2) pharmacie = Σ réceptionné − Σ transféré (vers service) + Σ retourné CONFIRMÉ (reçu et contrôlé, par la pharmacie)
 export function getPharmacyStock2(store, productId) {
   const recu   = sumItemsQty(store.receptions, productId);
   const transf = sumItemsQty(store.transfers, productId);
-  const retour = sumItemsQty(store.svcReturns, productId);
+  const retour = sumConfirmedQty(store.svcReturns, productId);
   return recu - transf + retour;
 }
 

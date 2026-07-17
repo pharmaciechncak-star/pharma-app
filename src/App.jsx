@@ -22,8 +22,11 @@ import { ProductsPage } from "./components/ProductsPage";
 import { ServicesPage } from "./components/services/ServicesPage";
 import { Alert, Badge } from "./components/ui/FormControls";
 import { TransfertsPage } from "./components/services/TransfertsPage";
+import { ControleTransfertPage } from "./components/services/ControleTransfertPage";
 import { ConsommationsPage } from "./components/services/ConsommationsPage";
 import { RetoursServicePage } from "./components/services/RetoursServicePage";
+import { ControleRetourPage } from "./components/services/ControleRetourPage";
+import { SeuilPage } from "./components/services/SeuilPage";
 import { ReceptionsPage } from "./components/services/ReceptionsPage";
 import { StockServicePage } from "./components/services/StockServicePage";
 import { StatistiquesPage } from "./components/StatistiquesPage";
@@ -241,8 +244,11 @@ export default function App(){
       case "produits":     return <ProductsPage store={store} activeSupplier={activeSupplier} currentUser={user}/>;
       case "services":        return can(user,"services","r")?<ServicesPage store={store} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;
       case "transferts":      return can(user,"transferts","r")?<TransfertsPage store={store} activeSupplier={activeSupplier} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;
+      case "controle-transfert": return can(user,"controle-transfert","r")?<ControleTransfertPage store={store} activeSupplier={activeSupplier} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;
       case "consommations":   return can(user,"consommations","r")?<ConsommationsPage store={store} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;
       case "retours-service": return can(user,"retours-service","r")?<RetoursServicePage store={store} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;
+      case "controle-retour": return can(user,"controle-retour","r")?<ControleRetourPage store={store} activeSupplier={activeSupplier} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;
+      case "seuil":            return can(user,"seuil","r")?<SeuilPage store={store} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;
       case "receptions":      return can(user,"receptions","r")?<ReceptionsPage store={store} activeSupplier={activeSupplier} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;
       case "stock-service":   return can(user,"stock-service","r")?<StockServicePage store={store} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;
       case "statistiques":    return can(user,"statistiques","r")?<StatistiquesPage store={store} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;
@@ -250,7 +256,7 @@ export default function App(){
 
       case "fournisseurs": return <FournisseursPage store={store} activeSupplier={activeSupplier} onActivate={setActiveSupplier} currentUser={user}/>;
       case "activites":    return can(user,"activites","r")?<ActivitiesPage store={store} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé. Contactez l'administrateur.</Alert></div>;
-      case "utilisateurs": return role==="admin"?<UsersPage store={store} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès refusé.</Alert></div>;
+      case "utilisateurs": return can(user,"utilisateurs","r")?<UsersPage store={store} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès refusé.</Alert></div>;
       default:             return <Dashboard store={store} activeSupplier={activeSupplier} activeDepot={activeDepot}/>;
     }
   };

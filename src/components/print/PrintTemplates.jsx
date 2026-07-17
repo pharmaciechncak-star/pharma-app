@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { LOGO_B64 } from "../../images";
 import { Barcode } from "../ui/Barcode";
+import { computeAge } from "../../helpers/age";
 
 export function PrintModal({ open, onClose, title, children }) {
   const contentRef = useRef(null);
@@ -209,7 +210,7 @@ export function ConsumptionPrint({ c }) {
         </div>
       </div>
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:20 }}>
-        {[["Service", c.serviceName||"—"], ["Patient", c.patientName||"—"], ["N° Dossier", c.patientId||"—"], ["Date", dateStr], ["Saisi par", c.consumedByName||"—"], ["Note", c.note||"—"]].map(([l,v]) => (
+        {[["Service", c.serviceName||"—"], ["Patient", c.patientName||"—"], ["Patient ID (voir cubix)", c.patientId||"—"], ["Âge", c.patientBirthDate?computeAge(c.patientBirthDate)+" ans":(c.patientAge||"—")], ["Date", dateStr], ["Saisi par", c.consumedByName||"—"], ["Note", c.note||"—"]].map(([l,v]) => (
           <div key={l} style={{ background:"#f8fafc", borderRadius:8, padding:12 }}>
             <div style={{ fontSize:10, fontWeight:700, color:"#64748b", textTransform:"uppercase", marginBottom:3 }}>{l}</div>
             <div style={{ fontSize:13, fontWeight:600, color:"#1e293b" }}>{v}</div>
@@ -236,6 +237,102 @@ export function ConsumptionPrint({ c }) {
         <div style={{ display:"inline-block", fontWeight:700, fontSize:12, borderBottom:"1px solid #1e293b", paddingBottom:2 }}>Le Cardiologue</div>
         <div style={{ height:60 }}></div>
       </div>
+      <div style={{ fontSize:11, color:"#94a3b8", textAlign:"center", marginTop:16, paddingTop:12, borderTop:"1px solid #e2e8f0" }}>
+        Document généré par PharmaStock · {new Date().toLocaleDateString("fr-FR")}
+      </div>
+    </div>
+  );
+}
+
+export function TransferPrint({ t }) {
+  if (!t) return null;
+  const thStyle = { padding:"9px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:"#64748b", borderBottom:"2px solid #e2e8f0", background:"#f8fafc" };
+  const tdStyle = { padding:"9px 12px", borderBottom:"1px solid #f1f5f9" };
+  const dateStr = t.createdAt?.seconds ? new Date(t.createdAt.seconds*1000).toLocaleString("fr-FR") : "—";
+  const statusLabel = t.status==="confirme" ? "✅ Conforme" : t.status==="non_conforme" ? "⚠️ Non conforme" : "⏳ En attente de confirmation";
+  return (
+    <div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:24, paddingBottom:16, borderBottom:"2px solid #e2e8f0" }}>
+        <div>
+          <div style={{fontSize:14,fontWeight:800,color:"#0891b2"}}>CHNCAK — PharmaStock</div>
+          <div style={{fontSize:9,color:"#64748b"}}>Centre Hospitalier National Cheikh Ahmadoul Khadim</div>
+        </div>
+        <div style={{ textAlign:"right" }}>
+          <div style={{ fontSize:18, fontWeight:800 }}>BON DE TRANSFERT</div>
+          <div style={{ fontFamily:"monospace", fontSize:12, color:"#64748b" }}>{t.id}</div>
+        </div>
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:20 }}>
+        {[["Destination", t.serviceName||"—"], ["Statut", statusLabel], ["Date", dateStr], ["Envoyé par", t.transferredByName||"—"], ["Confirmé par", t.confirmedByName||"—"], ["Notes", t.notes||"—"]].map(([l,v]) => (
+          <div key={l} style={{ background:"#f8fafc", borderRadius:8, padding:12 }}>
+            <div style={{ fontSize:10, fontWeight:700, color:"#64748b", textTransform:"uppercase", marginBottom:3 }}>{l}</div>
+            <div style={{ fontSize:13, fontWeight:600, color:"#1e293b" }}>{v}</div>
+          </div>
+        ))}
+      </div>
+      <table style={{ width:"100%", borderCollapse:"collapse", marginBottom:16 }}>
+        <thead>
+          <tr>{["Produit","Qté envoyée","Qté confirmée","Écart"].map(h => <th key={h} style={thStyle}>{h}</th>)}</tr>
+        </thead>
+        <tbody>
+          {(t.items || []).map((it, i) => (
+            <tr key={i}>
+              <td style={{ ...tdStyle, fontWeight:600 }}>{it.productName || "—"}</td>
+              <td style={tdStyle}>{it.qtyOriginal!=null ? it.qtyOriginal : it.qty}</td>
+              <td style={tdStyle}>{it.qtyConfirmed!=null ? it.qtyConfirmed : "—"}</td>
+              <td style={{ ...tdStyle, color: it.ecart<0 ? "#b91c1c" : it.ecart>0 ? "#0e7490" : "inherit", fontWeight: it.ecart!==0 ? 700 : 400 }}>{it.ecart ? (it.ecart>0?"+":"")+it.ecart : "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div style={{ fontSize:11, color:"#94a3b8", textAlign:"center", marginTop:16, paddingTop:12, borderTop:"1px solid #e2e8f0" }}>
+        Document généré par PharmaStock · {new Date().toLocaleDateString("fr-FR")}
+      </div>
+    </div>
+  );
+}
+
+export function SvcReturnPrint({ r }) {
+  if (!r) return null;
+  const thStyle = { padding:"9px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:"#64748b", borderBottom:"2px solid #e2e8f0", background:"#f8fafc" };
+  const tdStyle = { padding:"9px 12px", borderBottom:"1px solid #f1f5f9" };
+  const dateStr = r.createdAt?.seconds ? new Date(r.createdAt.seconds*1000).toLocaleString("fr-FR") : "—";
+  const statusLabel = r.status==="confirme" ? "✅ Conforme" : r.status==="non_conforme" ? "⚠️ Non conforme" : "⏳ En attente de contrôle";
+  return (
+    <div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:24, paddingBottom:16, borderBottom:"2px solid #e2e8f0" }}>
+        <div>
+          <div style={{fontSize:14,fontWeight:800,color:"#0891b2"}}>CHNCAK — PharmaStock</div>
+          <div style={{fontSize:9,color:"#64748b"}}>Centre Hospitalier National Cheikh Ahmadoul Khadim</div>
+        </div>
+        <div style={{ textAlign:"right" }}>
+          <div style={{ fontSize:18, fontWeight:800 }}>BON DE RETOUR SERVICE</div>
+          <div style={{ fontFamily:"monospace", fontSize:12, color:"#64748b" }}>{r.id}</div>
+        </div>
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:20 }}>
+        {[["Service", r.serviceName||"—"], ["Statut", statusLabel], ["Date", dateStr], ["Retourné par", r.returnedByName||"—"], ["Contrôlé par", r.confirmedByName||"—"], ["Notes", r.notes||"—"]].map(([l,v]) => (
+          <div key={l} style={{ background:"#f8fafc", borderRadius:8, padding:12 }}>
+            <div style={{ fontSize:10, fontWeight:700, color:"#64748b", textTransform:"uppercase", marginBottom:3 }}>{l}</div>
+            <div style={{ fontSize:13, fontWeight:600, color:"#1e293b" }}>{v}</div>
+          </div>
+        ))}
+      </div>
+      <table style={{ width:"100%", borderCollapse:"collapse", marginBottom:16 }}>
+        <thead>
+          <tr>{["Produit","Qté annoncée","Qté confirmée","Écart"].map(h => <th key={h} style={thStyle}>{h}</th>)}</tr>
+        </thead>
+        <tbody>
+          {(r.items || []).map((it, i) => (
+            <tr key={i}>
+              <td style={{ ...tdStyle, fontWeight:600 }}>{it.productName || "—"}</td>
+              <td style={tdStyle}>{it.qtyOriginal!=null ? it.qtyOriginal : it.qty}</td>
+              <td style={tdStyle}>{it.qtyConfirmed!=null ? it.qtyConfirmed : "—"}</td>
+              <td style={{ ...tdStyle, color: it.ecart<0 ? "#b91c1c" : it.ecart>0 ? "#0e7490" : "inherit", fontWeight: it.ecart!==0 ? 700 : 400 }}>{it.ecart ? (it.ecart>0?"+":"")+it.ecart : "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
       <div style={{ fontSize:11, color:"#94a3b8", textAlign:"center", marginTop:16, paddingTop:12, borderTop:"1px solid #e2e8f0" }}>
         Document généré par PharmaStock · {new Date().toLocaleDateString("fr-FR")}
       </div>

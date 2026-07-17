@@ -7,7 +7,38 @@ import { PageHeader } from "./ui/PageHeader";
 import { btn, label, input, card } from "../helpers/styles";
 import { Badge, Alert } from "./ui/FormControls";
 
+// Rôles qu'un admin secondaire a le droit d'assigner à un nouvel utilisateur —
+// évite qu'un "admin secondaire" puisse se créer un pair ou s'auto-élever.
+const PHARMACY_ASSIGNABLE_ROLES = ["gestionnaire","pharmacien","magasinier","comptable"];
+const SERVICE_ASSIGNABLE_ROLES  = ["agent_service"];
+
 export function UsersPage({store, currentUser}){
+  const isPrincipalAdmin = currentUser?.role==="admin" || currentUser?.isSuperuser;
+  const isAdminPharma    = currentUser?.role==="admin_pharmacie";
+  const isAdminSvc       = currentUser?.role==="admin_service";
+  const myServiceId      = currentUser?.serviceId||"";
+
+  // Rôles que CET utilisateur (l'admin connecté) a le droit d'assigner
+  const assignableRoles = isPrincipalAdmin ? Object.keys(ROLES)
+    : isAdminPharma ? PHARMACY_ASSIGNABLE_ROLES
+    : isAdminSvc    ? SERVICE_ASSIGNABLE_ROLES
+    : [];
+
+  // Sections de permissions que cet admin a le droit de modifier pour autrui
+  const assignableSections = isPrincipalAdmin ? SECTIONS
+    : isAdminPharma ? SECTIONS.filter(s=>s.group==="pharmacie"||s.group==="catalogue")
+    : isAdminSvc    ? SECTIONS.filter(s=>s.group==="services")
+    : [];
+
+  // Utilisateurs visibles pour cet admin : principal = tous ; admin_pharmacie =
+  // uniquement les rôles pharmacie ; admin_service = uniquement les agents de
+  // SON service.
+  const visibleUsers = store.users.filter(u=>{
+    if (isPrincipalAdmin) return true;
+    if (isAdminPharma) return PHARMACY_ASSIGNABLE_ROLES.includes(u.role);
+    if (isAdminSvc) return SERVICE_ASSIGNABLE_ROLES.includes(u.role) && u.serviceId===myServiceId;
+    return u.id===currentUser?.uid;
+  });
   const [show,       setShow]       = useState(false);
   const [editing,    setEditing]    = useState(null);
   const [permTab,    setPermTab]    = useState(null);  // user dont on édite les permissions
@@ -15,20 +46,20 @@ export function UsersPage({store, currentUser}){
   const [resetPwU,   setResetPwU]   = useState(null);  // user dont on reset le mdp
   const [newPw,      setNewPw]      = useState("");
   const [pwMsg,      setPwMsg]      = useState("");
-  const [form,       setForm]       = useState({name:"",email:"",role:"magasinier",tempPw:"",allowedServices:[],allowedSuppliers:[]});
+  const [form,       setForm]       = useState({name:"",email:"",role:assignableRoles[0]||"magasinier",serviceId:isAdminSvc?myServiceId:"",tempPw:"",allowedServices:[],allowedSuppliers:[]});
   const [showTempPw, setShowTempPw] = useState(false);
   const [permForm,   setPermForm]   = useState({});
   const [showPwReset,setShowPwReset]= useState(false);
 
   const openAdd = () => {
     setEditing(null);
-    setForm({name:"",email:"",role:"magasinier",tempPw:"",allowedServices:[],allowedSuppliers:[]});
+    setForm({name:"",email:"",role:assignableRoles[0]||"magasinier",serviceId:isAdminSvc?myServiceId:"",tempPw:"",allowedServices:[],allowedSuppliers:[]});
     setShowTempPw(false);
     setShow(true);
   };
   const openEdit = (u) => {
     setEditing(u.id);
-    setForm({name:u.name,email:u.email,role:u.role,allowedServices:u.allowedServices||[],allowedSuppliers:u.allowedSuppliers||[]});
+    setForm({name:u.name,email:u.email,role:u.role,serviceId:u.serviceId||(isAdminSvc?myServiceId:""),allowedServices:u.allowedServices||[],allowedSuppliers:u.allowedSuppliers||[]});
     setShow(true);
   };
   const toggleAllowed = (field, id) => {
@@ -42,15 +73,18 @@ export function UsersPage({store, currentUser}){
 
   const save = async () => {
     if(!form.name.trim()||!form.email.trim()){ setSaveError("⚠️ Nom et email obligatoires."); return; }
+    if(!assignableRoles.includes(form.role)){ setSaveError("⚠️ Vous n'êtes pas autorisé à assigner ce rôle."); return; }
+    // Un admin service ne peut créer/modifier que des agents de SON propre service
+    const dataToSave = isAdminSvc ? {...form, serviceId:myServiceId} : form;
     setSaving(true); setSaveError("");
     try {
       if(editing){
-        await store.updateUser(editing, form);
+        await store.updateUser(editing, dataToSave);
       } else {
-        await store.addUser(form);
+        await store.addUser(dataToSave);
       }
       setShow(false);
-      setForm({name:"",email:"",role:"magasinier",tempPw:"",allowedServices:[],allowedSuppliers:[]});
+      setForm({name:"",email:"",role:assignableRoles[0]||"magasinier",serviceId:isAdminSvc?myServiceId:"",tempPw:"",allowedServices:[],allowedSuppliers:[]});
       setEditing(null);
     } catch(e) {
       setSaveError("❌ " + (e.message||"Erreur inconnue"));
@@ -113,9 +147,26 @@ export function UsersPage({store, currentUser}){
           <div style={{marginBottom:12}}>
             <label style={label}>Rôle</label>
             <select style={input} value={form.role} onChange={e=>setForm(f=>({...f,role:e.target.value}))}>
-              {Object.entries(ROLES).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+              {assignableRoles.map(k=><option key={k} value={k}>{ROLES[k]?.label||k}</option>)}
             </select>
+            {!isPrincipalAdmin&&<div style={{fontSize:11,color:"#94a3b8",marginTop:4}}>En tant qu'admin secondaire, vous ne pouvez assigner que les rôles de votre périmètre.</div>}
           </div>
+
+          {/* Service d'appartenance — obligatoire pour un rôle service. Verrouillé
+              sur le service de l'admin connecté quand c'est un admin service. */}
+          {(form.role==="agent_service"||form.role==="admin_service")&&(
+            <div style={{marginBottom:12}}>
+              <label style={label}>Service d'appartenance</label>
+              {isAdminSvc?(
+                <div style={{...input,background:"#f8fafc",color:"#64748b"}}>{store.services.find(s=>s.id===myServiceId)?.name||"—"} <span style={{fontSize:10}}>(votre service)</span></div>
+              ):(
+                <select style={input} value={form.serviceId} onChange={e=>setForm(f=>({...f,serviceId:e.target.value}))}>
+                  <option value="">— Choisir —</option>
+                  {(store.services||[]).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              )}
+            </div>
+          )}
 
           {/* Restriction par service — laisser vide = accès à tous les services autorisés par le rôle */}
           <div style={{marginBottom:12}}>
@@ -188,7 +239,7 @@ export function UsersPage({store, currentUser}){
                 </tr>
               </thead>
               <tbody>
-                {SECTIONS.map(s => (
+                {assignableSections.map(s => (
                   <tr key={s.id}>
                     <td style={{...tdS,textAlign:"left",fontWeight:500,color:"#1e293b"}}>{s.label}</td>
                     {["r","w","d"].map(right=>(
@@ -249,7 +300,7 @@ export function UsersPage({store, currentUser}){
 
         {/* Liste utilisateurs */}
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          {store.users.map(u=>{
+          {visibleUsers.map(u=>{
             const isSuperuser    = u.isSuperuser || u.role==="superuser";
             const isTargetAdmin  = u.role==="admin";
             const isCurrentUser  = u.id===currentUser?.uid;
@@ -302,7 +353,7 @@ export function UsersPage({store, currentUser}){
             </div>
             );
           })}
-          {store.users.length===0&&<div style={{...card,textAlign:"center",padding:40,color:"#94a3b8"}}>Aucun utilisateur.</div>}
+          {visibleUsers.length===0&&<div style={{...card,textAlign:"center",padding:40,color:"#94a3b8"}}>Aucun utilisateur dans votre périmètre.</div>}
         </div>
       </div>
     </div>

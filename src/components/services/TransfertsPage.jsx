@@ -5,9 +5,16 @@ import { btn, card, label, input } from "../../helpers/styles";
 import { Alert } from "../ui/FormControls";
 import { BarcodeScanner } from "../ui/ScanReviewModal";
 import { getPharmacyStock2 } from "../../helpers/stock2";
+import { PrintModal, TransferPrint } from "../print/PrintTemplates";
+import { Modal } from "../ui/Modal";
 
+// NB : le contrôle/la confirmation de réception d'un transfert se fait
+// désormais dans la rubrique séparée "Contrôle Transfert" (droits distincts),
+// pas ici. Cette page ne gère que l'envoi (pharmacie) et l'historique.
 export function TransfertsPage({store,activeSupplier,currentUser}){
   const [show,setShow]=useState(false);
+  const [editingId,setEditingId]=useState(null);
+  const [cancelling,setCancelling]=useState(null);
   const [form,setForm]=useState({serviceId:"",items:[],notes:""});
   const [search,setSearch]=useState("");
   const [showResults,setShowResults]=useState(false);
@@ -15,14 +22,7 @@ export function TransfertsPage({store,activeSupplier,currentUser}){
   const [saving,setSaving]=useState(false);
   const [msg,setMsg]=useState("");
   const searchRef=useRef(null);
-
-  // Confirmation de réception (côté service)
-  const [confirmOpen,setConfirmOpen]=useState(null); // id du transfert en cours de contrôle
-  const [confirmLines,setConfirmLines]=useState({}); // productId -> {conforme, ecart}
-  const [confirmSaving,setConfirmSaving]=useState(false);
-
-  const userServiceId=currentUser?.serviceId||"";
-  const isServiceAgent=currentUser?.role==="agent_service"||currentUser?.role==="admin_service";
+  const [printSel,setPrintSel]=useState(null);
 
   const suppProds=activeSupplier?store.products.filter(p=>p.supplierId===activeSupplier.id):store.products.filter(p=>hasSupplierAccess(currentUser,p.supplierId));
   const filtered=search.trim()?suppProds.filter(p=>p.name.toLowerCase().includes(search.toLowerCase())):suppProds;
@@ -43,52 +43,49 @@ export function TransfertsPage({store,activeSupplier,currentUser}){
     if(form.items.length===0){setMsg("⚠️ Ajoutez au moins un produit.");return;}
     setSaving(true);
     try{
-      await store.addTransfer({...form,supplierId:activeSupplier?.id,serviceName:selectedSvc?.name});
-      setMsg("✅ Transfert envoyé — en attente de confirmation du service.");
+      if (editingId) {
+        await store.updateTransfer(editingId, {...form,serviceName:selectedSvc?.name});
+        setMsg("✅ Transfert modifié.");
+      } else {
+        await store.addTransfer({...form,supplierId:activeSupplier?.id,serviceName:selectedSvc?.name});
+        setMsg("✅ Transfert envoyé — en attente de confirmation du service.");
+      }
       setForm({serviceId:"",items:[],notes:""});
+      setEditingId(null);
       setShow(false);
       setTimeout(()=>setMsg(""),4000);
     }catch(e){setMsg("❌ "+e.message);}
     setSaving(false);
   };
 
-  // Pré-remplit un nouveau transfert avec les quantités en écart d'un transfert
-  // non conforme, pour que la pharmacie puisse le "reprendre" facilement.
-  const reprendre=(t)=>{
-    const items=(t.items||[]).filter(it=>it.conforme===false&&it.ecart>0).map(it=>({
-      productId:it.productId, productName:it.productName, qty:String(it.ecart), stockDispo:getPharmacyStock2(store,it.productId),
+  const openEdit=(t)=>{
+    setEditingId(t.id);
+    setForm({serviceId:t.serviceId, items:(t.items||[]).map(it=>({productId:it.productId,productName:it.productName,qty:String(it.qty),stockDispo:getPharmacyStock2(store,it.productId)})), notes:t.notes||""});
+    setShow(true);
+    window.scrollTo({top:0,behavior:"smooth"});
+  };
+
+  // Pré-remplit un nouveau transfert avec les quantités manquantes (écart
+  // négatif) d'un transfert non conforme, pour que la pharmacie puisse le
+  // "reprendre" facilement. Un écart positif (surplus reçu) ne nécessite pas
+  // de reprise.
+  const reprendre=async(t)=>{
+    if(t.repris){setMsg("⚠️ Ce transfert a déjà été repris.");return;}
+    try{
+      await store.reprendreTransfer(t.id);
+    }catch(e){setMsg("❌ "+e.message);return;}
+    const items=(t.items||[]).filter(it=>it.conforme===false&&it.ecart<0).map(it=>({
+      productId:it.productId, productName:it.productName, qty:String(Math.abs(it.ecart)), stockDispo:getPharmacyStock2(store,it.productId),
     }));
     setForm({serviceId:t.serviceId,items,notes:"Reprise suite écart — transfert d'origine du "+(t.createdAt?.seconds?new Date(t.createdAt.seconds*1000).toLocaleDateString("fr-FR"):"")});
     setShow(true);
     window.scrollTo({top:0,behavior:"smooth"});
   };
 
-  const openConfirm=(t)=>{
-    setConfirmOpen(t.id);
-    const init={};
-    (t.items||[]).forEach(it=>{ init[it.productId]={conforme:true,ecart:0}; });
-    setConfirmLines(init);
-  };
-  const submitConfirm=async(t)=>{
-    setConfirmSaving(true);
-    try{
-      const lineResults=(t.items||[]).map(it=>({
-        productId:it.productId,
-        conforme:confirmLines[it.productId]?.conforme!==false,
-        ecart:Number(confirmLines[it.productId]?.ecart)||0,
-      }));
-      const {allConforme}=await store.confirmTransfer(t.id,lineResults);
-      setMsg(allConforme?"✅ Réception confirmée conforme.":"⚠️ Réception enregistrée avec écart(s) — la pharmacie a été notifiée.");
-      setConfirmOpen(null);
-      setTimeout(()=>setMsg(""),5000);
-    }catch(e){setMsg("❌ "+e.message);}
-    setConfirmSaving(false);
-  };
-
   const transfers=(store.transfers||[]).filter(t=>(activeSupplier?t.supplierId===activeSupplier?.id:hasSupplierAccess(currentUser,t.supplierId))&&hasServiceAccess(currentUser,t.serviceId));
-  const pendingForMe=transfers.filter(t=>t.status==="en_attente"&&(!isServiceAgent||!userServiceId||t.serviceId===userServiceId));
 
   const statusBadge=(t)=>{
+    if(t.status==="annule") return <span style={{background:"#f1f5f9",color:"#64748b",fontSize:10,fontWeight:700,borderRadius:99,padding:"2px 8px"}}>🚫 Annulé</span>;
     if(t.status==="confirme") return <span style={{background:"#dcfce7",color:"#166534",fontSize:10,fontWeight:700,borderRadius:99,padding:"2px 8px"}}>✅ Conforme</span>;
     if(t.status==="non_conforme") return <span style={{background:"#fee2e2",color:"#b91c1c",fontSize:10,fontWeight:700,borderRadius:99,padding:"2px 8px"}}>⚠️ Non conforme</span>;
     return <span style={{background:"#fef3c7",color:"#92400e",fontSize:10,fontWeight:700,borderRadius:99,padding:"2px 8px"}}>⏳ En attente</span>;
@@ -97,7 +94,7 @@ export function TransfertsPage({store,activeSupplier,currentUser}){
   return(
     <div style={{padding:0}}>
       <PageHeader pageId="transferts" title="🔄 Transferts" subtitle={"Pharmacie → Services · "+(activeSupplier?.name||"")}>
-        {can(currentUser,"transferts","w")&&<button onClick={()=>setShow(true)} style={{...btn(),background:"rgba(255,255,255,0.15)",color:"white",border:"1px solid rgba(255,255,255,0.3)",fontSize:12}}>+ Nouveau</button>}
+        {can(currentUser,"transferts","w")&&<button onClick={()=>{setEditingId(null);setForm({serviceId:"",items:[],notes:""});setShow(true);}} style={{...btn(),background:"rgba(255,255,255,0.15)",color:"white",border:"1px solid rgba(255,255,255,0.3)",fontSize:12}}>+ Nouveau</button>}
       </PageHeader>
       <div style={{padding:16}}>
         {msg&&<Alert type={msg.startsWith("✅")?"success":msg.startsWith("⚠️")?"warn":"warn"}>{msg}</Alert>}
@@ -105,7 +102,7 @@ export function TransfertsPage({store,activeSupplier,currentUser}){
         {/* Modal nouveau transfert */}
         {show&&(
           <div style={{...card,marginBottom:14,border:"2px solid #22c55e"}}>
-            <div style={{fontWeight:700,fontSize:14,marginBottom:12,color:"#166534"}}>🔄 Nouveau Transfert</div>
+            <div style={{fontWeight:700,fontSize:14,marginBottom:12,color:"#166534"}}>🔄 {editingId?"Modifier le Transfert":"Nouveau Transfert"}</div>
             <div style={{marginBottom:10}}>
               <label style={label}>Service destinataire</label>
               <select style={input} value={form.serviceId} onChange={e=>setForm(f=>({...f,serviceId:e.target.value}))}>
@@ -169,89 +166,62 @@ export function TransfertsPage({store,activeSupplier,currentUser}){
                 style={{...btn(),background:"#16a34a",color:"white",flex:1,padding:10}}>
                 {saving?"⏳ Envoi...":"✅ Valider le transfert"}
               </button>
-              <button onClick={()=>setShow(false)} style={{...btn(),background:"#f1f5f9",color:"#374151",padding:10}}>Annuler</button>
+              <button onClick={()=>{setShow(false);setEditingId(null);setForm({serviceId:"",items:[],notes:""});}} style={{...btn(),background:"#f1f5f9",color:"#374151",padding:10}}>Annuler</button>
             </div>
-          </div>
-        )}
-
-        {/* Transferts en attente de confirmation */}
-        {pendingForMe.length>0&&(
-          <div style={{...card,marginBottom:14,border:"2px solid #fbbf24",background:"#fffbeb"}}>
-            <div style={{fontWeight:700,fontSize:13,color:"#92400e",marginBottom:10}}>⏳ {pendingForMe.length} transfert(s) en attente de confirmation</div>
-            {pendingForMe.map(t=>(
-              <div key={t.id} style={{...card,marginBottom:8,background:"white"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
-                  <div>
-                    <div style={{fontWeight:700,fontSize:13}}>🔄 → {t.serviceName||"—"}</div>
-                    <div style={{fontSize:11,color:"#64748b"}}>{t.transferredByName} · {t.createdAt?.seconds?new Date(t.createdAt.seconds*1000).toLocaleString("fr-FR"):"—"}</div>
-                  </div>
-                  {statusBadge(t)}
-                </div>
-                {confirmOpen!==t.id?(
-                  <button onClick={()=>openConfirm(t)} style={{...btn(),background:"#4f46e5",color:"white",fontSize:12,width:"100%"}}>📋 Contrôler la réception</button>
-                ):(
-                  <div>
-                    {(t.items||[]).map((it,i)=>{
-                      const line=confirmLines[it.productId]||{conforme:true,ecart:0};
-                      return(
-                        <div key={i} style={{background:"#f8fafc",borderRadius:8,padding:"8px 10px",marginBottom:6}}>
-                          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:line.conforme?0:6}}>
-                            <div style={{fontSize:12,fontWeight:600}}>{it.productName} <span style={{color:"#94a3b8",fontWeight:400}}>({it.qty} envoyé(s))</span></div>
-                            <label style={{display:"flex",alignItems:"center",gap:5,fontSize:11,cursor:"pointer"}}>
-                              <input type="checkbox" checked={line.conforme}
-                                onChange={e=>setConfirmLines(cl=>({...cl,[it.productId]:{...line,conforme:e.target.checked,ecart:e.target.checked?0:line.ecart}}))}/>
-                              Conforme
-                            </label>
-                          </div>
-                          {!line.conforme&&(
-                            <div style={{display:"flex",alignItems:"center",gap:6}}>
-                              <label style={{fontSize:11,color:"#b91c1c"}}>Écart (manquant/endommagé) :</label>
-                              <input type="number" min="0" max={it.qty} value={line.ecart}
-                                onChange={e=>setConfirmLines(cl=>({...cl,[it.productId]:{...line,ecart:e.target.value}}))}
-                                style={{width:60,padding:"3px 6px",border:"1px solid #fca5a5",borderRadius:6,fontSize:12,textAlign:"center"}}/>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                    <div style={{display:"flex",gap:8,marginTop:8}}>
-                      <button onClick={()=>submitConfirm(t)} disabled={confirmSaving}
-                        style={{...btn(),background:"#16a34a",color:"white",flex:1,fontSize:12}}>
-                        {confirmSaving?"⏳ Envoi...":"✅ Valider la réception"}
-                      </button>
-                      <button onClick={()=>setConfirmOpen(null)} style={{...btn(),background:"#f1f5f9",color:"#374151",fontSize:12}}>Annuler</button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
           </div>
         )}
 
         {/* Historique */}
         {transfers.length===0&&!show&&<div style={{...card,textAlign:"center",padding:40,color:"#94a3b8"}}>Aucun transfert.</div>}
         {transfers.map(t=>(
-          <div key={t.id} style={{...card,marginBottom:8}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+          <div key={t.id} onClick={()=>setPrintSel(t)}
+            style={{...card,marginBottom:8,cursor:"pointer",transition:"box-shadow 0.15s"}}
+            onMouseEnter={e=>e.currentTarget.style.boxShadow="0 2px 10px rgba(79,70,229,0.18)"}
+            onMouseLeave={e=>e.currentTarget.style.boxShadow=card.boxShadow}
+            title="Cliquer pour voir le détail complet">
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
               <div>
                 <div style={{fontWeight:700,fontSize:13}}>🔄 → {t.serviceName||"—"}</div>
                 <div style={{fontSize:11,color:"#64748b"}}>{t.transferredByName} · {t.createdAt?.seconds?new Date(t.createdAt.seconds*1000).toLocaleString("fr-FR"):"—"}</div>
               </div>
-              {statusBadge(t)}
-            </div>
-            {(t.items||[]).map((it,i)=>(
-              <div key={i} style={{fontSize:11,color:"#64748b",paddingLeft:8}}>
-                • {it.productName} — {it.qty} unité(s)
-                {it.conforme===false&&<span style={{color:"#b91c1c",fontWeight:600}}> — écart de {it.ecart} signalé (reçu {it.qtyConfirmed})</span>}
+              <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
+                {statusBadge(t)}
+                <span style={{background:"#eef2ff",color:"#4f46e5",fontSize:10,fontWeight:700,borderRadius:99,padding:"2px 8px"}}>{(t.items||[]).length} produit(s)</span>
               </div>
-            ))}
-            {t.notes&&<div style={{fontSize:11,color:"#94a3b8",marginTop:4,fontStyle:"italic"}}>{t.notes}</div>}
-            {t.status==="non_conforme"&&can(currentUser,"transferts","w")&&(
-              <button onClick={()=>reprendre(t)} style={{...btn(),background:"#fef3c7",color:"#92400e",border:"1px solid #fcd34d",fontSize:11,marginTop:8}}>🔁 Reprendre le transfert (écarts)</button>
+            </div>
+            {t.repris&&<div style={{fontSize:11,color:"#059669",marginTop:6,fontWeight:600}}>✅ Repris — manquant réconcilié avec le stock pharmacie ({t.reprisAt?.seconds?new Date(t.reprisAt.seconds*1000).toLocaleDateString("fr-FR"):""})</div>}
+            {t.status==="non_conforme"&&!t.repris&&can(currentUser,"transferts","w")&&(t.items||[]).some(it=>it.ecart<0)&&(
+              <button onClick={e=>{e.stopPropagation();reprendre(t);}} style={{...btn(),background:"#fef3c7",color:"#92400e",border:"1px solid #fcd34d",fontSize:11,marginTop:8}}>🔁 Reprendre le transfert (manquants)</button>
             )}
+            {t.status==="en_attente"&&can(currentUser,"transferts","w")&&(
+              <div style={{display:"flex",gap:6,marginTop:8}}>
+                {can(currentUser,"transferts","w")&&<button onClick={e=>{e.stopPropagation();openEdit(t);}} style={{...btn(),background:"#eef2ff",color:"#4f46e5",border:"1px solid #c7d2fe",fontSize:11}}>✏️ Modifier</button>}
+                {can(currentUser,"transferts","w")&&<button onClick={e=>{e.stopPropagation();setCancelling(t);}} style={{...btn(),background:"#fee2e2",color:"#ef4444",border:"1px solid #fca5a5",fontSize:11}}>🚫 Annuler</button>}
+              </div>
+            )}
+            {(t.status==="confirme"||t.status==="non_conforme")&&!t.repris&&<div style={{fontSize:10,color:"#94a3b8",marginTop:6,fontStyle:"italic"}}>Déjà contrôlé par le service — non modifiable tant qu'il n'a pas annulé son contrôle.</div>}
           </div>
         ))}
       </div>
+      <PrintModal open={!!printSel} onClose={()=>setPrintSel(null)} title="Bon de Transfert">
+        <TransferPrint t={printSel}/>
+      </PrintModal>
+      <Modal open={!!cancelling} onClose={()=>setCancelling(null)} title="🚫 Annuler ce transfert ?">
+        {cancelling&&(
+          <div>
+            <div style={{fontSize:13,color:"#374151",marginBottom:12}}>
+              Ce transfert vers <b>{cancelling.serviceName}</b> sera marqué "annulé" (jamais supprimé) et les quantités reviendront au stock pharmacie.
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={async()=>{
+                try{ await store.cancelTransfer(cancelling.id); setCancelling(null); }
+                catch(e){ setMsg("❌ "+e.message); }
+              }} style={{...btn(),background:"#ef4444",color:"white",flex:1,padding:10}}>🚫 Confirmer l'annulation</button>
+              <button onClick={()=>setCancelling(null)} style={{...btn(),background:"#f1f5f9",color:"#374151",padding:10}}>Retour</button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

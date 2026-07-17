@@ -1,15 +1,20 @@
 import { useState } from "react";
 import { PageHeader } from "../ui/PageHeader";
 import { can, visibleServices, hasServiceAccess } from "../../permissions";
+import { PrintModal, SvcReturnPrint } from "../print/PrintTemplates";
 import { btn, card, label, input } from "../../helpers/styles";
 import { Alert } from "../ui/FormControls";
+import { Modal } from "../ui/Modal";
 
 export function RetoursServicePage({store,currentUser}){
   const [show,setShow]=useState(false);
+  const [editingId,setEditingId]=useState(null);
+  const [cancelling,setCancelling]=useState(null);
   const [form,setForm]=useState({serviceId:"",items:[],notes:""});
   const [search,setSearch]=useState("");
   const [showResults,setShowResults]=useState(false);
   const [saving,setSaving]=useState(false);
+  const [printSel,setPrintSel]=useState(null);
   const [msg,setMsg]=useState("");
 
   const userServiceId=currentUser?.serviceId||"";
@@ -38,27 +43,62 @@ export function RetoursServicePage({store,currentUser}){
     setSaving(true);
     try{
       const svc=store.services?.find(s=>s.id===form.serviceId);
-      await store.addSvcReturn({...form,serviceName:svc?.name||""});
-      setMsg("✅ Retour enregistré — stock pharmacie mis à jour !");
+      if (editingId) {
+        await store.updateSvcReturn(editingId, {...form,serviceName:svc?.name||""});
+        setMsg("✅ Retour modifié.");
+      } else {
+        await store.addSvcReturn({...form,serviceName:svc?.name||""});
+        setMsg("✅ Retour enregistré — stock pharmacie mis à jour !");
+      }
       setForm({serviceId:isServiceAgent?userServiceId:"",items:[],notes:""});
+      setEditingId(null);
       setShow(false);
       setTimeout(()=>setMsg(""),4000);
     }catch(e){setMsg("❌ "+e.message);}
     setSaving(false);
   };
 
+  const openEdit=(r)=>{
+    setEditingId(r.id);
+    setForm({serviceId:r.serviceId, items:(r.items||[]).map(it=>({productId:it.productId,productName:it.productName,qty:String(it.qty),svcQty:store.svcStock?.[r.serviceId+"_"+it.productId]||0})), notes:r.notes||""});
+    setShow(true);
+    window.scrollTo({top:0,behavior:"smooth"});
+  };
+
   const returns=(store.svcReturns||[]).filter(r=>(!isServiceAgent||!userServiceId||r.serviceId===userServiceId)&&hasServiceAccess(currentUser,r.serviceId));
+
+  // Pré-remplit un nouveau retour avec les quantités manquantes (écart négatif)
+  // d'un retour non conforme, pour que le service puisse le "reprendre" facilement.
+  const reprendre=async(r)=>{
+    if(r.repris){setMsg("⚠️ Ce retour a déjà été repris.");return;}
+    try{
+      await store.reprendreSvcReturn(r.id);
+    }catch(e){setMsg("❌ "+e.message);return;}
+    const items=(r.items||[]).filter(it=>it.conforme===false&&it.ecart<0).map(it=>({
+      productId:it.productId, productName:it.productName, qty:String(Math.abs(it.ecart)), svcQty:store.svcStock?.[r.serviceId+"_"+it.productId]||0,
+    }));
+    setForm({serviceId:r.serviceId,items,notes:"Reprise suite écart — retour d'origine du "+(r.createdAt?.seconds?new Date(r.createdAt.seconds*1000).toLocaleDateString("fr-FR"):"")});
+    setShow(true);
+    window.scrollTo({top:0,behavior:"smooth"});
+  };
+
+  const statusBadge=(r)=>{
+    if(r.status==="annule") return <span style={{background:"#f1f5f9",color:"#64748b",fontSize:10,fontWeight:700,borderRadius:99,padding:"2px 8px"}}>🚫 Annulé</span>;
+    if(r.status==="confirme") return <span style={{background:"#dcfce7",color:"#166534",fontSize:10,fontWeight:700,borderRadius:99,padding:"2px 8px"}}>✅ Conforme</span>;
+    if(r.status==="non_conforme") return <span style={{background:"#fee2e2",color:"#b91c1c",fontSize:10,fontWeight:700,borderRadius:99,padding:"2px 8px"}}>⚠️ Non conforme</span>;
+    return <span style={{background:"#fef3c7",color:"#92400e",fontSize:10,fontWeight:700,borderRadius:99,padding:"2px 8px"}}>⏳ En attente</span>;
+  };
 
   return(
     <div style={{padding:0}}>
       <PageHeader pageId="retours-service" title="↩️ Retours Service" subtitle="Service → Pharmacie">
-        {can(currentUser,"retours-service","w")&&<button onClick={()=>setShow(true)} style={{...btn(),background:"rgba(255,255,255,0.15)",color:"white",border:"1px solid rgba(255,255,255,0.3)",fontSize:12}}>+ Nouveau retour</button>}
+        {can(currentUser,"retours-service","w")&&<button onClick={()=>{setEditingId(null);setForm({serviceId:isServiceAgent?userServiceId:"",items:[],notes:""});setShow(true);}} style={{...btn(),background:"rgba(255,255,255,0.15)",color:"white",border:"1px solid rgba(255,255,255,0.3)",fontSize:12}}>+ Nouveau retour</button>}
       </PageHeader>
       <div style={{padding:16}}>
         {msg&&<Alert type={msg.startsWith("✅")?"success":"warn"}>{msg}</Alert>}
         {show&&(
           <div style={{...card,marginBottom:14,border:"2px solid #d97706"}}>
-            <div style={{fontWeight:700,fontSize:14,marginBottom:12,color:"#92400e"}}>↩️ Retour vers la pharmacie</div>
+            <div style={{fontWeight:700,fontSize:14,marginBottom:12,color:"#92400e"}}>↩️ {editingId?"Modifier le retour":"Retour vers la pharmacie"}</div>
             {!isServiceAgent&&(
               <div style={{marginBottom:10}}>
                 <label style={label}>Service</label>
@@ -104,26 +144,60 @@ export function RetoursServicePage({store,currentUser}){
                 style={{...btn(),background:"#d97706",color:"white",flex:1,padding:10}}>
                 {saving?"⏳ Traitement...":"✅ Valider le retour"}
               </button>
-              <button onClick={()=>setShow(false)} style={{...btn(),background:"#f1f5f9",color:"#374151",padding:10}}>Annuler</button>
+              <button onClick={()=>{setShow(false);setEditingId(null);setForm({serviceId:isServiceAgent?userServiceId:"",items:[],notes:""});}} style={{...btn(),background:"#f1f5f9",color:"#374151",padding:10}}>Annuler</button>
             </div>
           </div>
         )}
         {returns.length===0&&!show&&<div style={{...card,textAlign:"center",padding:40,color:"#94a3b8"}}>Aucun retour enregistré.</div>}
         {returns.map(r=>(
-          <div key={r.id} style={{...card,marginBottom:8}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
+          <div key={r.id} onClick={()=>setPrintSel(r)}
+            style={{...card,marginBottom:8,cursor:"pointer",transition:"box-shadow 0.15s"}}
+            onMouseEnter={e=>e.currentTarget.style.boxShadow="0 2px 10px rgba(217,119,6,0.18)"}
+            onMouseLeave={e=>e.currentTarget.style.boxShadow=card.boxShadow}
+            title="Cliquer pour voir le détail complet">
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
               <div>
                 <div style={{fontWeight:700,fontSize:13}}>↩️ {r.serviceName||"—"} → Pharmacie</div>
                 <div style={{fontSize:11,color:"#64748b"}}>{r.returnedByName} · {r.createdAt?.seconds?new Date(r.createdAt.seconds*1000).toLocaleString("fr-FR"):"—"}</div>
               </div>
+              <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
+                {statusBadge(r)}
+                <span style={{background:"#fef3c7",color:"#92400e",fontSize:10,fontWeight:700,borderRadius:99,padding:"2px 8px"}}>{(r.items||[]).length} produit(s)</span>
+              </div>
             </div>
-            {(r.items||[]).map((it,i)=>(
-              <div key={i} style={{fontSize:11,color:"#64748b",paddingLeft:8}}>• {it.productName} — {it.qty} unité(s)</div>
-            ))}
-            {r.notes&&<div style={{fontSize:11,color:"#94a3b8",marginTop:4,fontStyle:"italic"}}>{r.notes}</div>}
+            {r.repris&&<div style={{fontSize:11,color:"#059669",marginTop:6,fontWeight:600}}>✅ Repris — manquant recrédité au stock service ({r.reprisAt?.seconds?new Date(r.reprisAt.seconds*1000).toLocaleDateString("fr-FR"):""})</div>}
+            {r.status==="non_conforme"&&!r.repris&&can(currentUser,"retours-service","w")&&(r.items||[]).some(it=>it.ecart<0)&&(
+              <button onClick={e=>{e.stopPropagation();reprendre(r);}} style={{...btn(),background:"#fef3c7",color:"#92400e",border:"1px solid #fcd34d",fontSize:11,marginTop:8}}>🔁 Reprendre le retour (manquants)</button>
+            )}
+            {r.status==="en_attente"&&can(currentUser,"retours-service","w")&&(
+              <div style={{display:"flex",gap:6,marginTop:8}}>
+                {can(currentUser,"retours-service","w")&&<button onClick={e=>{e.stopPropagation();openEdit(r);}} style={{...btn(),background:"#fffbeb",color:"#92400e",border:"1px solid #fcd34d",fontSize:11}}>✏️ Modifier</button>}
+                {can(currentUser,"retours-service","w")&&<button onClick={e=>{e.stopPropagation();setCancelling(r);}} style={{...btn(),background:"#fee2e2",color:"#ef4444",border:"1px solid #fca5a5",fontSize:11}}>🚫 Annuler</button>}
+              </div>
+            )}
+            {(r.status==="confirme"||r.status==="non_conforme")&&!r.repris&&<div style={{fontSize:10,color:"#94a3b8",marginTop:6,fontStyle:"italic"}}>Déjà contrôlé par la pharmacie — non modifiable tant qu'elle n'a pas annulé son contrôle.</div>}
           </div>
         ))}
       </div>
+      <PrintModal open={!!printSel} onClose={()=>setPrintSel(null)} title="Bon de Retour Service">
+        <SvcReturnPrint r={printSel}/>
+      </PrintModal>
+      <Modal open={!!cancelling} onClose={()=>setCancelling(null)} title="🚫 Annuler ce retour ?">
+        {cancelling&&(
+          <div>
+            <div style={{fontSize:13,color:"#374151",marginBottom:12}}>
+              Ce retour de <b>{cancelling.serviceName}</b> sera marqué "annulé" (jamais supprimé) et les quantités reviendront au stock du service.
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={async()=>{
+                try{ await store.cancelSvcReturn(cancelling.id); setCancelling(null); }
+                catch(e){ setMsg("❌ "+e.message); }
+              }} style={{...btn(),background:"#ef4444",color:"white",flex:1,padding:10}}>🚫 Confirmer l'annulation</button>
+              <button onClick={()=>setCancelling(null)} style={{...btn(),background:"#f1f5f9",color:"#374151",padding:10}}>Retour</button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

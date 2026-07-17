@@ -7,6 +7,7 @@ import { btn, card, label, input } from "../../helpers/styles";
 import { can, visibleSuppliers, hasSupplierAccess } from "../../permissions";
 import { Alert } from "../ui/FormControls";
 import { BarcodeScanner } from "../ui/ScanReviewModal";
+import { Modal } from "../ui/Modal";
 
 export function ReceptionsPage({store,activeSupplier,currentUser}){
   const [show,setShow]=useState(false);
@@ -18,6 +19,8 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
   const [saving,setSaving]=useState(false);
   const [msg,setMsg]=useState("");
   const [showScanner,setShowScanner]=useState(false);
+  const [cancelling,setCancelling]=useState(null); // réception en attente de confirmation d'annulation
+  const [cancelError,setCancelError]=useState("");
   const searchRef=useRef(null);
   const lastQtyRef=useRef(null);
 
@@ -160,12 +163,30 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
             </tbody>
           </table>
           {r.notes&&<div style={{fontSize:11,color:"#64748b",fontStyle:"italic",marginBottom:12}}>Notes : {r.notes}</div>}
+          {r.status==="annule"&&<div style={{background:"#fee2e2",color:"#b91c1c",borderRadius:8,padding:"8px 12px",fontSize:12,fontWeight:600,marginBottom:12}}>🚫 Cette réception a été annulée{r.cancelledByName?" par "+r.cancelledByName:""}{r.cancelledAt?.seconds?" le "+new Date(r.cancelledAt.seconds*1000).toLocaleString("fr-FR"):""}.</div>}
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            {can(currentUser,"receptions","w")&&<button onClick={()=>{setEditing(r.id);setForm({...r});setShow(true);setSelected(null);}} style={{...btn(),background:"#f0fdf4",color:"#059669",border:"1px solid #86efac",fontSize:12}}>✏️ Modifier</button>}
+            {r.status!=="annule"&&can(currentUser,"receptions","w")&&<button onClick={()=>{setEditing(r.id);setForm({...r});setShow(true);setSelected(null);}} style={{...btn(),background:"#f0fdf4",color:"#059669",border:"1px solid #86efac",fontSize:12}}>✏️ Modifier</button>}
             <button onClick={()=>printReception(r)} style={{...btn(),background:"#fef3c7",color:"#92400e",border:"1px solid #fcd34d",fontSize:12}}>🖨️ Imprimer</button>
-            {can(currentUser,"receptions","d")&&<button onClick={()=>{if(window.confirm("Supprimer ce bon de réception ?")){store.deleteReception(r.id);setSelected(null);}}} style={{...btn(),background:"#fee2e2",color:"#ef4444",border:"1px solid #fca5a5",fontSize:12}}>🗑️ Supprimer</button>}
+            {r.status!=="annule"&&can(currentUser,"receptions","w")&&<button onClick={()=>{setCancelError("");setCancelling(r);}} style={{...btn(),background:"#fee2e2",color:"#ef4444",border:"1px solid #fca5a5",fontSize:12}}>🚫 Annuler</button>}
           </div>
         </div>
+        <Modal open={!!cancelling} onClose={()=>setCancelling(null)} title="🚫 Annuler ce bon de réception ?">
+          {cancelling&&(
+            <div>
+              <div style={{fontSize:13,color:"#374151",marginBottom:12}}>
+                Le bon <b>{cancelling.reference}</b> sera marqué "annulé" (jamais supprimé) et les quantités seront retirées du stock, sauf si une partie a déjà été transférée à un service.
+              </div>
+              {cancelError&&<Alert type="warn">{cancelError}</Alert>}
+              <div style={{display:"flex",gap:8,marginTop:12}}>
+                <button onClick={async()=>{
+                  try{ await store.cancelReception(cancelling.id); setCancelling(null); setSelected(null); }
+                  catch(e){ setCancelError(e.message); }
+                }} style={{...btn(),background:"#ef4444",color:"white",flex:1,padding:10}}>🚫 Confirmer l'annulation</button>
+                <button onClick={()=>setCancelling(null)} style={{...btn(),background:"#f1f5f9",color:"#374151",padding:10}}>Retour</button>
+              </div>
+            </div>
+          )}
+        </Modal>
       </div>
     );
   }
@@ -271,8 +292,8 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
                   <div style={{fontSize:11,color:"#94a3b8"}}>{r.items?.length||0} produit(s) · Par {r.receivedByName}</div>
                 </div>
                 <div style={{textAlign:"right"}}>
-                  <div style={{fontWeight:800,color:"#059669",fontSize:15}}>{total.toLocaleString("fr-FR")} FCFA</div>
-                  <span style={{background:"#dcfce7",color:"#059669",fontSize:10,fontWeight:700,borderRadius:99,padding:"2px 8px"}}>{r.status||"reçu"}</span>
+                  <div style={{fontWeight:800,color:r.status==="annule"?"#94a3b8":"#059669",fontSize:15,textDecoration:r.status==="annule"?"line-through":"none"}}>{total.toLocaleString("fr-FR")} FCFA</div>
+                  <span style={{background:r.status==="annule"?"#fee2e2":"#dcfce7",color:r.status==="annule"?"#b91c1c":"#059669",fontSize:10,fontWeight:700,borderRadius:99,padding:"2px 8px"}}>{r.status==="annule"?"annulé":(r.status||"reçu")}</span>
                 </div>
                 <div style={{color:"#cbd5e1",fontSize:18,marginLeft:8}}>›</div>
               </div>
@@ -280,6 +301,23 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
           );
         })}
       </div>
+      <Modal open={!!cancelling} onClose={()=>setCancelling(null)} title="🚫 Annuler ce bon de réception ?">
+        {cancelling&&(
+          <div>
+            <div style={{fontSize:13,color:"#374151",marginBottom:12}}>
+              Le bon <b>{cancelling.reference}</b> sera marqué "annulé" (jamais supprimé) et les quantités seront retirées du stock, sauf si une partie a déjà été transférée à un service.
+            </div>
+            {cancelError&&<Alert type="warn">{cancelError}</Alert>}
+            <div style={{display:"flex",gap:8,marginTop:12}}>
+              <button onClick={async()=>{
+                try{ await store.cancelReception(cancelling.id); setCancelling(null); setSelected(null); }
+                catch(e){ setCancelError(e.message); }
+              }} style={{...btn(),background:"#ef4444",color:"white",flex:1,padding:10}}>🚫 Confirmer l'annulation</button>
+              <button onClick={()=>setCancelling(null)} style={{...btn(),background:"#f1f5f9",color:"#374151",padding:10}}>Retour</button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

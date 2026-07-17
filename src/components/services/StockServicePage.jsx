@@ -63,25 +63,28 @@ export function StockServicePage({store,currentUser}){
                   {isPharmacieView?<>
                     <th style={{background:"#065f46",color:"white",padding:"7px 10px",textAlign:"center",border:"1px solid #065f46"}}>Réceptionné</th>
                     <th style={{background:"#7f1d1d",color:"white",padding:"7px 10px",textAlign:"center",border:"1px solid #7f1d1d"}}>Transféré</th>
+                    <th style={{background:"#0e7490",color:"white",padding:"7px 10px",textAlign:"center",border:"1px solid #0e7490"}}>Retourné</th>
                   </>:<>
                     <th style={{background:"#065f46",color:"white",padding:"7px 10px",textAlign:"center",border:"1px solid #065f46"}}>Transféré</th>
                     <th style={{background:"#7f1d1d",color:"white",padding:"7px 10px",textAlign:"center",border:"1px solid #7f1d1d"}}>Consommé</th>
+                    <th style={{background:"#0e7490",color:"white",padding:"7px 10px",textAlign:"center",border:"1px solid #0e7490"}}>Retourné</th>
                   </>}
                   <th style={{background:"#1d4ed8",color:"white",padding:"7px 10px",textAlign:"center",border:"1px solid #1d4ed8"}}>STOCK</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredProds.map((p,i)=>{
-                  let stockVal,col1,col2;
+                  let stockVal,col1,col2,col3;
                   if(isPharmacieView){
                     const recu  = sumItemsQty(store.receptions, p.id);
                     const transf= sumItemsQty(store.transfers, p.id);
-                    stockVal=getPharmacyStock2(store,p.id); col1=recu; col2=transf;
+                    const retour= sumItemsQty(store.svcReturns, p.id);
+                    stockVal=getPharmacyStock2(store,p.id); col1=recu; col2=transf; col3=retour;
                   } else {
                     const transf = sumConfirmedQty((store.transfers||[]).filter(t=>t.serviceId===filterService), p.id);
                     const conso  = sumItemsQty((store.consumptions||[]).filter(c=>c.serviceId===filterService), p.id);
                     const retour = sumItemsQty((store.svcReturns||[]).filter(r=>r.serviceId===filterService), p.id);
-                    stockVal=getServiceStock2(store,p.id,filterService); col1=transf; col2=conso+retour;
+                    stockVal=getServiceStock2(store,p.id,filterService); col1=transf; col2=conso; col3=retour;
                   }
                   const isAlert=stockVal<=0;
                   return(
@@ -90,6 +93,7 @@ export function StockServicePage({store,currentUser}){
                       <td style={{padding:"6px 10px",border:"1px solid #e2e8f0",textAlign:"center",fontSize:10,color:"#64748b"}}>{store.suppliers.find(s=>s.id===p.supplierId)?.name||"—"}</td>
                       <td style={{padding:"6px 10px",border:"1px solid #e2e8f0",textAlign:"center",color:"#059669",fontWeight:600}}>{col1}</td>
                       <td style={{padding:"6px 10px",border:"1px solid #e2e8f0",textAlign:"center",color:"#dc2626",fontWeight:600}}>{col2}</td>
+                      <td style={{padding:"6px 10px",border:"1px solid #e2e8f0",textAlign:"center",color:"#0e7490",fontWeight:600}}>{col3}</td>
                       <td style={{padding:"6px 10px",border:"1px solid #e2e8f0",textAlign:"center",fontWeight:800,
                         background:isAlert?"#fee2e2":"#f0fdf4",color:isAlert?"#dc2626":"#059669",fontSize:13}}>
                         {stockVal}
