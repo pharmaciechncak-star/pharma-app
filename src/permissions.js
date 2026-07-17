@@ -1,10 +1,23 @@
 import { DEFAULT_PERMS } from "./constants";
 
+// Fusionne les permissions personnalisées de l'utilisateur avec les valeurs
+// par défaut de son rôle, SECTION PAR SECTION (pas en tout-ou-rien). C'est
+// important : quand un admin enregistre les permissions d'un utilisateur, un
+// instantané complet est sauvegardé (voir UsersPage.jsx > savePerms). Si une
+// nouvelle section est ajoutée plus tard à DEFAULT_PERMS (ex: "utilisateurs",
+// "seuil"...), elle est absente de cet instantané figé — sans ce repli par
+// section, l'utilisateur perdrait tout accès aux nouvelles sections tant que
+// l'admin ne rouvre pas et ne réenregistre pas ses permissions. Reproduit
+// exactement la logique déjà utilisée côté règles Firestore (getPerm()).
 export function getUserPerms(user) {
   if (!user) return {};
-  if (user.role === "admin") return DEFAULT_PERMS.admin;
-  // Permissions personnalisées stockées dans le profil Firestore
-  return user.permissions || DEFAULT_PERMS[user.role] || {};
+  const def = DEFAULT_PERMS[user.role] || {};
+  const custom = user.permissions || {};
+  const merged = {};
+  new Set([...Object.keys(def), ...Object.keys(custom)]).forEach(section => {
+    merged[section] = custom[section] || def[section] || {};
+  });
+  return merged;
 }
 
 export function can(user, section, right) {

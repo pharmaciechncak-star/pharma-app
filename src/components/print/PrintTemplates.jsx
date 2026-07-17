@@ -122,9 +122,6 @@ export function InvoicePrint({ inv }) {
           </tr>
         </tfoot>
       </table>
-      <div style={{ fontSize:11, color:"#94a3b8", textAlign:"center", marginTop:16, paddingTop:12, borderTop:"1px solid #e2e8f0" }}>
-        Document généré par PharmaStock · {new Date().toLocaleDateString("fr-FR")}
-      </div>
     </div>
   );
 }
@@ -179,9 +176,6 @@ export function BonPrint({ bon, suppName, depotName, products }) {
           })}
         </tbody>
       </table>
-      <div style={{ fontSize:11, color:"#94a3b8", textAlign:"center", marginTop:16, paddingTop:12, borderTop:"1px solid #e2e8f0" }}>
-        Document généré par PharmaStock · {new Date().toLocaleDateString("fr-FR")}
-      </div>
     </div>
   );
 }
@@ -237,9 +231,6 @@ export function ConsumptionPrint({ c }) {
         <div style={{ display:"inline-block", fontWeight:700, fontSize:12, borderBottom:"1px solid #1e293b", paddingBottom:2 }}>Le Cardiologue</div>
         <div style={{ height:60 }}></div>
       </div>
-      <div style={{ fontSize:11, color:"#94a3b8", textAlign:"center", marginTop:16, paddingTop:12, borderTop:"1px solid #e2e8f0" }}>
-        Document généré par PharmaStock · {new Date().toLocaleDateString("fr-FR")}
-      </div>
     </div>
   );
 }
@@ -285,9 +276,6 @@ export function TransferPrint({ t }) {
           ))}
         </tbody>
       </table>
-      <div style={{ fontSize:11, color:"#94a3b8", textAlign:"center", marginTop:16, paddingTop:12, borderTop:"1px solid #e2e8f0" }}>
-        Document généré par PharmaStock · {new Date().toLocaleDateString("fr-FR")}
-      </div>
     </div>
   );
 }
@@ -333,9 +321,6 @@ export function SvcReturnPrint({ r }) {
           ))}
         </tbody>
       </table>
-      <div style={{ fontSize:11, color:"#94a3b8", textAlign:"center", marginTop:16, paddingTop:12, borderTop:"1px solid #e2e8f0" }}>
-        Document généré par PharmaStock · {new Date().toLocaleDateString("fr-FR")}
-      </div>
     </div>
   );
 }

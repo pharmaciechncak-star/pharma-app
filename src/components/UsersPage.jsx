@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { sendPasswordResetEmail } from "firebase/auth";
 import { DEFAULT_PERMS, ROLES, SECTIONS } from "../constants";
+import { can } from "../permissions";
 import { auth } from "../firebase";
 import { ConfirmDelete, Modal } from "./ui/Modal";
 import { PageHeader } from "./ui/PageHeader";
@@ -102,7 +103,14 @@ export function UsersPage({store, currentUser}){
     await store.updateUser(permTab.id, {permissions: permForm});
     setPermTab(null);
   };
+  // Un admin ne peut jamais accorder à autrui un droit qu'il ne possède pas
+  // lui-même — évite qu'un admin secondaire élève un utilisateur au-delà de
+  // son propre périmètre (ex : accorder "supprimer" sur une section où il n'a
+  // lui-même que "modifier"). L'admin principal n'a pas cette limite.
+  const canGrant = (sectionId, right) => isPrincipalAdmin || can(currentUser, sectionId, right);
+
   const togglePerm = (sectionId, right) => {
+    if (!canGrant(sectionId, right)) return; // sécurité : ignore un clic sur un droit non délégable
     setPermForm(prev => ({
       ...prev,
       [sectionId]: { ...(prev[sectionId]||{}), [right]: prev[sectionId]?.[right] ? 0 : 1 }
@@ -228,6 +236,7 @@ export function UsersPage({store, currentUser}){
             Rôle de base : <Badge color={ROLES[permTab?.role]?.color}>{ROLES[permTab?.role]?.label}</Badge>
             <br/><span style={{fontSize:11}}>Ces cases personnalisent les droits par rapport aux droits du rôle.</span>
           </div>
+          {!isPrincipalAdmin&&<div style={{fontSize:11,color:"#94a3b8",marginBottom:8}}>ℹ️ Les cases grisées correspondent à des droits que vous ne possédez pas vous-même — vous ne pouvez pas les accorder à un autre utilisateur.</div>}
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse"}}>
               <thead>
@@ -242,14 +251,19 @@ export function UsersPage({store, currentUser}){
                 {assignableSections.map(s => (
                   <tr key={s.id}>
                     <td style={{...tdS,textAlign:"left",fontWeight:500,color:"#1e293b"}}>{s.label}</td>
-                    {["r","w","d"].map(right=>(
+                    {["r","w","d"].map(right=>{
+                      const grantable = canGrant(s.id,right);
+                      return(
                       <td key={right} style={tdS}>
                         <input type="checkbox"
                           checked={!!(permForm[s.id]?.[right])}
                           onChange={()=>togglePerm(s.id,right)}
-                          style={{width:16,height:16,cursor:"pointer",accentColor:"#0891b2"}}/>
+                          disabled={!grantable}
+                          title={grantable?"":"Vous ne pouvez pas accorder un droit que vous ne possédez pas vous-même"}
+                          style={{width:16,height:16,cursor:grantable?"pointer":"not-allowed",accentColor:"#0891b2",opacity:grantable?1:0.35}}/>
                       </td>
-                    ))}
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>

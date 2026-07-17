@@ -15,6 +15,9 @@ export function TransfertsPage({store,activeSupplier,currentUser}){
   const [show,setShow]=useState(false);
   const [editingId,setEditingId]=useState(null);
   const [cancelling,setCancelling]=useState(null);
+  const [showFilters,setShowFilters]=useState(false);
+  const [filters,setFilters]=useState({dateFrom:"",dateTo:"",serviceId:"",createdBy:"",status:""});
+  const hasActiveFilters = Object.values(filters).some(v=>v);
   const [form,setForm]=useState({serviceId:"",items:[],notes:""});
   const [search,setSearch]=useState("");
   const [showResults,setShowResults]=useState(false);
@@ -82,7 +85,19 @@ export function TransfertsPage({store,activeSupplier,currentUser}){
     window.scrollTo({top:0,behavior:"smooth"});
   };
 
-  const transfers=(store.transfers||[]).filter(t=>(activeSupplier?t.supplierId===activeSupplier?.id:hasSupplierAccess(currentUser,t.supplierId))&&hasServiceAccess(currentUser,t.serviceId));
+  const transfers=(store.transfers||[]).filter(t=>(activeSupplier?t.supplierId===activeSupplier?.id:hasSupplierAccess(currentUser,t.supplierId))&&hasServiceAccess(currentUser,t.serviceId))
+    .filter(t=>{
+      if (filters.dateFrom || filters.dateTo) {
+        const d = t.createdAt?.seconds ? new Date(t.createdAt.seconds*1000) : null;
+        if (!d) return false;
+        if (filters.dateFrom && d < new Date(filters.dateFrom)) return false;
+        if (filters.dateTo && d > new Date(filters.dateTo+"T23:59:59")) return false;
+      }
+      if (filters.serviceId && t.serviceId!==filters.serviceId) return false;
+      if (filters.createdBy && t.transferredBy!==filters.createdBy) return false;
+      if (filters.status && t.status!==filters.status) return false;
+      return true;
+    });
 
   const statusBadge=(t)=>{
     if(t.status==="annule") return <span style={{background:"#f1f5f9",color:"#64748b",fontSize:10,fontWeight:700,borderRadius:99,padding:"2px 8px"}}>🚫 Annulé</span>;
@@ -172,7 +187,43 @@ export function TransfertsPage({store,activeSupplier,currentUser}){
         )}
 
         {/* Historique */}
-        {transfers.length===0&&!show&&<div style={{...card,textAlign:"center",padding:40,color:"#94a3b8"}}>Aucun transfert.</div>}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <button onClick={()=>setShowFilters(v=>!v)} style={{...btn(),background:hasActiveFilters?"#16a34a":"#f0fdf4",color:hasActiveFilters?"white":"#16a34a",fontSize:12}}>
+            🔍 Recherche{hasActiveFilters?" (active)":""}
+          </button>
+          {hasActiveFilters&&<button onClick={()=>setFilters({dateFrom:"",dateTo:"",serviceId:"",createdBy:"",status:""})} style={{...btn(),background:"#fee2e2",color:"#ef4444",fontSize:11}}>✕ Réinitialiser</button>}
+        </div>
+        {showFilters&&(
+          <div style={{...card,marginBottom:12,padding:12}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+              <div><label style={label}>Du</label><input type="date" style={input} value={filters.dateFrom} onChange={e=>setFilters(f=>({...f,dateFrom:e.target.value}))}/></div>
+              <div><label style={label}>Au</label><input type="date" style={input} value={filters.dateTo} onChange={e=>setFilters(f=>({...f,dateTo:e.target.value}))}/></div>
+            </div>
+            <div style={{marginBottom:8}}><label style={label}>Service destinataire</label>
+              <select style={input} value={filters.serviceId} onChange={e=>setFilters(f=>({...f,serviceId:e.target.value}))}>
+                <option value="">— Tous —</option>
+                {visibleServices(currentUser,store.services||[]).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div style={{marginBottom:8}}><label style={label}>Créé par</label>
+              <select style={input} value={filters.createdBy} onChange={e=>setFilters(f=>({...f,createdBy:e.target.value}))}>
+                <option value="">— Tous —</option>
+                {(store.users||[]).map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
+            <div><label style={label}>Statut</label>
+              <select style={input} value={filters.status} onChange={e=>setFilters(f=>({...f,status:e.target.value}))}>
+                <option value="">— Tous —</option>
+                <option value="en_attente">⏳ En attente</option>
+                <option value="confirme">✅ Conforme</option>
+                <option value="non_conforme">⚠️ Non conforme</option>
+                <option value="annule">🚫 Annulé</option>
+              </select>
+            </div>
+          </div>
+        )}
+
+        {transfers.length===0&&!show&&<div style={{...card,textAlign:"center",padding:40,color:"#94a3b8"}}>{hasActiveFilters?"Aucun transfert ne correspond à ce filtre.":"Aucun transfert."}</div>}
         {transfers.map(t=>(
           <div key={t.id} onClick={()=>setPrintSel(t)}
             style={{...card,marginBottom:8,cursor:"pointer",transition:"box-shadow 0.15s"}}

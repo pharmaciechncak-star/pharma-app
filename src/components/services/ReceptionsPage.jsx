@@ -21,6 +21,9 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
   const [showScanner,setShowScanner]=useState(false);
   const [cancelling,setCancelling]=useState(null); // réception en attente de confirmation d'annulation
   const [cancelError,setCancelError]=useState("");
+  const [showFilters,setShowFilters]=useState(false);
+  const [filters,setFilters]=useState({dateFrom:"",dateTo:"",supplierId:"",reference:"",createdBy:"",status:""});
+  const hasActiveFilters = Object.values(filters).some(v=>v);
   const searchRef=useRef(null);
   const lastQtyRef=useRef(null);
 
@@ -28,7 +31,20 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
   const filtered=search.trim()
     ?suppProds.filter(p=>p.name.toLowerCase().includes(search.toLowerCase())||[p.barcode1,p.barcode2,p.barcode3].some(b=>b&&b.includes(search)))
     :suppProds;
-  const receptions=(store.receptions||[]).filter(r=>activeSupplier?r.supplierId===activeSupplier.id:hasSupplierAccess(currentUser,r.supplierId));
+  const receptions=(store.receptions||[]).filter(r=>activeSupplier?r.supplierId===activeSupplier.id:hasSupplierAccess(currentUser,r.supplierId))
+    .filter(r=>{
+      if (filters.dateFrom || filters.dateTo) {
+        const d = r.createdAt?.seconds ? new Date(r.createdAt.seconds*1000) : null;
+        if (!d) return false;
+        if (filters.dateFrom && d < new Date(filters.dateFrom)) return false;
+        if (filters.dateTo && d > new Date(filters.dateTo+"T23:59:59")) return false;
+      }
+      if (filters.supplierId && r.supplierId!==filters.supplierId) return false;
+      if (filters.reference && !(r.reference||"").toLowerCase().includes(filters.reference.toLowerCase())) return false;
+      if (filters.createdBy && r.receivedBy!==filters.createdBy) return false;
+      if (filters.status && (r.status==="annule"?"annule":"recu")!==filters.status) return false;
+      return true;
+    });
 
   const openNew=()=>{
     setEditing(null);
@@ -277,7 +293,41 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
         )}
 
         {/* Liste */}
-        {receptions.length===0&&!show&&<div style={{...card,textAlign:"center",padding:40,color:"#94a3b8"}}>Aucun bon de réception.</div>}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <button onClick={()=>setShowFilters(v=>!v)} style={{...btn(),background:hasActiveFilters?"#0891b2":"#ecfeff",color:hasActiveFilters?"white":"#0891b2",fontSize:12}}>
+            🔍 Recherche{hasActiveFilters?" (active)":""}
+          </button>
+          {hasActiveFilters&&<button onClick={()=>setFilters({dateFrom:"",dateTo:"",supplierId:"",reference:"",createdBy:"",status:""})} style={{...btn(),background:"#fee2e2",color:"#ef4444",fontSize:11}}>✕ Réinitialiser</button>}
+        </div>
+        {showFilters&&(
+          <div style={{...card,marginBottom:12,padding:12}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+              <div><label style={label}>Du</label><input type="date" style={input} value={filters.dateFrom} onChange={e=>setFilters(f=>({...f,dateFrom:e.target.value}))}/></div>
+              <div><label style={label}>Au</label><input type="date" style={input} value={filters.dateTo} onChange={e=>setFilters(f=>({...f,dateTo:e.target.value}))}/></div>
+            </div>
+            {!activeSupplier&&<div style={{marginBottom:8}}><label style={label}>Fournisseur</label>
+              <select style={input} value={filters.supplierId} onChange={e=>setFilters(f=>({...f,supplierId:e.target.value}))}>
+                <option value="">— Tous —</option>
+                {visibleSuppliers(currentUser,store.suppliers).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>}
+            <div style={{marginBottom:8}}><label style={label}>Référence</label><input style={input} value={filters.reference} onChange={e=>setFilters(f=>({...f,reference:e.target.value}))} placeholder="Ex: BON-REC-..."/></div>
+            <div style={{marginBottom:8}}><label style={label}>Créé par</label>
+              <select style={input} value={filters.createdBy} onChange={e=>setFilters(f=>({...f,createdBy:e.target.value}))}>
+                <option value="">— Tous —</option>
+                {(store.users||[]).map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
+            <div><label style={label}>Statut</label>
+              <select style={input} value={filters.status} onChange={e=>setFilters(f=>({...f,status:e.target.value}))}>
+                <option value="">— Tous —</option>
+                <option value="recu">✅ Reçu</option>
+                <option value="annule">🚫 Annulé</option>
+              </select>
+            </div>
+          </div>
+        )}
+        {receptions.length===0&&!show&&<div style={{...card,textAlign:"center",padding:40,color:"#94a3b8"}}>{hasActiveFilters?"Aucun bon de réception ne correspond à ce filtre.":"Aucun bon de réception."}</div>}
         {receptions.map(r=>{
           const total=r.items?.reduce((s,i)=>s+Number(i.qty||0)*Number(i.unitPrice||0),0)||0;
           return(
