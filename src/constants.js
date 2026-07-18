@@ -126,3 +126,31 @@ export const PAGE_COLORS = {
   "fournisseurs": { bg:"linear-gradient(135deg,#0f172a,#1e293b)", accent:"#94a3b8", icon:"🏢" },
   "utilisateurs": { bg:"linear-gradient(135deg,#4c0519,#9f1239)", accent:"#fda4af", icon:"👥" },
 };
+
+export const DEFAULT_CAROUSEL_SLIDES = [
+  {
+    bg:"linear-gradient(135deg,#0c4a6e 0%,#0f172a 100%)",
+    emoji:"🏥", title:"Centre Hospitalier National Cheikh Ahmadoul Khadim",
+    sub:"PharmaStock — Système de gestion des inventaires pharmaceutiques", accent:"#38bdf8",
+  },
+  {
+    bg:"linear-gradient(135deg,#312e81 0%,#1e1b4b 100%)",
+    emoji:"🗂️", title:"Inventaires Mensuels Automatisés",
+    sub:"Scannez vos documents, calculez vos ventes, générez vos factures en quelques clics", accent:"#a5b4fc",
+  },
+  {
+    bg:"linear-gradient(135deg,#064e3b 0%,#022c22 100%)",
+    emoji:"💊", title:"Gestion du Stock en Temps Réel",
+    sub:"Médicaments et consommables suivis en permanence, alertes de stock bas automatiques", accent:"#34d399",
+  },
+  {
+    bg:"linear-gradient(135deg,#78350f 0%,#431407 100%)",
+    emoji:"🤝", title:"Collaboration Fournisseurs Simplifiée",
+    sub:"Envoyez vos factures et bons directement par email depuis l'application", accent:"#fbbf24",
+  },
+  {
+    bg:"linear-gradient(135deg,#4c0519 0%,#1e0010 100%)",
+    emoji:"🤖", title:"Assistant IA Intégré",
+    sub:"Scannez vos documents Excel, PDF et images pour importer données automatiquement", accent:"#f9a8d4",
+  },
+];

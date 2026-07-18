@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { loadSlides, saveSlides, DEFAULT_CAROUSEL_SLIDES, ImageCarousel } from "./layout/ImageCarousel";
+import { ImageCarousel } from "./layout/ImageCarousel";
+import { DEFAULT_CAROUSEL_SLIDES, monthLabel, fmtDate } from "../constants";
 import { PageHeader } from "./ui/PageHeader";
-import { monthLabel, fmtDate } from "../constants";
 import { card } from "../helpers/styles";
 import { hasSupplierAccess } from "../permissions";
 
@@ -16,8 +16,10 @@ export function Dashboard({store,activeSupplier,activeDepot,currentUser}){
   const isAdmin = currentUser?.role==="admin";
 
   // ── État pour l'éditeur de slides ──
+  // Les slides viennent de Firestore (store.carouselSlides, partagé par tous) —
+  // plus de state local synchronisé à la main, le listener temps réel s'en charge.
   const [showSlideEditor, setShowSlideEditor] = useState(false);
-  const [slides, setSlides] = useState(loadSlides);
+  const slides = store.carouselSlides || DEFAULT_CAROUSEL_SLIDES;
   const [editSlide, setEditSlide] = useState(null); // {index, emoji, title, sub, bg, accent}
   const ACCENT_COLORS = ["#38bdf8","#4ade80","#fb923c","#a78bfa","#f9a8d4","#fbbf24","#34d399","#f87171"];
   const BG_GRADIENTS = [
@@ -32,12 +34,15 @@ export function Dashboard({store,activeSupplier,activeDepot,currentUser}){
   ];
 
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [slidesError, setSlidesError] = useState("");
 
   const handlePhotoUpload = (file) => {
     if (!file) return;
-    // Vérifier la taille (max 500KB pour Firestore)
+    // Vérifier la taille (max 500KB par image — le carrousel entier est stocké
+    // dans UN SEUL document Firestore, limité à 1 Mo au total tous slides
+    // confondus, donc chaque image doit rester raisonnable)
     if (file.size > 500 * 1024) {
-      alert("⚠️ Image trop grande. Maximum 500 KB. Compressez l'image et réessayez.");
+      alert("⚠️ Image trop grande. Maximum 500 KB par image (le carrousel est partagé via un document Firestore limité à 1 Mo au total). Compressez l'image et réessayez.");
       return;
     }
     setUploadingPhoto(true);
@@ -58,13 +63,25 @@ export function Dashboard({store,activeSupplier,activeDepot,currentUser}){
     setEditSlide(v => ({...v, imageUrl: "", storagePath: ""}));
   };
 
-  const saveAndDispatch = (newSlides) => {
-    saveSlides(newSlides);
-    setSlides(newSlides);
-    window.dispatchEvent(new Event("pharma_slides_updated"));
+  const saveAndDispatch = async (newSlides) => {
+    // Garde-fou : la taille totale du document Firestore (JSON complet) doit
+    // rester sous ~950 Ko pour laisser une marge sous la limite de 1 Mo.
+    const approxSize = new Blob([JSON.stringify(newSlides)]).size;
+    if (approxSize > 950 * 1024) {
+      setSlidesError("⚠️ Le carrousel est trop volumineux (" + Math.round(approxSize/1024) + " Ko / 1000 Ko max). Retirez ou compressez une image avant d'enregistrer.");
+      return false;
+    }
+    setSlidesError("");
+    try {
+      await store.saveCarouselSlides(newSlides);
+      return true;
+    } catch(e) {
+      setSlidesError("❌ " + e.message);
+      return false;
+    }
   };
 
-  const handleSaveSlide = () => {
+  const handleSaveSlide = async () => {
     if(!editSlide) return;
     const updated = slides.map((s,i)=> i===editSlide.index ? {
       bg:          editSlide.bg,
@@ -74,27 +91,23 @@ export function Dashboard({store,activeSupplier,activeDepot,currentUser}){
       accent:      editSlide.accent,
       imageUrl:    editSlide.imageUrl    || "",
     } : s);
-    saveAndDispatch(updated);
-    setEditSlide(null);
+    if (await saveAndDispatch(updated)) setEditSlide(null);
   };
 
-  const handleAddSlide = () => {
+  const handleAddSlide = async () => {
     const newSlide = {bg:BG_GRADIENTS[0],emoji:"✨",title:"Nouveau slide",sub:"Description du slide",accent:"#38bdf8"};
     const updated = [...slides, newSlide];
-    saveAndDispatch(updated);
-    setEditSlide({index:updated.length-1, ...newSlide});
+    if (await saveAndDispatch(updated)) setEditSlide({index:updated.length-1, ...newSlide});
   };
 
-  const handleDeleteSlide = (idx) => {
+  const handleDeleteSlide = async (idx) => {
     if(slides.length<=1) return;
     const updated = slides.filter((_,i)=>i!==idx);
-    saveAndDispatch(updated);
-    setEditSlide(null);
+    if (await saveAndDispatch(updated)) setEditSlide(null);
   };
 
-  const handleResetSlides = () => {
-    saveAndDispatch(DEFAULT_CAROUSEL_SLIDES);
-    setEditSlide(null);
+  const handleResetSlides = async () => {
+    if (await saveAndDispatch(DEFAULT_CAROUSEL_SLIDES)) setEditSlide(null);
   };
 
   const kpis=[
@@ -109,7 +122,7 @@ export function Dashboard({store,activeSupplier,activeDepot,currentUser}){
       <PageHeader pageId="dashboard" title="📊 Tableau de bord"
         subtitle={monthLabel() + " · " + (activeSupplier ? activeSupplier.name : "Tous fournisseurs")}/>
       <div style={{padding:16}}>
-        <ImageCarousel/>
+        <ImageCarousel slides={slides}/>
 
         {/* ── Boutons Admin ── */}
         {isAdmin&&(
@@ -163,12 +176,13 @@ export function Dashboard({store,activeSupplier,activeDepot,currentUser}){
             {editSlide&&(
               <div style={{background:"white",border:"1px solid #e2e8f0",borderRadius:10,padding:12,marginTop:8}}>
                 <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:"#1e293b"}}>✏️ Modifier le slide {editSlide.index+1}</div>
+                {slidesError&&<div style={{background:"#fee2e2",color:"#b91c1c",borderRadius:8,padding:"8px 10px",fontSize:11,marginBottom:8}}>{slidesError}</div>}
                 {/* Photo de fond */}
                 <div style={{marginBottom:8}}>
                   <div style={{fontSize:11,color:"#64748b",marginBottom:3}}>📷 Photo de fond <span style={{color:"#94a3b8"}}>(remplace le dégradé)</span></div>
                   {editSlide.imageUrl ? (
                     <div style={{position:"relative",borderRadius:8,overflow:"hidden",marginBottom:4}}>
-                      <img src={editSlide.imageUrl} alt="slide" style={{width:"100%",height:90,objectFit:"cover",display:"block"}}/>
+                      <img src={editSlide.imageUrl} alt="slide" style={{width:"100%",height:90,objectFit:"contain",backgroundColor:"#0f172a",display:"block"}}/>
                       <button onClick={handleDeletePhoto}
                         style={{position:"absolute",top:6,right:6,background:"rgba(239,68,68,0.9)",border:"none",color:"white",borderRadius:6,padding:"3px 8px",cursor:"pointer",fontSize:11,fontWeight:700}}>
                         🗑️ Supprimer

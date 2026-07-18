@@ -1,63 +1,24 @@
 import { useState, useEffect, useRef } from "react";
+import { DEFAULT_CAROUSEL_SLIDES } from "../../constants";
 
-export const DEFAULT_CAROUSEL_SLIDES = [
-  {
-    bg:"linear-gradient(135deg,#0c4a6e 0%,#0f172a 100%)",
-    emoji:"🏥", title:"Centre Hospitalier National Cheikh Ahmadoul Khadim",
-    sub:"PharmaStock — Système de gestion des inventaires pharmaceutiques", accent:"#38bdf8",
-  },
-  {
-    bg:"linear-gradient(135deg,#312e81 0%,#1e1b4b 100%)",
-    emoji:"🗂️", title:"Inventaires Mensuels Automatisés",
-    sub:"Scannez vos documents, calculez vos ventes, générez vos factures en quelques clics", accent:"#a5b4fc",
-  },
-  {
-    bg:"linear-gradient(135deg,#064e3b 0%,#022c22 100%)",
-    emoji:"💊", title:"Gestion du Stock en Temps Réel",
-    sub:"Médicaments et consommables suivis en permanence, alertes de stock bas automatiques", accent:"#34d399",
-  },
-  {
-    bg:"linear-gradient(135deg,#78350f 0%,#431407 100%)",
-    emoji:"🤝", title:"Collaboration Fournisseurs Simplifiée",
-    sub:"Envoyez vos factures et bons directement par email depuis l'application", accent:"#fbbf24",
-  },
-  {
-    bg:"linear-gradient(135deg,#4c0519 0%,#1e0010 100%)",
-    emoji:"🤖", title:"Assistant IA Intégré",
-    sub:"Scannez vos documents Excel, PDF et images pour importer données automatiquement", accent:"#f9a8d4",
-  },
-];
-
-export function loadSlides() {
-  try { const s = localStorage.getItem("carousel_slides"); return s ? JSON.parse(s) : DEFAULT_CAROUSEL_SLIDES; }
-  catch(e) { return DEFAULT_CAROUSEL_SLIDES; }
-}
-
-export function saveSlides(slides) {
-  try { localStorage.setItem("carousel_slides", JSON.stringify(slides)); } catch(e){}
-}
-
-export function ImageCarousel() {
-  const [slides, setSlides] = useState(loadSlides);
+// Les slides sont désormais stockées dans Firestore (voir useStore.js —
+// carouselSlides, document unique settings/carousel) et passées ici en prop,
+// pour être visibles par TOUS les utilisateurs — plus de localStorage, qui
+// n'était visible que sur l'appareil de la personne ayant fait la modification.
+export function ImageCarousel({ slides }) {
+  const list = slides && slides.length ? slides : DEFAULT_CAROUSEL_SLIDES;
   const [current, setCurrent] = useState(0);
   const [paused,  setPaused]  = useState(false);
   const timerRef = useRef(null);
-
-  // Écouter les changements de slides (admin)
-  useEffect(() => {
-    const onStorage = () => setSlides(loadSlides());
-    window.addEventListener("pharma_slides_updated", onStorage);
-    return () => window.removeEventListener("pharma_slides_updated", onStorage);
-  }, []);
 
   // Auto-défilement toutes les 4 secondes
   useEffect(() => {
     if (paused) return;
     timerRef.current = setInterval(() => {
-      setCurrent(c => (c + 1) % slides.length);
+      setCurrent(c => (c + 1) % list.length);
     }, 4000);
     return () => clearInterval(timerRef.current);
-  }, [paused, slides.length]);
+  }, [paused, list.length]);
 
   const go = (idx) => {
     setCurrent(idx);
@@ -65,10 +26,10 @@ export function ImageCarousel() {
     clearInterval(timerRef.current);
     setTimeout(() => setPaused(false), 6000);
   };
-  const prev = () => go((current - 1 + slides.length) % slides.length);
-  const next = () => go((current + 1) % slides.length);
+  const prev = () => go((current - 1 + list.length) % list.length);
+  const next = () => go((current + 1) % list.length);
 
-  const slide = slides[current] || slides[0];
+  const slide = list[current] || list[0];
 
   return (
     <div
@@ -76,9 +37,9 @@ export function ImageCarousel() {
       onMouseLeave={() => setPaused(false)}
       style={{
         position:"relative",
-        backgroundColor: slide.imageUrl ? "transparent" : "transparent",
+        backgroundColor: slide.imageUrl ? "#0f172a" : "transparent",
         backgroundImage: slide.imageUrl ? `url(${slide.imageUrl})` : slide.bg,
-        backgroundSize: slide.imageUrl ? "cover" : "100% 100%",
+        backgroundSize: slide.imageUrl ? "contain" : "100% 100%",
         backgroundPosition: "center center",
         backgroundRepeat: "no-repeat",
         overflow:"hidden",
@@ -136,7 +97,7 @@ export function ImageCarousel() {
         position:"absolute", bottom:10, left:"50%", transform:"translateX(-50%)",
         display:"flex", gap:6,
       }}>
-        {slides.map((_, i) => (
+        {list.map((_, i) => (
           <div key={i} onClick={() => go(i)} style={{
             width: i === current ? 20 : 7,
             height:7, borderRadius:99,
@@ -152,7 +113,7 @@ export function ImageCarousel() {
         position:"absolute", top:8, right:12,
         fontSize:10, color:"rgba(255,255,255,0.5)", fontWeight:600,
       }}>
-        {current+1}/{slides.length}
+        {current+1}/{list.length}
       </div>
     </div>
   );

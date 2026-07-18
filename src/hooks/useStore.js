@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { signOut, createUserWithEmailAndPassword } from "firebase/auth";
 import { collection, doc, addDoc, getDoc, getDocs, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import { db, authSecondary } from "../firebase";
-import { ROLES } from "../constants";
+import { ROLES, DEFAULT_CAROUSEL_SLIDES } from "../constants";
 
 export function liveCol(collName, setter, ...constraints) {
   const q = constraints.length
@@ -171,6 +171,7 @@ export function useStore(userId, userName) {
   const [receptions,   setReceptions]   = useState([]);
   const [batches,      setBatches]      = useState([]);
   const [patients,     setPatients]     = useState([]);
+  const [carouselSlides, setCarouselSlides] = useState(null); // null = pas encore chargé
   const [svcStock,     setSvcStock]     = useState({}); // { "serviceId_productId": qty }
   const [stock,        setStock]        = useState({});
   const [loading,      setLoading]      = useState(true);
@@ -213,6 +214,17 @@ export function useStore(userId, userName) {
       }, err=>console.warn("svcStock listener error:", err));
     } catch(e) { console.warn("svcStock init error:", e); }
 
+    // Slides du carrousel — document unique partagé (settings/carousel), pas
+    // une collection. Stocké dans Firestore (et non localStorage comme avant)
+    // pour être visible par TOUS les utilisateurs, pas seulement celui qui l'a
+    // modifié sur son propre appareil.
+    let unsubCarousel = ()=>{};
+    try {
+      unsubCarousel = onSnapshot(doc(db,"settings","carousel"), snap=>{
+        setCarouselSlides(snap.exists() && snap.data().slides ? snap.data().slides : DEFAULT_CAROUSEL_SLIDES);
+      }, err=>{ console.warn("carousel listener error:", err); setCarouselSlides(DEFAULT_CAROUSEL_SLIDES); });
+    } catch(e) { console.warn("carousel init error:", e); setCarouselSlides(DEFAULT_CAROUSEL_SLIDES); }
+
     const unsubProd = onSnapshot(
       query(collection(db,"products"), orderBy("name")),
       snap => {
@@ -225,13 +237,13 @@ export function useStore(userId, userName) {
       }
     );
     unsubs.push(unsubProd);
-    return () => { unsubs.forEach(u => u()); unsubSvcStock(); };
+    return () => { unsubs.forEach(u => u()); unsubSvcStock(); unsubCarousel(); };
   }, [userId]);
 
   return {
     suppliers, depots, products, users,
     entries, returns, inventories, invoices, messages, activities,
-    services, transfers, consumptions, svcReturns, receptions, svcStock, batches, patients,
+    services, transfers, consumptions, svcReturns, receptions, svcStock, batches, patients, carouselSlides,
     stock, loading,
 
     addSupplier:    s    => addDoc(collection(db,"suppliers"), { ...s, createdBy:userId, createdByName:userName, createdAt: serverTimestamp() }), // retourne Promise<DocumentReference>
@@ -623,6 +635,12 @@ export function useStore(userId, userName) {
       const snap = await getDoc(doc(db,"patients",pid));
       return snap.exists() ? { id: snap.id, ...snap.data() } : null;
     },
+    // Slides du carrousel — document unique partagé (settings/carousel),
+    // visible par tous dès l'écriture (écoute temps réel comme le reste).
+    saveCarouselSlides: async (slides) => {
+      await setDoc(doc(db,"settings","carousel"), { slides, updatedBy:userId, updatedByName:userName, updatedAt:serverTimestamp() });
+    },
+
     upsertPatient: async (patientId, { name, birthDate }) => {
       const pid = (patientId||"").trim();
       if (!pid) return;
