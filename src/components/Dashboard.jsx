@@ -4,6 +4,7 @@ import { DEFAULT_CAROUSEL_SLIDES, monthLabel, fmtDate } from "../constants";
 import { PageHeader } from "./ui/PageHeader";
 import { card } from "../helpers/styles";
 import { hasSupplierAccess } from "../permissions";
+import { getServiceStock2 } from "../helpers/stock2";
 
 export function Dashboard({store,activeSupplier,activeDepot,currentUser}){
   const {entries,returns,inventories,invoices,products,stock,depots,suppliers}=store;
@@ -14,6 +15,19 @@ export function Dashboard({store,activeSupplier,activeDepot,currentUser}){
   const mReturns=returns.filter(r=>new Date(r.date).getMonth()===month&&new Date(r.date).getFullYear()===year&&(activeSupplier?r.supplierId===activeSupplier.id:hasSupplierAccess(currentUser,r.supplierId)));
   const lowStock=supProds.filter(p=>(stock[p.id]||0)<30);
   const isAdmin = currentUser?.role==="admin";
+  // Un agent/admin de service n'a aucun accès aux données pharmacie (Stock 1) —
+  // lui montrer un tableau de bord orienté pharmacie n'a aucun sens. On lui
+  // construit à la place un résumé de SON service (Stock 2).
+  const isServiceOnly = currentUser?.role==="agent_service"||currentUser?.role==="admin_service";
+  const myServiceId = currentUser?.serviceId||"";
+  const myServiceName = store.services?.find(s=>s.id===myServiceId)?.name||"—";
+  const month2=new Date().getMonth(), year2=new Date().getFullYear();
+  const myConsosMonth = isServiceOnly ? (store.consumptions||[]).filter(c=>c.serviceId===myServiceId&&c.status!=="annule"&&c.createdAt?.seconds&&new Date(c.createdAt.seconds*1000).getMonth()===month2&&new Date(c.createdAt.seconds*1000).getFullYear()===year2) : [];
+  const myPendingTransfers = isServiceOnly ? (store.transfers||[]).filter(t=>t.serviceId===myServiceId&&t.status==="en_attente") : [];
+  const myLowStock = isServiceOnly ? store.products.filter(p=>{
+    const seuil = p.reorderThresholds?.[myServiceId];
+    return seuil!=null && getServiceStock2(store,p.id,myServiceId)<=seuil;
+  }) : [];
 
   // ── État pour l'éditeur de slides ──
   // Les slides viennent de Firestore (store.carouselSlides, partagé par tous) —
@@ -258,6 +272,10 @@ export function Dashboard({store,activeSupplier,activeDepot,currentUser}){
             )}
           </div>
         )}
+      {/* Contenu pharmacie (Stock 1) — sans objet pour un rôle service, qui n'y a
+          de toute façon aucun accès (entrees/retours/inventaire/factures = P0) */}
+      {!isServiceOnly&&(
+      <>
       {/* KPIs */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
         {kpis.map(k=>(
@@ -313,6 +331,59 @@ export function Dashboard({store,activeSupplier,activeDepot,currentUser}){
         ))}
         {entries.length===0&&returns.length===0&&<div style={{color:"#94a3b8",fontSize:13,textAlign:"center",padding:16}}>Aucune activité</div>}
       </div>
+      </>
+      )}
+
+      {/* Contenu service (Stock 2) — pour agent_service/admin_service uniquement */}
+      {isServiceOnly&&(
+      <>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+        <div style={{...card,padding:14}}>
+          <div style={{fontSize:22}}>🏥</div>
+          <div style={{fontSize:15,fontWeight:800,color:"#0891b2",margin:"4px 0"}}>{myServiceName}</div>
+          <div style={{fontSize:11,color:"#64748b"}}>Votre service</div>
+        </div>
+        <div style={{...card,padding:14}}>
+          <div style={{fontSize:22}}>💉</div>
+          <div style={{fontSize:24,fontWeight:800,color:"#4f46e5",margin:"4px 0"}}>{myConsosMonth.length}</div>
+          <div style={{fontSize:11,color:"#64748b"}}>Consommations ce mois</div>
+        </div>
+        <div style={{...card,padding:14}}>
+          <div style={{fontSize:22}}>⏳</div>
+          <div style={{fontSize:24,fontWeight:800,color:"#d97706",margin:"4px 0"}}>{myPendingTransfers.length}</div>
+          <div style={{fontSize:11,color:"#64748b"}}>Transferts à contrôler</div>
+        </div>
+        <div style={{...card,padding:14}}>
+          <div style={{fontSize:22}}>⚠️</div>
+          <div style={{fontSize:24,fontWeight:800,color:"#ef4444",margin:"4px 0"}}>{myLowStock.length}</div>
+          <div style={{fontSize:11,color:"#64748b"}}>Produits sous seuil</div>
+        </div>
+      </div>
+
+      {myLowStock.length>0&&(
+        <div style={{background:"#fef3c7",border:"1px solid #fcd34d",borderRadius:10,padding:14,marginBottom:16}}>
+          <div style={{fontWeight:700,color:"#92400e",marginBottom:8}}>⚠️ Produits sous seuil — {myServiceName} ({myLowStock.length})</div>
+          {myLowStock.map(p=>(
+            <div key={p.id} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"4px 0",borderBottom:"1px solid rgba(0,0,0,0.05)"}}>
+              <span style={{color:"#78350f"}}>{p.name}</span>
+              <span style={{fontWeight:700,color:"#ef4444"}}>{getServiceStock2(store,p.id,myServiceId)} / seuil {p.reorderThresholds?.[myServiceId]}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{...card}}>
+        <div style={{fontWeight:700,color:"#1e293b",marginBottom:12,fontSize:14}}>🕐 Consommations récentes — {myServiceName}</div>
+        {myConsosMonth.slice(0,5).map(c=>(
+          <div key={c.id} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #f8fafc",fontSize:12}}>
+            <div><span style={{marginRight:6}}>💉</span><span style={{color:"#374151"}}>{c.patientName||"Patient non renseigné"}</span></div>
+            <span style={{color:"#94a3b8"}}>{c.createdAt?.seconds?new Date(c.createdAt.seconds*1000).toLocaleDateString("fr-FR"):"—"}</span>
+          </div>
+        ))}
+        {myConsosMonth.length===0&&<div style={{color:"#94a3b8",fontSize:13,textAlign:"center",padding:16}}>Aucune consommation ce mois</div>}
+      </div>
+      </>
+      )}
       </div>{/* end padding:16 */}
     </div>
   );

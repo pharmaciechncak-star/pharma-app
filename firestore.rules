@@ -36,7 +36,7 @@ service cloud.firestore {
         'fournisseurs':{'r':true,'w':true,'d':true},
         'depots':{'r':true,'w':true,'d':true},
         'activites':{'r':false,'w':false,'d':false},
-        'services':{'r':true,'w':false,'d':false},
+        'services':{'r':false,'w':false,'d':false},
         'transferts':{'r':true,'w':true,'d':false},
         'controle-transfert':{'r':false,'w':false,'d':false},
         'consommations':{'r':true,'w':false,'d':false},
@@ -56,7 +56,7 @@ service cloud.firestore {
         'fournisseurs':{'r':true,'w':true,'d':false},
         'depots':{'r':true,'w':true,'d':false},
         'activites':{'r':false,'w':false,'d':false},
-        'services':{'r':true,'w':false,'d':false},
+        'services':{'r':false,'w':false,'d':false},
         'transferts':{'r':true,'w':true,'d':false},
         'controle-transfert':{'r':false,'w':false,'d':false},
         'consommations':{'r':true,'w':false,'d':false},
@@ -76,7 +76,7 @@ service cloud.firestore {
         'fournisseurs':{'r':true,'w':true,'d':false},
         'depots':{'r':true,'w':true,'d':false},
         'activites':{'r':false,'w':false,'d':false},
-        'services':{'r':true,'w':false,'d':false},
+        'services':{'r':false,'w':false,'d':false},
         'transferts':{'r':true,'w':true,'d':false},
         'controle-transfert':{'r':false,'w':false,'d':false},
         'consommations':{'r':true,'w':false,'d':false},
@@ -116,7 +116,7 @@ service cloud.firestore {
         'fournisseurs':{'r':true,'w':false,'d':false},
         'depots':{'r':true,'w':false,'d':false},
         'activites':{'r':false,'w':false,'d':false},
-        'services':{'r':true,'w':false,'d':false},
+        'services':{'r':false,'w':false,'d':false},
         'transferts':{'r':true,'w':false,'d':false},
         'controle-transfert':{'r':false,'w':false,'d':false},
         'consommations':{'r':true,'w':false,'d':false},
@@ -136,7 +136,7 @@ service cloud.firestore {
         'fournisseurs':{'r':false,'w':false,'d':false},
         'depots':{'r':false,'w':false,'d':false},
         'activites':{'r':false,'w':false,'d':false},
-        'services':{'r':true,'w':true,'d':false},
+        'services':{'r':false,'w':false,'d':false},
         'transferts':{'r':false,'w':false,'d':false},
         'controle-transfert':{'r':true,'w':true,'d':true},
         'consommations':{'r':true,'w':true,'d':true},
@@ -156,7 +156,7 @@ service cloud.firestore {
         'fournisseurs':{'r':false,'w':false,'d':false},
         'depots':{'r':false,'w':false,'d':false},
         'activites':{'r':false,'w':false,'d':false},
-        'services':{'r':true,'w':false,'d':false},
+        'services':{'r':false,'w':false,'d':false},
         'transferts':{'r':false,'w':false,'d':false},
         'controle-transfert':{'r':true,'w':true,'d':false},
         'consommations':{'r':true,'w':true,'d':false},
@@ -332,6 +332,13 @@ service cloud.firestore {
     match /patients/{id} {
       allow read:  if isAnyRole();
       allow write: if canAccess('consommations','w');
+    }
+    // Slides du carrousel (tableau de bord) — document unique partagé par
+    // tous, modifiable uniquement par l'admin principal (même restriction que
+    // côté UI dans Dashboard.jsx).
+    match /settings/carousel {
+      allow read:  if isAnyRole();
+      allow write: if isAdmin();
     }
   }
 }

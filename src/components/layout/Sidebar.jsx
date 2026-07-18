@@ -21,23 +21,29 @@ export function Sidebar({open,onClose,page,onNav,user,unread,activeSupplier,onCh
       { id:"hist-inv",   label:"Hist. Inventaires",icon:"📋", perm:"hist-inv" },
       { id:"hist-fact",  label:"Hist. Situations",  icon:"📁", perm:"hist-fact" },
       { id:"messagerie", label:"Messagerie",      icon:"✉️", perm:"messagerie" },
-      { id:"transferts",      label:"Transferts",     icon:"🔄", perm:"transferts" },
-      { id:"controle-retour", label:"Contrôle Retour",  icon:"🔍", perm:"controle-retour" },
-      { id:"receptions",      label:"Réceptions",      icon:"📦", perm:"receptions" },
+      { id:"produits",     label:"Produits",     icon:"💊", perm:"produits" },
+      { id:"fournisseurs", label:"Fournisseurs", icon:"🏢", perm:"fournisseurs" },
+      { id:"depots",       label:"Dépôts",       icon:"🏭", perm:"depots" },
     ]},
+    // Rubriques à cheval entre la pharmacie et les services — Stock (2) :
+    // la pharmacie envoie/reçoit, un service confirme ou renvoie de l'autre côté.
+    { id:"pharmacie-services", label:"Pharmacie ↔ Services", icon:"🔄", items:[
+      { id:"transferts",      label:"Transferts",     icon:"🔄", perm:"transferts" },
+      { id:"receptions",      label:"Réceptions",      icon:"📦", perm:"receptions" },
+      { id:"controle-retour", label:"Contrôle Retour",  icon:"🔍", perm:"controle-retour" },
+    ]},
+    // Rubriques propres aux services hospitaliers.
     { id:"services", label:"Services",   icon:"🏥", items:[
       { id:"services",        label:"Services",       icon:"🏥", perm:"services" },
       { id:"controle-transfert", label:"Contrôle Transfert", icon:"🔍", perm:"controle-transfert" },
       { id:"consommations",   label:"Consommations",  icon:"💉", perm:"consommations" },
       { id:"retours-service", label:"Retours Service",  icon:"↩️", perm:"retours-service" },
       { id:"seuil",           label:"Seuil",            icon:"🎚️", perm:"seuil" },
+    ]},
+    // Vue d'ensemble commune à tout le monde (pharmacie ET services).
+    { id:"suivi", label:"Suivi",   icon:"📈", items:[
       { id:"stock-service",   label:"Stock Services",  icon:"📊", perm:"stock-service" },
       { id:"statistiques",    label:"Statistiques",    icon:"📈", perm:"statistiques" },
-    ]},
-    { id:"catalogue", label:"Catalogue", icon:"📦", items:[
-      { id:"produits",     label:"Produits",     icon:"💊", perm:"produits" },
-      { id:"fournisseurs", label:"Fournisseurs", icon:"🏢", perm:"fournisseurs" },
-      { id:"depots",       label:"Dépôts",       icon:"🏭", perm:"depots" },
     ]},
     { id:"admin", label:"Administration", icon:"⚙️", items:[
       { id:"utilisateurs", label:"Utilisateurs",      icon:"👥", perm:"utilisateurs" },
