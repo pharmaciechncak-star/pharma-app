@@ -8,6 +8,14 @@
         { "fieldPath": "location", "order": "ASCENDING" },
         { "fieldPath": "qtyRemaining", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "batches",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "qtyRemaining", "order": "ASCENDING" },
+        { "fieldPath": "expiry", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

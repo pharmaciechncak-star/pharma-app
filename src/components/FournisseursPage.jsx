@@ -8,13 +8,19 @@ import { Badge } from "./ui/FormControls";
 export function FournisseursPage({store,activeSupplier,onActivate,currentUser}){
   const [show,setShow]=useState(false);
   const [editing,setEditing]=useState(null);
-  const [form,setForm]=useState({name:"",email:"",phone:"",address:""});
+  const [form,setForm]=useState({name:"",email:"",phone:"",address:"",allowedServices:[]});
   const [deletingFour,setDeletingFour]=useState(null);
 
   const open=(s=null)=>{
     setEditing(s?.id||null);
-    setForm(s?{name:s.name,email:s.email,phone:s.phone,address:s.address}:{name:"",email:"",phone:"",address:""});
+    setForm(s?{name:s.name,email:s.email,phone:s.phone,address:s.address,allowedServices:s.allowedServices||[]}:{name:"",email:"",phone:"",address:"",allowedServices:[]});
     setShow(true);
+  };
+  const toggleAllowedService = (sid) => {
+    setForm(f=>{
+      const cur=f.allowedServices||[];
+      return {...f, allowedServices: cur.includes(sid)?cur.filter(x=>x!==sid):[...cur,sid]};
+    });
   };
   const save=async()=>{
     if(editing){
@@ -48,6 +54,19 @@ export function FournisseursPage({store,activeSupplier,onActivate,currentUser}){
         {[["Nom","name","Ex: PharmaCorp"],["Email","email","contact@..."],["Téléphone","phone","01 23..."],["Adresse","address","12 rue..."]].map(([lb,field,ph])=>(
           <div key={field} style={{marginBottom:12}}><label style={label}>{lb}</label><input style={input} value={form[field]||""} onChange={e=>setForm(f=>({...f,[field]:e.target.value}))} placeholder={ph}/></div>
         ))}
+        <div style={{marginBottom:12}}>
+          <label style={label}>Services autorisés <span style={{fontWeight:400,color:"#94a3b8",fontSize:10}}>(cochez chaque service qui doit voir ces produits)</span></label>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6,background:"#f8fafc",borderRadius:8,padding:10,maxHeight:120,overflowY:"auto"}}>
+            {(store.services||[]).length===0&&<div style={{fontSize:11,color:"#94a3b8"}}>Aucun service créé.</div>}
+            {(store.services||[]).map(s=>(
+              <label key={s.id} style={{display:"flex",alignItems:"center",gap:4,fontSize:11,background:form.allowedServices.includes(s.id)?"#eef2ff":"white",border:"1px solid "+(form.allowedServices.includes(s.id)?"#818cf8":"#e2e8f0"),borderRadius:6,padding:"3px 8px",cursor:"pointer"}}>
+                <input type="checkbox" checked={form.allowedServices.includes(s.id)} onChange={()=>toggleAllowedService(s.id)}/>
+                {s.name}
+              </label>
+            ))}
+          </div>
+          <div style={{fontSize:11,color:"#94a3b8",marginTop:4}}>Les services non cochés ne verront pas les produits de ce fournisseur (Consommations, Retours, Seuil).</div>
+        </div>
         <button onClick={save} disabled={!form.name||!form.email} style={{...btn(),background:"#0891b2",color:"white",width:"100%",padding:11}}>
           {editing?"✏️ Modifier":"💾 Enregistrer"}
         </button>
@@ -76,6 +95,9 @@ export function FournisseursPage({store,activeSupplier,onActivate,currentUser}){
               <div style={{fontSize:12,color:"#64748b"}}>{s.email}</div>
               <div style={{fontSize:12,color:"#64748b"}}>{s.phone} · {s.address}</div>
               <div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>{depots.length} dépôt(s) · {prods.length} produit(s)</div>
+              <div style={{fontSize:11,color:"#7c3aed",marginTop:4}}>
+                🏥 {(s.allowedServices&&s.allowedServices.length>0) ? s.allowedServices.map(sid=>store.services.find(sv=>sv.id===sid)?.name).filter(Boolean).join(", ") : "Aucun service (invisible pour les services)"}
+              </div>
             </div>
           );
         })}

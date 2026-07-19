@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { signOut, createUserWithEmailAndPassword } from "firebase/auth";
-import { collection, doc, addDoc, getDoc, getDocs, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
+import { collection, doc, addDoc, getDoc, getDocs, updateDoc, deleteDoc, query, where, orderBy, limit, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import { db, authSecondary } from "../firebase";
 import { ROLES, DEFAULT_CAROUSEL_SLIDES } from "../constants";
 
@@ -153,7 +153,7 @@ async function restoreConsumptionStock(c) {
   }
 }
 
-export function useStore(userId, userName) {
+export function useStore(userId, userName, page) {
   const [suppliers,    setSuppliers]    = useState([]);
   const [depots,       setDepots]       = useState([]);
   const [products,     setProducts]     = useState([]);
@@ -170,7 +170,9 @@ export function useStore(userId, userName) {
   const [svcReturns,   setSvcReturns]   = useState([]);
   const [receptions,   setReceptions]   = useState([]);
   const [batches,      setBatches]      = useState([]);
-  const [patients,     setPatients]     = useState([]);
+  // NB : pas de state "patients" — le dossier patient (voir getPatient/upsertPatient
+  // plus bas) est consulté via une requête ciblée getDoc(), jamais via une liste
+  // complète : inutile de maintenir un écouteur temps réel sur toute la collection.
   const [carouselSlides, setCarouselSlides] = useState(null); // null = pas encore chargé
   const [svcStock,     setSvcStock]     = useState({}); // { "serviceId_productId": qty }
   const [stock,        setStock]        = useState({});
@@ -194,14 +196,20 @@ export function useStore(userId, userName) {
       safeLiveCol("inventories",  setInventories, orderBy("createdAt","desc")),
       safeLiveCol("invoices",     setInvoices,    orderBy("createdAt","desc")),
       safeLiveCol("messages",     setMessages,    orderBy("createdAt","desc")),
-      safeLiveCol("activities",   setActivities,  orderBy("createdAt","desc")),
       safeLiveCol("services",     setServices,    orderBy("name")),
       safeLiveCol("transfers",    setTransfers,   orderBy("createdAt","desc")),
       safeLiveCol("consumptions", setConsumptions,orderBy("createdAt","desc")),
       safeLiveCol("svcReturns",   setSvcReturns,  orderBy("createdAt","desc")),
       safeLiveCol("receptions",   setReceptions,  orderBy("createdAt","desc")),
-      safeLiveCol("batches",      setBatches,     orderBy("expiry","asc")),
-      safeLiveCol("patients",     setPatients),
+      // batches : nécessaire à l'assistant IA (péremptions) qui peut être ouvert
+      // depuis n'importe quelle page, donc pas de chargement "à la demande"
+      // possible ici sans perdre cette capacité — reste en écoute permanente.
+      // Les lots totalement épuisés (qtyRemaining=0 — consommés, annulés ou
+      // neutralisés lors d'une réversion) ne sont jamais affichés nulle part
+      // (péremptions, assistant IA filtrent déjà qtyRemaining>0 côté client) —
+      // autant ne pas les transférer du tout, ce qui réduit fortement le volume
+      // au fil du temps puisque la plupart des lots finissent épuisés.
+      safeLiveCol("batches",      setBatches,     where("qtyRemaining",">",0), orderBy("expiry","asc")),
     ];
 
     // Listener svcStock avec gestion d'erreur
@@ -240,10 +248,28 @@ export function useStore(userId, userName) {
     return () => { unsubs.forEach(u => u()); unsubSvcStock(); unsubCarousel(); };
   }, [userId]);
 
+  // Chargement À LA DEMANDE (pas au démarrage de l'app) pour le Journal
+  // d'activité — utilisé sur UNE SEULE page (admin uniquement), et jamais par
+  // l'assistant IA (contrairement à batches/messages, qui doivent donc rester
+  // en écoute permanente pour rester disponibles depuis n'importe quelle page).
+  // Avant ce correctif, cet écouteur tournait en permanence pour tout le monde
+  // dès la connexion, même sans jamais visiter cette page — source majeure de
+  // lectures Firestore inutiles, "activities" grossissant d'une entrée à
+  // quasiment chaque action de l'application. Se détache en quittant la page.
+  useEffect(() => {
+    if (!userId || page !== "activites") return;
+    const unsub = onSnapshot(
+      query(collection(db,"activities"), orderBy("createdAt","desc"), limit(500)),
+      snap => setActivities(snap.docs.map(d => ({ id:d.id, ...d.data() }))),
+      err => console.warn("activities listener error:", err)
+    );
+    return () => unsub();
+  }, [userId, page]);
+
   return {
     suppliers, depots, products, users,
     entries, returns, inventories, invoices, messages, activities,
-    services, transfers, consumptions, svcReturns, receptions, svcStock, batches, patients, carouselSlides,
+    services, transfers, consumptions, svcReturns, receptions, svcStock, batches, carouselSlides,
     stock, loading,
 
     addSupplier:    s    => addDoc(collection(db,"suppliers"), { ...s, createdBy:userId, createdByName:userName, createdAt: serverTimestamp() }), // retourne Promise<DocumentReference>

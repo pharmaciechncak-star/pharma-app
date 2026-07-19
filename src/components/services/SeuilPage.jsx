@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { PageHeader } from "../ui/PageHeader";
 import { Modal } from "../ui/Modal";
-import { visibleServices } from "../../permissions";
+import { visibleServices, productAllowedForService } from "../../permissions";
 import { btn, card, label, input } from "../../helpers/styles";
 import { Alert } from "../ui/FormControls";
 import { getServiceStock2 } from "../../helpers/stock2";
@@ -30,9 +30,10 @@ export function SeuilPage({store,currentUser}){
     ? (store.services||[]).filter(s=>s.id===userServiceId)
     : visibleServices(currentUser, store.services||[]);
 
-  const products = search.trim()
+  const products = (search.trim()
     ? store.products.filter(p=>p.name.toLowerCase().includes(search.toLowerCase()))
-    : store.products;
+    : store.products
+  ).filter(p=>productAllowedForService(p,svcId,store.suppliers));
 
   const openEdit = (p) => {
     setEditing(p);

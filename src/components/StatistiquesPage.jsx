@@ -3,7 +3,7 @@ import { label, input, card, btn } from "../helpers/styles";
 import { PageHeader } from "./ui/PageHeader";
 import { Modal } from "./ui/Modal";
 import { getPharmacyStock2, getServiceStock2 } from "../helpers/stock2";
-import { visibleServices } from "../permissions";
+import { visibleServices, productAllowedForService } from "../permissions";
 import { BarcodeScanner } from "./ui/ScanReviewModal";
 
 export function StatistiquesPage({store,currentUser}){
@@ -88,10 +88,15 @@ export function StatistiquesPage({store,currentUser}){
     const [search,setSearch]=useState("");
     const [showResults,setShowResults]=useState(false);
     const [showScanner,setShowScanner]=useState(false);
-    const selected = store.products.find(p=>p.id===value);
+    // Quand le périmètre est un service précis (pas Pharmacie/Tous), ne
+    // proposer que les produits des fournisseurs autorisés pour ce service —
+    // simplifie la recherche en ne montrant que ce qui le concerne vraiment.
+    const scopeSvc = effectiveSelService && effectiveSelService!=="pharmacie" ? effectiveSelService : null;
+    const pickerProducts = scopeSvc ? store.products.filter(p=>productAllowedForService(p,scopeSvc,store.suppliers)) : store.products;
+    const selected = pickerProducts.find(p=>p.id===value);
     const filtered = search.trim()
-      ? store.products.filter(p=>p.name?.toLowerCase().includes(search.toLowerCase())||[p.barcode1,p.barcode2,p.barcode3].some(b=>b&&b.includes(search)))
-      : store.products;
+      ? pickerProducts.filter(p=>p.name?.toLowerCase().includes(search.toLowerCase())||[p.barcode1,p.barcode2,p.barcode3].some(b=>b&&b.includes(search)))
+      : pickerProducts;
     return(
       <div style={{position:"relative"}}>
         <div style={{display:"flex",gap:6}}>
@@ -582,6 +587,7 @@ export function StatistiquesPage({store,currentUser}){
     // jamais de repli de l'un vers l'autre.
     const getThreshold = (p) => scope==="pharmacie" ? p.reorderThreshold : (p.reorderThresholds?.[scope] ?? null);
     const rowsRaw=store.products
+      .filter(p=>scope==="pharmacie"||productAllowedForService(p,scope,store.suppliers))
       .filter(p=>getThreshold(p)!=null && getStock(p.id)<=getThreshold(p))
       .map(p=>({
         name:p.name,
@@ -593,7 +599,7 @@ export function StatistiquesPage({store,currentUser}){
       .sort((a,b)=>b.manque-a.manque);
     const headers=["Produit","Fournisseur","Stock actuel ("+scopeLabel+")","Seuil","Quantité à commander"];
     const rows=rowsRaw.map(r=>[r.name,r.supplier,r.stock,r.seuil,r.manque]);
-    const nbSansSeuil=store.products.filter(p=>getThreshold(p)==null).length;
+    const nbSansSeuil=store.products.filter(p=>(scope==="pharmacie"||productAllowedForService(p,scope,store.suppliers))&&getThreshold(p)==null).length;
     return(
       <div>
         {!effectiveSelService&&<div style={{fontSize:11,color:"#6366f1",marginBottom:10,background:"#eef2ff",padding:8,borderRadius:8}}>ℹ️ Aucun service choisi en haut de page → vue Pharmacie par défaut.</div>}

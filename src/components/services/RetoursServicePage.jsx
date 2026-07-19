@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { PageHeader } from "../ui/PageHeader";
-import { can, visibleServices, hasServiceAccess } from "../../permissions";
+import { can, visibleServices, hasServiceAccess, productAllowedForService } from "../../permissions";
 import { PrintModal, SvcReturnPrint } from "../print/PrintTemplates";
 import { btn, card, label, input } from "../../helpers/styles";
 import { Alert } from "../ui/FormControls";
@@ -31,6 +31,7 @@ export function RetoursServicePage({store,currentUser}){
   // entre ce qui est affiché ici et ce que montre Stock Service/Statistiques.
   const svcProds=form.serviceId
     ?store.products
+      .filter(p=>productAllowedForService(p,form.serviceId,store.suppliers))
       .map(p=>({...p, svcQty:getServiceStock2(store,p.id,form.serviceId)}))
       .filter(p=>p.svcQty>0)
     :[];

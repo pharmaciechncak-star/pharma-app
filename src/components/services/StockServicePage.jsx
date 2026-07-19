@@ -2,7 +2,7 @@ import { useState } from "react";
 import { PageHeader } from "../ui/PageHeader";
 import { card, label, input, btn } from "../../helpers/styles";
 import { getPharmacyStock2, getServiceStock2, sumItemsQty, sumConfirmedQty } from "../../helpers/stock2";
-import { visibleServices } from "../../permissions";
+import { visibleServices, productAllowedForService } from "../../permissions";
 
 export function StockServicePage({store,currentUser}){
   const [filterSuppliers,setFilterSuppliers]=useState([]);
@@ -10,9 +10,10 @@ export function StockServicePage({store,currentUser}){
   const [search,setSearch]=useState("");
 
   // Produits filtrés
-  const allProds = filterSuppliers.length>0
+  const allProds = (filterSuppliers.length>0
     ? store.products.filter(p=>filterSuppliers.includes(p.supplierId))
-    : store.products;
+    : store.products
+  ).filter(p=>filterService==="pharmacie"||productAllowedForService(p,filterService,store.suppliers));
   const filteredProds = search.trim()
     ? allProds.filter(p=>p.name.toLowerCase().includes(search.toLowerCase()))
     : allProds;

@@ -59,3 +59,15 @@ export function visibleServices(user, allServices) {
 export function visibleSuppliers(user, allSuppliers) {
   return (allSuppliers || []).filter(s => hasSupplierAccess(user, s.id));
 }
+
+// Un fournisseur peut restreindre SES produits à certains services
+// hospitaliers (champ allowedServices sur le document fournisseur, distinct
+// des restrictions par utilisateur ci-dessus). Choix strict, case par case :
+// aucune case cochée = disponible pour AUCUN service (pas de repli "tous par
+// défaut"). Utilisé côté Consommations/Retours Service/Seuil pour qu'un
+// service ne voie que les produits des fournisseurs qui le concernent.
+export function productAllowedForService(product, serviceId, suppliers) {
+  if (!serviceId || !product?.supplierId) return true;
+  const supplier = (suppliers || []).find(s => s.id === product.supplierId);
+  return (supplier?.allowedServices || []).includes(serviceId);
+}

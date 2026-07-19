@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { PageHeader } from "../ui/PageHeader";
-import { can, visibleServices, hasServiceAccess, hasSupplierAccess } from "../../permissions";
+import { can, visibleServices, hasServiceAccess, hasSupplierAccess, productAllowedForService } from "../../permissions";
 import { btn, card, label, input } from "../../helpers/styles";
 import { Alert } from "../ui/FormControls";
 import { BarcodeScanner } from "../ui/ScanReviewModal";
@@ -27,7 +27,8 @@ export function TransfertsPage({store,activeSupplier,currentUser}){
   const searchRef=useRef(null);
   const [printSel,setPrintSel]=useState(null);
 
-  const suppProds=activeSupplier?store.products.filter(p=>p.supplierId===activeSupplier.id):store.products.filter(p=>hasSupplierAccess(currentUser,p.supplierId));
+  const suppProds=(activeSupplier?store.products.filter(p=>p.supplierId===activeSupplier.id):store.products.filter(p=>hasSupplierAccess(currentUser,p.supplierId)))
+    .filter(p=>productAllowedForService(p,form.serviceId,store.suppliers));
   const filtered=search.trim()?suppProds.filter(p=>p.name.toLowerCase().includes(search.toLowerCase())):suppProds;
   const selectedSvc=store.services?.find(s=>s.id===form.serviceId);
 
@@ -128,6 +129,7 @@ export function TransfertsPage({store,activeSupplier,currentUser}){
             {/* Recherche produit + scan */}
             <div style={{position:"relative",marginBottom:10}}>
               <label style={label}>Ajouter un produit</label>
+              {form.serviceId&&<div style={{fontSize:10,color:"#94a3b8",marginBottom:4}}>Seuls les produits des fournisseurs autorisés pour ce service sont proposés.</div>}
               <div style={{display:"flex",gap:6}}>
                 <div style={{position:"relative",flex:1}}>
                   <input ref={searchRef} style={{...input,paddingLeft:32}} placeholder="Rechercher ou scanner..." value={search}

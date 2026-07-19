@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { PageHeader } from "../ui/PageHeader";
-import { can, hasServiceAccess } from "../../permissions";
+import { can, hasServiceAccess, productAllowedForService } from "../../permissions";
 import { btn, card, label, input } from "../../helpers/styles";
 import { Alert } from "../ui/FormControls";
 import { BarcodeScanner } from "../ui/ScanReviewModal";
@@ -54,6 +54,7 @@ export function ConsommationsPage({store,currentUser}){
   // que RetoursServicePage.jsx).
   const svcProds=form.serviceId
     ?store.products
+      .filter(p=>productAllowedForService(p,form.serviceId,store.suppliers))
       .map(p=>({...p, svcQty:getServiceStock2(store,p.id,form.serviceId)}))
       .filter(p=>p.svcQty>0)
     :[];

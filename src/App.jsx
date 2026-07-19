@@ -103,7 +103,7 @@ export default function App(){
     return unsub;
   },[]);
 
-  const store = useStore(user?.uid, user?.name || user?.email || "Inconnu");
+  const store = useStore(user?.uid, user?.name || user?.email || "Inconnu", page);
   const ai    = useAI();
 
   // ── Synchroniser activeSupplier avec les données fraîches de Firestore ──
