@@ -15,6 +15,8 @@ export function TransfertsPage({store,activeSupplier,currentUser}){
   const [show,setShow]=useState(false);
   const [editingId,setEditingId]=useState(null);
   const [cancelling,setCancelling]=useState(null);
+  const [editingExpiry,setEditingExpiry]=useState(null); // transfert en cours d'édition des péremptions
+  const [expiryDrafts,setExpiryDrafts]=useState({});
   const [showFilters,setShowFilters]=useState(false);
   const [filters,setFilters]=useState({dateFrom:"",dateTo:"",serviceId:"",createdBy:"",status:""});
   const hasActiveFilters = Object.values(filters).some(v=>v);
@@ -242,6 +244,12 @@ export function TransfertsPage({store,activeSupplier,currentUser}){
                 <span style={{background:"#eef2ff",color:"#4f46e5",fontSize:10,fontWeight:700,borderRadius:99,padding:"2px 8px"}}>{(t.items||[]).length} produit(s)</span>
               </div>
             </div>
+            {(t.items||[]).some(it=>it.expiry)&&(
+              <button onClick={e=>{e.stopPropagation();setEditingExpiry(t);setExpiryDrafts(Object.fromEntries((t.items||[]).map(it=>[it.productId,it.expiry||""])));}}
+                style={{...btn(),background:"#f8fafc",color:"#64748b",border:"1px solid #e2e8f0",fontSize:10,marginTop:6,padding:"3px 8px"}}>
+                📅 Péremption la plus proche : {(t.items||[]).filter(it=>it.expiry).sort((a,b)=>a.expiry<b.expiry?-1:1)[0]?.expiry} ✏️
+              </button>
+            )}
             {t.repris&&<div style={{fontSize:11,color:"#059669",marginTop:6,fontWeight:600}}>✅ Repris — manquant réconcilié avec le stock pharmacie ({t.reprisAt?.seconds?new Date(t.reprisAt.seconds*1000).toLocaleDateString("fr-FR"):""})</div>}
             {t.status==="non_conforme"&&!t.repris&&can(currentUser,"transferts","w")&&(t.items||[]).some(it=>it.ecart<0)&&(
               <button onClick={e=>{e.stopPropagation();reprendre(t);}} style={{...btn(),background:"#fef3c7",color:"#92400e",border:"1px solid #fcd34d",fontSize:11,marginTop:8}}>🔁 Reprendre le transfert (manquants)</button>
@@ -272,6 +280,26 @@ export function TransfertsPage({store,activeSupplier,currentUser}){
               }} style={{...btn(),background:"#ef4444",color:"white",flex:1,padding:10}}>🚫 Confirmer l'annulation</button>
               <button onClick={()=>setCancelling(null)} style={{...btn(),background:"#f1f5f9",color:"#374151",padding:10}}>Retour</button>
             </div>
+          </div>
+        )}
+      </Modal>
+      <Modal open={!!editingExpiry} onClose={()=>setEditingExpiry(null)} title="📅 Dates de péremption">
+        {editingExpiry&&(
+          <div>
+            <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>Corrigez la date si une erreur a été constatée (saisie à la réception). La correction s'applique aussi au lot physique suivi en interne.</div>
+            {(editingExpiry.items||[]).map(it=>(
+              <div key={it.productId} style={{marginBottom:10}}>
+                <label style={label}>{it.productName}{it.lot?" — lot "+it.lot:""}</label>
+                <input type="date" style={input} value={expiryDrafts[it.productId]||""} onChange={e=>setExpiryDrafts(d=>({...d,[it.productId]:e.target.value}))}/>
+              </div>
+            ))}
+            <button onClick={async()=>{
+              for(const [pid,val] of Object.entries(expiryDrafts)){
+                const orig=(editingExpiry.items||[]).find(it=>it.productId===pid)?.expiry||"";
+                if(val!==orig) await store.updateTransferItemExpiry(editingExpiry.id,pid,val);
+              }
+              setEditingExpiry(null);
+            }} style={{...btn(),background:"#4f46e5",color:"white",width:"100%",padding:10,marginTop:4}}>💾 Enregistrer</button>
           </div>
         )}
       </Modal>

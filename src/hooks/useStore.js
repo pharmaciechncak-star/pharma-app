@@ -469,12 +469,13 @@ export function useStore(userId, userName, page) {
       // pharmacie (le produit part physiquement), mais ne crédite le Stock (2)
       // service qu'après confirmation de réception (voir confirmTransfer).
       // qtyConfirmed:null tant que la ligne n'a pas été contrôlée par le service.
-      const itemsInit = (t.items||[]).map(it => ({ ...it, qtyConfirmed:null, conforme:null, ecart:0 }));
+      const itemsInit = (t.items||[]).map(it => ({ ...it, qtyConfirmed:null, conforme:null, ecart:0, expiry:it.expiry||"", lot:it.lot||"" }));
       const ref = await addDoc(collection(db,"transfers"), { ...t, items:itemsInit, transferredBy:userId, transferredByName:userName, status:"en_attente", createdAt:serverTimestamp() });
       // NB : le Stock (1) — products.stockQty — n'est PAS touché ici : un transfert
       // pharmacie→service relève uniquement du Stock (2), qui se déduit des
       // collections receptions/transfers/consumptions/svcReturns (voir StockServicePage
       // et helpers/stock2.js), sans compteur dédié.
+      const itemExpiries = {}; // productId -> date de péremption la plus proche parmi les lots consommés
       for(const it of (t.items||[])){
         if(!it.productId||!it.qty) continue;
         // FEFO : on retire d'abord des lots pharmacie dont la péremption est la plus
@@ -488,12 +489,40 @@ export function useStore(userId, userName, page) {
             location: locService(t.serviceId), source: "transfer", sourceRef: ref.id,
             userId, userName,
           });
+          // La date la plus proche (premier lot pris par FEFO) sert de référence
+          // affichée sur le transfert — traçabilité + correction possible si erreur.
+          if (!itemExpiries[it.productId] || (c.expiry && c.expiry < itemExpiries[it.productId].expiry)) {
+            itemExpiries[it.productId] = { expiry: c.expiry||"", lot: c.lot||"" };
+          }
         }
         // NB : le Stock (2) service (svcStock) n'est PAS incrémenté ici — il ne le
         // sera qu'à la confirmation de réception par le service (confirmTransfer).
       }
+      // Reporter la date de péremption trouvée sur les articles du transfert.
+      if (Object.keys(itemExpiries).length > 0) {
+        const finalItems = itemsInit.map(it => itemExpiries[it.productId] ? { ...it, ...itemExpiries[it.productId] } : it);
+        await updateDoc(doc(db,"transfers",ref.id), { items: finalItems });
+      }
       await addDoc(collection(db,"activities"), { action:"create", entity:"transfer", entityId:ref.id, details:`Transfert envoyé vers ${t.serviceName} : ${t.items?.length||0} produit(s) (en attente de confirmation)`, userId, userName, createdAt:serverTimestamp() });
       return ref;
+    },
+
+    // Corrige la date de péremption (et le lot) affichée sur un article d'un
+    // transfert — pour une erreur de saisie constatée après coup. Modifiable
+    // par la pharmacie ET par le service au moment du contrôle. Répercute la
+    // correction sur le(s) lot(s) réellement créés par ce transfert (même
+    // sourceRef), pour que le suivi des péremptions reste juste.
+    updateTransferItemExpiry: async (transferId, productId, newExpiry) => {
+      const tSnap = await getDoc(doc(db,"transfers",transferId));
+      if (!tSnap.exists()) throw new Error("Transfert introuvable");
+      const t = tSnap.data();
+      const newItems = (t.items||[]).map(it => it.productId===productId ? { ...it, expiry:newExpiry } : it);
+      await updateDoc(doc(db,"transfers",transferId), { items:newItems });
+      const batchesSnap = await getDocs(query(collection(db,"batches"), where("source","==","transfer"), where("sourceRef","==",transferId), where("productId","==",productId)));
+      for (const b of batchesSnap.docs) {
+        await updateDoc(doc(db,"batches",b.id), { expiry:newExpiry });
+      }
+      await addDoc(collection(db,"activities"), { action:"update", entity:"transfer", entityId:transferId, details:`Date de péremption corrigée (${productId}) : ${newExpiry}`, userId, userName, createdAt:serverTimestamp() });
     },
 
     // Confirmation de réception par le service : contrôle ligne par ligne
@@ -635,7 +664,8 @@ export function useStore(userId, userName, page) {
       const t = tSnap.data();
       if (t.status !== "en_attente") throw new Error("Ce transfert a déjà été contrôlé par le service — demandez-lui d'abord d'annuler le contrôle.");
       await reverseBatchesOf("transfer", transferId, locPharmacy(), userId, userName);
-      const itemsInit = (newData.items||[]).map(it => ({ ...it, qtyConfirmed:null, conforme:null, ecart:0 }));
+      const itemsInit = (newData.items||[]).map(it => ({ ...it, qtyConfirmed:null, conforme:null, ecart:0, expiry:"", lot:"" }));
+      const itemExpiries = {};
       for (const it of (newData.items||[])) {
         if (!it.productId || !it.qty) continue;
         const { consumed } = await consumeFEFO(it.productId, Number(it.qty), locPharmacy());
@@ -646,9 +676,13 @@ export function useStore(userId, userName, page) {
             location: locService(t.serviceId), source: "transfer", sourceRef: transferId,
             userId, userName,
           });
+          if (!itemExpiries[it.productId] || (c.expiry && c.expiry < itemExpiries[it.productId].expiry)) {
+            itemExpiries[it.productId] = { expiry: c.expiry||"", lot: c.lot||"" };
+          }
         }
       }
-      await updateDoc(doc(db,"transfers",transferId), { items: itemsInit, notes: newData.notes ?? t.notes });
+      const finalItems = itemsInit.map(it => itemExpiries[it.productId] ? { ...it, ...itemExpiries[it.productId] } : it);
+      await updateDoc(doc(db,"transfers",transferId), { items: finalItems, notes: newData.notes ?? t.notes });
       await addDoc(collection(db,"activities"), { action:"update", entity:"transfer", entityId:transferId, details:`Transfert modifié (vers ${t.serviceName})`, userId, userName, createdAt:serverTimestamp() });
     },
 
@@ -737,13 +771,14 @@ export function useStore(userId, userName, page) {
 
     // ── Retours Service → Pharmacie ──
     addSvcReturn: async r => {
-      const itemsInit = (r.items||[]).map(it => ({ ...it, qtyConfirmed:null, conforme:null, ecart:0 }));
+      const itemsInit = (r.items||[]).map(it => ({ ...it, qtyConfirmed:null, conforme:null, ecart:0, expiry:it.expiry||"", lot:it.lot||"" }));
       const ref = await addDoc(collection(db,"svcReturns"), { ...r, items:itemsInit, returnedBy:userId, returnedByName:userName, status:"en_attente", createdAt:serverTimestamp() });
       // NB : le Stock (1) n'est PAS touché ici — un retour service→pharmacie relève
       // uniquement du Stock (2) (voir remarque dans addTransfer). Comme pour les
       // transferts, le côté émetteur (ici le service) est débité immédiatement ;
       // le côté receveur (la pharmacie) n'est crédité qu'après confirmation
       // (voir confirmSvcReturn) — getPharmacyStock2 ne compte que qtyConfirmed.
+      const itemExpiries = {};
       for(const it of (r.items||[])){
         if(!it.productId||!it.qty) continue;
         // Décrémenter stock service
@@ -761,10 +796,33 @@ export function useStore(userId, userName, page) {
             location: locPharmacy(), source: "svcReturn", sourceRef: ref.id,
             userId, userName,
           });
+          if (!itemExpiries[it.productId] || (c.expiry && c.expiry < itemExpiries[it.productId].expiry)) {
+            itemExpiries[it.productId] = { expiry: c.expiry||"", lot: c.lot||"" };
+          }
         }
+      }
+      if (Object.keys(itemExpiries).length > 0) {
+        const finalItems = itemsInit.map(it => itemExpiries[it.productId] ? { ...it, ...itemExpiries[it.productId] } : it);
+        await updateDoc(doc(db,"svcReturns",ref.id), { items: finalItems });
       }
       await addDoc(collection(db,"activities"), { action:"create", entity:"svcReturn", entityId:ref.id, details:`Retour de ${r.serviceName} vers pharmacie : ${r.items?.length||0} produit(s) (en attente de contrôle)`, userId, userName, createdAt:serverTimestamp() });
       return ref;
+    },
+
+    // Corrige la date de péremption (et le lot) affichée sur un article d'un
+    // retour service — modifiable par le service ET par la pharmacie au moment
+    // du contrôle. Répercute la correction sur le(s) lot(s) créés par ce retour.
+    updateSvcReturnItemExpiry: async (returnId, productId, newExpiry) => {
+      const rSnap = await getDoc(doc(db,"svcReturns",returnId));
+      if (!rSnap.exists()) throw new Error("Retour introuvable");
+      const r = rSnap.data();
+      const newItems = (r.items||[]).map(it => it.productId===productId ? { ...it, expiry:newExpiry } : it);
+      await updateDoc(doc(db,"svcReturns",returnId), { items:newItems });
+      const batchesSnap = await getDocs(query(collection(db,"batches"), where("source","==","svcReturn"), where("sourceRef","==",returnId), where("productId","==",productId)));
+      for (const b of batchesSnap.docs) {
+        await updateDoc(doc(db,"batches",b.id), { expiry:newExpiry });
+      }
+      await addDoc(collection(db,"activities"), { action:"update", entity:"svcReturn", entityId:returnId, details:`Date de péremption corrigée (${productId}) : ${newExpiry}`, userId, userName, createdAt:serverTimestamp() });
     },
 
     // Contrôle de réception d'un retour service, par la pharmacie. Même logique
@@ -891,7 +949,8 @@ export function useStore(userId, userName, page) {
         const sCur = sSnap.data()?.qty || 0;
         await setDoc(doc(db,"svcStock",sKey), { serviceId:r.serviceId, productId:it.productId, qty: sCur + Number(it.qty) }, { merge:true });
       }
-      const itemsInit = (newData.items||[]).map(it => ({ ...it, qtyConfirmed:null, conforme:null, ecart:0 }));
+      const itemsInit = (newData.items||[]).map(it => ({ ...it, qtyConfirmed:null, conforme:null, ecart:0, expiry:"", lot:"" }));
+      const itemExpiries = {};
       for (const it of (newData.items||[])) {
         if (!it.productId || !it.qty) continue;
         const sKey = r.serviceId+"_"+it.productId;
@@ -906,9 +965,13 @@ export function useStore(userId, userName, page) {
             location: locPharmacy(), source: "svcReturn", sourceRef: returnId,
             userId, userName,
           });
+          if (!itemExpiries[it.productId] || (c.expiry && c.expiry < itemExpiries[it.productId].expiry)) {
+            itemExpiries[it.productId] = { expiry: c.expiry||"", lot: c.lot||"" };
+          }
         }
       }
-      await updateDoc(doc(db,"svcReturns",returnId), { items: itemsInit, notes: newData.notes ?? r.notes });
+      const finalItems = itemsInit.map(it => itemExpiries[it.productId] ? { ...it, ...itemExpiries[it.productId] } : it);
+      await updateDoc(doc(db,"svcReturns",returnId), { items: finalItems, notes: newData.notes ?? r.notes });
       await addDoc(collection(db,"activities"), { action:"update", entity:"svcReturn", entityId:returnId, details:`Retour modifié (${r.serviceName})`, userId, userName, createdAt:serverTimestamp() });
     },
 

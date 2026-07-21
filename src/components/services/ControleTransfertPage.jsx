@@ -20,6 +20,8 @@ export function ControleTransfertPage({store,activeSupplier,currentUser}){
   const [msg,setMsg]=useState("");
   const [printSel,setPrintSel]=useState(null);
   const [cancellingControl,setCancellingControl]=useState(null);
+  const [editingExpiry,setEditingExpiry]=useState(null);
+  const [expiryDrafts,setExpiryDrafts]=useState({});
 
   const userServiceId=currentUser?.serviceId||"";
   const isServiceAgent=currentUser?.role==="agent_service"||currentUser?.role==="admin_service";
@@ -81,6 +83,12 @@ export function ControleTransfertPage({store,activeSupplier,currentUser}){
               </div>
               {statusBadge(t)}
             </div>
+            {(t.items||[]).some(it=>it.expiry)&&(
+              <button onClick={()=>{setEditingExpiry(t);setExpiryDrafts(Object.fromEntries((t.items||[]).map(it=>[it.productId,it.expiry||""])));}}
+                style={{...btn(),background:"white",color:"#64748b",border:"1px solid #e2e8f0",fontSize:10,marginBottom:8,padding:"3px 8px"}}>
+                📅 Vérifier/corriger les dates de péremption ✏️
+              </button>
+            )}
             {confirmOpen!==t.id?(
               can(currentUser,"controle-transfert","w")
                 ? <button onClick={()=>openConfirm(t)} style={{...btn(),background:"#4f46e5",color:"white",fontSize:12,width:"100%"}}>📋 Contrôler la réception</button>
@@ -133,6 +141,12 @@ export function ControleTransfertPage({store,activeSupplier,currentUser}){
               </div>
             </div>
             {t.repris&&<div style={{fontSize:11,color:"#059669",marginTop:6,fontWeight:600}}>✅ Repris par la pharmacie</div>}
+            {(t.items||[]).some(it=>it.expiry)&&can(currentUser,"controle-transfert","w")&&(
+              <button onClick={e=>{e.stopPropagation();setEditingExpiry(t);setExpiryDrafts(Object.fromEntries((t.items||[]).map(it=>[it.productId,it.expiry||""])));}}
+                style={{...btn(),background:"#f8fafc",color:"#64748b",border:"1px solid #e2e8f0",fontSize:10,marginTop:6,padding:"3px 8px"}}>
+                📅 Corriger les dates de péremption ✏️
+              </button>
+            )}
             {(t.status==="confirme"||t.status==="non_conforme")&&!t.repris&&can(currentUser,"controle-transfert","w")&&(
               <button onClick={e=>{e.stopPropagation();setCancellingControl(t);}} style={{...btn(),background:"#fee2e2",color:"#ef4444",border:"1px solid #fca5a5",fontSize:11,marginTop:8}}>🚫 Annuler réception</button>
             )}
@@ -155,6 +169,26 @@ export function ControleTransfertPage({store,activeSupplier,currentUser}){
               }} style={{...btn(),background:"#ef4444",color:"white",flex:1,padding:10}}>🚫 Confirmer</button>
               <button onClick={()=>setCancellingControl(null)} style={{...btn(),background:"#f1f5f9",color:"#374151",padding:10}}>Retour</button>
             </div>
+          </div>
+        )}
+      </Modal>
+      <Modal open={!!editingExpiry} onClose={()=>setEditingExpiry(null)} title="📅 Dates de péremption">
+        {editingExpiry&&(
+          <div>
+            <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>Corrigez la date si elle ne correspond pas à ce qui est physiquement reçu.</div>
+            {(editingExpiry.items||[]).map(it=>(
+              <div key={it.productId} style={{marginBottom:10}}>
+                <label style={label}>{it.productName}{it.lot?" — lot "+it.lot:""}</label>
+                <input type="date" style={input} value={expiryDrafts[it.productId]||""} onChange={e=>setExpiryDrafts(d=>({...d,[it.productId]:e.target.value}))}/>
+              </div>
+            ))}
+            <button onClick={async()=>{
+              for(const [pid,val] of Object.entries(expiryDrafts)){
+                const orig=(editingExpiry.items||[]).find(it=>it.productId===pid)?.expiry||"";
+                if(val!==orig) await store.updateTransferItemExpiry(editingExpiry.id,pid,val);
+              }
+              setEditingExpiry(null);
+            }} style={{...btn(),background:"#4f46e5",color:"white",width:"100%",padding:10,marginTop:4}}>💾 Enregistrer</button>
           </div>
         )}
       </Modal>

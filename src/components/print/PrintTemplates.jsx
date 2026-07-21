@@ -263,12 +263,13 @@ export function TransferPrint({ t }) {
       </div>
       <table style={{ width:"100%", borderCollapse:"collapse", marginBottom:16 }}>
         <thead>
-          <tr>{["Produit","Qté envoyée","Qté confirmée","Écart"].map(h => <th key={h} style={thStyle}>{h}</th>)}</tr>
+          <tr>{["Produit","Péremption","Qté envoyée","Qté confirmée","Écart"].map(h => <th key={h} style={thStyle}>{h}</th>)}</tr>
         </thead>
         <tbody>
           {(t.items || []).map((it, i) => (
             <tr key={i}>
               <td style={{ ...tdStyle, fontWeight:600 }}>{it.productName || "—"}</td>
+              <td style={tdStyle}>{it.expiry || "—"}</td>
               <td style={tdStyle}>{it.qtyOriginal!=null ? it.qtyOriginal : it.qty}</td>
               <td style={tdStyle}>{it.qtyConfirmed!=null ? it.qtyConfirmed : "—"}</td>
               <td style={{ ...tdStyle, color: it.ecart<0 ? "#b91c1c" : it.ecart>0 ? "#0e7490" : "inherit", fontWeight: it.ecart!==0 ? 700 : 400 }}>{it.ecart ? (it.ecart>0?"+":"")+it.ecart : "—"}</td>
@@ -308,12 +309,13 @@ export function SvcReturnPrint({ r }) {
       </div>
       <table style={{ width:"100%", borderCollapse:"collapse", marginBottom:16 }}>
         <thead>
-          <tr>{["Produit","Qté annoncée","Qté confirmée","Écart"].map(h => <th key={h} style={thStyle}>{h}</th>)}</tr>
+          <tr>{["Produit","Péremption","Qté annoncée","Qté confirmée","Écart"].map(h => <th key={h} style={thStyle}>{h}</th>)}</tr>
         </thead>
         <tbody>
           {(r.items || []).map((it, i) => (
             <tr key={i}>
               <td style={{ ...tdStyle, fontWeight:600 }}>{it.productName || "—"}</td>
+              <td style={tdStyle}>{it.expiry || "—"}</td>
               <td style={tdStyle}>{it.qtyOriginal!=null ? it.qtyOriginal : it.qty}</td>
               <td style={tdStyle}>{it.qtyConfirmed!=null ? it.qtyConfirmed : "—"}</td>
               <td style={{ ...tdStyle, color: it.ecart<0 ? "#b91c1c" : it.ecart>0 ? "#0e7490" : "inherit", fontWeight: it.ecart!==0 ? 700 : 400 }}>{it.ecart ? (it.ecart>0?"+":"")+it.ecart : "—"}</td>
