@@ -55,8 +55,10 @@ export function StatistiquesPage({store,currentUser}){
   const byUser=(arr,uidField="createdBy")=>selUsers.length>0?arr.filter(x=>selUsers.includes(x[uidField])):arr;
 
   // ── Helpers export/print ──
+  // Point-virgule (pas virgule) : Excel en localisation française attend ";"
+  // comme séparateur de champs CSV, sinon tout s'affiche dans une seule colonne.
   const exportCSV=(rows,headers,filename)=>{
-    const lines=[headers.join(","),...rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(","))];
+    const lines=[headers.join(";"),...rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(";"))];
     const blob=new Blob(["\uFEFF"+lines.join("\n")],{type:"text/csv;charset=utf-8"});
     const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=filename+".csv"; a.click();
   };

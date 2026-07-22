@@ -13,7 +13,9 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
   const [show,setShow]=useState(false);
   const [selected,setSelected]=useState(null);
   const [editing,setEditing]=useState(null);
-  const [form,setForm]=useState({reference:"",supplierId:"",supplierName:"",date:new Date().toISOString().split("T")[0],items:[],notes:""});
+  const [form,setForm]=useState({reference:"",supplierId:"",supplierName:"",date:new Date().toISOString().split("T")[0],items:[],notes:"",attachmentUrl:"",attachmentName:"",attachmentType:""});
+  const [uploadingAttachment,setUploadingAttachment]=useState(false);
+  const [attachError,setAttachError]=useState("");
   const [search,setSearch]=useState("");
   const [showResults,setShowResults]=useState(false);
   const [saving,setSaving]=useState(false);
@@ -48,8 +50,29 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
 
   const openNew=()=>{
     setEditing(null);
-    setForm({reference:"BON-REC-"+genId(),supplierId:activeSupplier?.id||"",supplierName:activeSupplier?.name||"",date:new Date().toISOString().split("T")[0],items:[],notes:""});
+    setForm({reference:"BON-REC-"+genId(),supplierId:activeSupplier?.id||"",supplierName:activeSupplier?.name||"",date:new Date().toISOString().split("T")[0],items:[],notes:"",attachmentUrl:"",attachmentName:"",attachmentType:""});
+    setAttachError("");
     setShow(true); setSelected(null);
+  };
+
+  const handleAttachmentUpload = (file) => {
+    if (!file) return;
+    // Un seul document Firestore par réception : on garde une marge sous 1 Mo
+    // (les articles/notes prennent aussi de la place), donc plafond raisonnable
+    // par pièce jointe — comme pour les images du carrousel.
+    if (file.size > 700*1024) {
+      setAttachError("⚠️ Fichier trop volumineux (max 700 Ko). Compressez-le ou prenez une photo moins lourde.");
+      return;
+    }
+    setAttachError("");
+    setUploadingAttachment(true);
+    const reader = new FileReader();
+    reader.onload = e => {
+      setForm(f=>({...f, attachmentUrl:e.target.result, attachmentName:file.name, attachmentType:file.type}));
+      setUploadingAttachment(false);
+    };
+    reader.onerror = () => { setAttachError("❌ Erreur lors de la lecture du fichier."); setUploadingAttachment(false); };
+    reader.readAsDataURL(file);
   };
 
   const addItem=(prod)=>{
@@ -179,6 +202,20 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
             </tbody>
           </table>
           {r.notes&&<div style={{fontSize:11,color:"#64748b",fontStyle:"italic",marginBottom:12}}>Notes : {r.notes}</div>}
+          {r.attachmentUrl&&(
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#374151",marginBottom:6}}>📎 Document joint</div>
+              {r.attachmentType?.startsWith("image/")?(
+                <a href={r.attachmentUrl} target="_blank" rel="noopener noreferrer">
+                  <img src={r.attachmentUrl} alt={r.attachmentName} style={{maxWidth:220,maxHeight:220,borderRadius:8,border:"1px solid #e2e8f0"}}/>
+                </a>
+              ):(
+                <a href={r.attachmentUrl} download={r.attachmentName} style={{...btn(),background:"#eef2ff",color:"#4f46e5",border:"1px solid #c7d2fe",fontSize:12,textDecoration:"none",display:"inline-block"}}>
+                  📄 {r.attachmentName||"Télécharger le document"}
+                </a>
+              )}
+            </div>
+          )}
           {r.status==="annule"&&<div style={{background:"#fee2e2",color:"#b91c1c",borderRadius:8,padding:"8px 12px",fontSize:12,fontWeight:600,marginBottom:12}}>🚫 Cette réception a été annulée{r.cancelledByName?" par "+r.cancelledByName:""}{r.cancelledAt?.seconds?" le "+new Date(r.cancelledAt.seconds*1000).toLocaleString("fr-FR"):""}.</div>}
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             {r.status!=="annule"&&can(currentUser,"receptions","w")&&<button onClick={()=>{setEditing(r.id);setForm({...r});setShow(true);setSelected(null);}} style={{...btn(),background:"#f0fdf4",color:"#059669",border:"1px solid #86efac",fontSize:12}}>✏️ Modifier</button>}
@@ -282,6 +319,36 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
               </div>
             ))}
             <div style={{marginBottom:10}}><label style={label}>Notes</label><textarea style={{...input,height:50,resize:"none"}} value={form.notes||""} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/></div>
+
+            {/* Pièce jointe : bon de livraison scanné, facture fournisseur, photo
+                des produits reçus... Excel/PDF/Word/image, ou prise de photo
+                directe sur mobile (capture="environment"). */}
+            <div style={{marginBottom:10}}>
+              <label style={label}>Document joint <span style={{fontWeight:400,color:"#94a3b8",fontSize:10}}>(bon de livraison, facture, photo — optionnel, 700 Ko max)</span></label>
+              {attachError&&<div style={{background:"#fee2e2",color:"#b91c1c",borderRadius:8,padding:"6px 10px",fontSize:11,marginBottom:6}}>{attachError}</div>}
+              {form.attachmentUrl?(
+                <div style={{display:"flex",alignItems:"center",gap:8,background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"8px 10px"}}>
+                  {form.attachmentType?.startsWith("image/")
+                    ? <img src={form.attachmentUrl} alt="pièce jointe" style={{width:40,height:40,objectFit:"cover",borderRadius:6}}/>
+                    : <span style={{fontSize:22}}>📄</span>}
+                  <div style={{flex:1,fontSize:12,color:"#166534",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{form.attachmentName}</div>
+                  <button onClick={()=>setForm(f=>({...f,attachmentUrl:"",attachmentName:"",attachmentType:""}))} style={{...btn(),background:"#fee2e2",color:"#ef4444",padding:"3px 7px",fontSize:11}}>✕</button>
+                </div>
+              ):(
+                <div style={{display:"flex",gap:8}}>
+                  <label style={{...btn(),background:"#eef2ff",color:"#4f46e5",border:"1px solid #c7d2fe",fontSize:12,flex:1,textAlign:"center",cursor:"pointer"}}>
+                    {uploadingAttachment?"⏳ Chargement...":"📎 Choisir un fichier"}
+                    <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" style={{display:"none"}}
+                      onChange={e=>handleAttachmentUpload(e.target.files?.[0])}/>
+                  </label>
+                  <label style={{...btn(),background:"#eef2ff",color:"#4f46e5",border:"1px solid #c7d2fe",fontSize:12,flex:1,textAlign:"center",cursor:"pointer"}}>
+                    📷 Prendre une photo
+                    <input type="file" accept="image/*" capture="environment" style={{display:"none"}}
+                      onChange={e=>handleAttachmentUpload(e.target.files?.[0])}/>
+                  </label>
+                </div>
+              )}
+            </div>
             <div style={{display:"flex",gap:8}}>
               <button onClick={save} disabled={saving||form.items.length===0}
                 style={{...btn(),background:form.items.length===0?"#cbd5e1":"#059669",color:"white",flex:1,padding:10}}>

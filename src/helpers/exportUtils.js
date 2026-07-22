@@ -1,8 +1,12 @@
 import * as XLSX from "xlsx";
 
 export function downloadCSV(filename, rows, headers) {
+  // Point-virgule, pas virgule : en localisation française (celle de l'app,
+  // Sénégal/CHNCAK), Excel attend ";" comme séparateur de champs CSV — la
+  // virgule y est déjà utilisée comme séparateur décimal, donc un CSV séparé
+  // par des virgules s'ouvre en une seule colonne au lieu d'un vrai tableau.
   const escape = v => `"${String(v??'').replace(/"/g,'""')}"`;
-  const lines = [headers.map(escape).join(','), ...rows.map(r=>r.map(escape).join(','))];
+  const lines = [headers.map(escape).join(';'), ...rows.map(r=>r.map(escape).join(';'))];
   const blob = new Blob(["\uFEFF"+lines.join('\n')], {type:'text/csv;charset=utf-8'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href=url; a.download=filename; a.click();

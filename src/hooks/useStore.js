@@ -209,7 +209,12 @@ export function useStore(userId, userName, page) {
       // (péremptions, assistant IA filtrent déjà qtyRemaining>0 côté client) —
       // autant ne pas les transférer du tout, ce qui réduit fortement le volume
       // au fil du temps puisque la plupart des lots finissent épuisés.
-      safeLiveCol("batches",      setBatches,     where("qtyRemaining",">",0), orderBy("expiry","asc")),
+      // NB : Firestore exige que le champ filtré par inégalité (qtyRemaining>0)
+      // soit AUSSI le premier critère de tri — sinon la requête est invalide et
+      // échoue silencieusement (c'était le bug : orderBy("expiry") seul, sans
+      // orderBy("qtyRemaining") d'abord, rejetait la requête). Le tri final par
+      // péremption se fait donc côté client (voir PeremptionsTab.sort()).
+      safeLiveCol("batches",      setBatches,     where("qtyRemaining",">",0), orderBy("qtyRemaining","asc"), orderBy("expiry","asc")),
     ];
 
     // Listener svcStock avec gestion d'erreur
@@ -1064,7 +1069,12 @@ export function useStore(userId, userName, page) {
           await updateDoc(doc(db,"batches",b.id), { qtyInitial:0, qtyRemaining:0 });
         }
       }
-      await updateDoc(doc(db,"receptions",receptionId), { items:newItems, notes:newData.notes ?? r.notes });
+      await updateDoc(doc(db,"receptions",receptionId), {
+        items:newItems, notes:newData.notes ?? r.notes,
+        attachmentUrl: newData.attachmentUrl ?? r.attachmentUrl ?? "",
+        attachmentName: newData.attachmentName ?? r.attachmentName ?? "",
+        attachmentType: newData.attachmentType ?? r.attachmentType ?? "",
+      });
       await addDoc(collection(db,"activities"), { action:"update", entity:"reception", entityId:receptionId, details:`Réception modifiée : ${r.reference}`, userId, userName, createdAt:serverTimestamp() });
     },
 
