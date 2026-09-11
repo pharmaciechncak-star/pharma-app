@@ -388,7 +388,7 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
                 des produits reçus... Excel/PDF/Word/image, ou prise de photo
                 directe sur mobile (capture="environment"). */}
             <div style={{marginBottom:10}}>
-              <label style={label}>Document joint <span style={{fontWeight:400,color:"#94a3b8",fontSize:10}}>(bon de livraison, facture, photo — optionnel, 700 Ko max)</span></label>
+              <label style={label}>Scanner un document <span style={{fontWeight:400,color:"#94a3b8",fontSize:10}}>(Excel, PDF, Word ou photo — remplit la liste automatiquement, à réviser avant confirmation · 700 Ko max)</span></label>
               {attachError&&<div style={{background:"#fee2e2",color:"#b91c1c",borderRadius:8,padding:"6px 10px",fontSize:11,marginBottom:6}}>{attachError}</div>}
               {scanMsg&&<div style={{background:scanMsg.startsWith("✅")?"#f0fdf4":"#fef3c7",color:scanMsg.startsWith("✅")?"#166534":"#92400e",borderRadius:8,padding:"6px 10px",fontSize:11,marginBottom:6}}>{scanMsg}</div>}
               {form.attachmentUrl?(
@@ -402,7 +402,7 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
               ):(
                 <div style={{display:"flex",gap:8}}>
                   <label style={{...btn(),background:"#eef2ff",color:"#4f46e5",border:"1px solid #c7d2fe",fontSize:12,flex:1,textAlign:"center",cursor:"pointer"}}>
-                    {uploadingAttachment||scanning?"⏳ Analyse en cours...":"📎 Choisir un fichier"}
+                    {uploadingAttachment||scanning?"⏳ Analyse...":"📄 Scanner"}
                     <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" style={{display:"none"}}
                       onChange={e=>handleAttachmentUpload(e.target.files?.[0])}/>
                   </label>
