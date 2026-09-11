@@ -3,11 +3,13 @@ import { PageHeader } from "../ui/PageHeader";
 import { card, label, input, btn } from "../../helpers/styles";
 import { getPharmacyStock2, getServiceStock2, sumItemsQty, sumConfirmedQty } from "../../helpers/stock2";
 import { visibleServices, productAllowedForService } from "../../permissions";
+import { BarcodeScanner } from "../ui/ScanReviewModal";
 
 export function StockServicePage({store,currentUser}){
   const [filterSuppliers,setFilterSuppliers]=useState([]);
   const [filterService,setFilterService]=useState("pharmacie"); // "pharmacie" | serviceId
   const [search,setSearch]=useState("");
+  const [showScanner,setShowScanner]=useState(false);
 
   // Produits filtrés
   const allProds = (filterSuppliers.length>0
@@ -15,7 +17,7 @@ export function StockServicePage({store,currentUser}){
     : store.products
   ).filter(p=>filterService==="pharmacie"||productAllowedForService(p,filterService,store.suppliers));
   const filteredProds = search.trim()
-    ? allProds.filter(p=>p.name.toLowerCase().includes(search.toLowerCase()))
+    ? allProds.filter(p=>p.name.toLowerCase().includes(search.toLowerCase())||[p.barcode1,p.barcode2,p.barcode3].some(b=>b&&b.includes(search)))
     : allProds;
 
   const isPharmacieView = filterService==="pharmacie";
@@ -46,7 +48,17 @@ export function StockServicePage({store,currentUser}){
               {filterSuppliers.length>0&&<button onClick={()=>setFilterSuppliers([])} style={{...btn(),background:"#fee2e2",color:"#ef4444",fontSize:11,padding:"4px 10px"}}>✕ Tout</button>}
             </div>
           </div>
-          <input style={{...input}} placeholder="🔍 Rechercher un produit..." value={search} onChange={e=>setSearch(e.target.value)}/>
+          <div style={{display:"flex",gap:6,position:"relative"}}>
+            <input style={{...input,flex:1}} placeholder="🔍 Rechercher un produit ou scanner..." value={search} onChange={e=>setSearch(e.target.value)}/>
+            <button onClick={()=>setShowScanner(true)} title="Scanner un code barre"
+              style={{...btn(),background:"#0891b2",color:"white",padding:"8px 12px",flexShrink:0,fontSize:16}}>📷</button>
+            {showScanner&&(
+              <BarcodeScanner
+                onDetected={code=>{ setShowScanner(false); setSearch(code); }}
+                onClose={()=>setShowScanner(false)}
+              />
+            )}
+          </div>
         </div>
 
         {/* Tableau stock */}

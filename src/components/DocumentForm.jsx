@@ -269,7 +269,7 @@ export function DocumentForm({type,store,activeSupplier,activeDepot,ai,onNav,cur
       </div>
 
       <div style={{...card,marginBottom:14}}>
-        <label style={label}>Notes</label>
+        <label style={label}>Observations</label>
         <textarea style={{...input,height:70,resize:"vertical"}} value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/>
       </div>
 

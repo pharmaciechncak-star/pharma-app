@@ -39,7 +39,7 @@ export function InvoicesPage({store,activeSupplier,onNav,currentUser}){
       const entLignes = [
         "République du Sénégal",
         "Un peuple - un but - une foi",
-        "Ministère de la Santé et de l'Action Sociale",
+        "Ministère de la Santé et de l'Hygiène Publique",
         "Direction Générale des Établissements de Santé",
         "Direction des Établissements Publics de Santé",
         "Centre Hospitalier National Cheikh Ahmadoul Khadim",
@@ -222,7 +222,7 @@ export function InvoicesPage({store,activeSupplier,onNav,currentUser}){
         "<div class=\"ent\">" +
           "<div style=\"font-size:11px;font-weight:bold\">République du Sénégal</div>" +
           "<div><span class=\"eln\">Un peuple - un but - une foi</span></div>" +
-          "<div><span class=\"eln\">Ministère de la Santé et de l'Action Sociale</span></div>" +
+          "<div><span class=\"eln\">Ministère de la Santé et de l'Hygiène Publique</span></div>" +
           "<div><span class=\"eln\">Direction Générale des Établissements de Santé</span></div>" +
           "<div><span class=\"eln\">Direction des Établissements Publics de Santé</span></div>" +
           "<div style=\"font-weight:bold\"><span class=\"eln\">Centre Hospitalier National Cheikh Ahmadoul Khadim</span></div>" +
@@ -296,7 +296,7 @@ export function InvoicesPage({store,activeSupplier,onNav,currentUser}){
               <div style={{fontSize:11,fontWeight:"bold"}}>République du Sénégal</div>
               <div>Un peuple - un but - une foi</div>
               <div style={{borderTop:"1px solid #999",margin:"0 40px"}}/>
-              <div>Ministère de la Santé et de l'Action Sociale</div>
+              <div>Ministère de la Santé et de l'Hygiène Publique</div>
               <div style={{borderTop:"1px solid #999",margin:"0 40px"}}/>
               <div>Direction Générale des Établissements de Santé</div>
               <div style={{borderTop:"1px solid #999",margin:"0 40px"}}/>

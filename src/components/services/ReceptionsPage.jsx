@@ -6,8 +6,9 @@ import { PageHeader } from "../ui/PageHeader";
 import { btn, card, label, input } from "../../helpers/styles";
 import { can, visibleSuppliers, hasSupplierAccess } from "../../permissions";
 import { Alert } from "../ui/FormControls";
-import { BarcodeScanner } from "../ui/ScanReviewModal";
+import { BarcodeScanner, ScanReviewModal } from "../ui/ScanReviewModal";
 import { Modal } from "../ui/Modal";
+import { scanDocumentWithAI } from "../../hooks/useAI";
 
 export function ReceptionsPage({store,activeSupplier,currentUser}){
   const [show,setShow]=useState(false);
@@ -16,11 +17,16 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
   const [form,setForm]=useState({reference:"",supplierId:"",supplierName:"",date:new Date().toISOString().split("T")[0],items:[],notes:"",attachmentUrl:"",attachmentName:"",attachmentType:""});
   const [uploadingAttachment,setUploadingAttachment]=useState(false);
   const [attachError,setAttachError]=useState("");
+  const [scanResult,setScanResult]=useState(null);
+  const [reviewOpen,setReviewOpen]=useState(false);
+  const [scanning,setScanning]=useState(false);
+  const [scanMsg,setScanMsg]=useState("");
   const [search,setSearch]=useState("");
   const [showResults,setShowResults]=useState(false);
   const [saving,setSaving]=useState(false);
   const [msg,setMsg]=useState("");
   const [showScanner,setShowScanner]=useState(false);
+  const [barcodeChoices,setBarcodeChoices]=useState(null); // ce code-barre correspond à plusieurs produits CHEZ CE FOURNISSEUR
   const [cancelling,setCancelling]=useState(null); // réception en attente de confirmation d'annulation
   const [cancelError,setCancelError]=useState("");
   const [showFilters,setShowFilters]=useState(false);
@@ -73,6 +79,43 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
     };
     reader.onerror = () => { setAttachError("❌ Erreur lors de la lecture du fichier."); setUploadingAttachment(false); };
     reader.readAsDataURL(file);
+    // En plus de le garder en pièce jointe (archive du document d'origine),
+    // on tente d'en extraire automatiquement la liste des articles — comme
+    // pour Bon d'Entrée : révision obligatoire avant confirmation, jamais
+    // d'ajout automatique sans validation humaine.
+    handleScan(file);
+  };
+
+  const handleScan = async(file) => {
+    if(!file) return;
+    setScanning(true); setScanMsg("📄 Analyse du document en cours...");
+    try {
+      const result = await scanDocumentWithAI(file, suppProds);
+      if(result.success && result.items?.length>0){ setScanMsg(""); setScanResult(result); setReviewOpen(true); }
+      else setScanMsg("⚠️ "+(result.error||"Aucun article détecté dans ce document."));
+    } catch(e){ setScanMsg("❌ Erreur scan : "+e.message); }
+    setScanning(false);
+  };
+
+  const handleConfirmScan = async(selectedRows) => {
+    setReviewOpen(false);
+    // Les nouveaux produits détectés (absents du catalogue) sont créés avant
+    // d'être rattachés aux lignes de la réception — même logique que Bon d'Entrée.
+    const newProds = selectedRows.filter(r=>r.isNew && r.productName?.trim());
+    let newlyCreated = [];
+    for (const np of newProds) {
+      const id = await store.addProduct({name:np.productName.trim(), price:Number(np.unitPrice||0), unit:np.unit||"Boîte", supplierId:form.supplierId||activeSupplier?.id||""});
+      newlyCreated.push({...np, productId:id});
+    }
+    const items = selectedRows.map(r=>{
+      const prodId = r.isNew ? (newlyCreated.find(nc=>nc.productName===r.productName)?.productId||"") : r.productId;
+      const knownProd = suppProds.find(p=>p.id===prodId);
+      return { productId:prodId, productName:knownProd?.name||r.productName||"", qty:String(r.qty||""), unitPrice:r.unitPrice?String(r.unitPrice):knownProd?.price?String(knownProd.price):"", lot:r.lot||"", expiry:r.expiry||"" };
+    }).filter(it=>it.productId);
+    setForm(f=>({...f, items: items.length>0 ? items : f.items}));
+    setScanMsg("✅ "+items.length+" article(s) importé(s) — vérifiez avant d'enregistrer"+(newProds.length>0?" · "+newProds.length+" nouveau(x) produit(s) créé(s)":""));
+    setTimeout(()=>setScanMsg(""),8000);
+    setScanResult(null);
   };
 
   const addItem=(prod)=>{
@@ -83,6 +126,26 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
     });
     setSearch(""); setShowResults(false);
     setTimeout(()=>{lastQtyRef.current?.focus();lastQtyRef.current?.select();},80);
+  };
+
+  // Lecteur de code-barre physique (USB/Bluetooth) : "tape" le code puis
+  // Entrée dans le champ actif — le bouton 📷 (caméra) ne le capte pas. Cette
+  // page est déjà scopée à un seul fournisseur (activeSupplier) : même si le
+  // même code-barre existe chez un autre fournisseur, on ne s'intéresse qu'à
+  // celui actuellement sélectionné (suppProds).
+  // Cette page est déjà scopée à un seul fournisseur (activeSupplier), mais ce
+  // fournisseur peut avoir donné le même code-barre à deux produits
+  // différents (erreur de saisie ou volontaire) — on propose un choix dès que
+  // plus d'une fiche correspond, même au sein de suppProds.
+  const handleSearchKeyDown = e => {
+    if (e.key !== "Enter") return;
+    const code = search.trim();
+    if (!code) return;
+    const matches = suppProds.filter(p=>[p.barcode1,p.barcode2,p.barcode3].some(b=>b&&b===code));
+    if (matches.length===0) return;
+    e.preventDefault();
+    if (matches.length>1) { setBarcodeChoices(matches); return; }
+    addItem(matches[0]);
   };
 
   const save=async()=>{
@@ -135,7 +198,7 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
         "<div class=\"ent\">"+
           "<div style=\"font-size:11px;font-weight:bold\">République du Sénégal</div>"+
           "<div><span class=\"eln\">Un peuple - un but - une foi</span></div>"+
-          "<div><span class=\"eln\">Ministère de la Santé et de l'Action Sociale</span></div>"+
+          "<div><span class=\"eln\">Ministère de la Santé et de l'Hygiène Publique</span></div>"+
           "<div><span class=\"eln\">Direction Générale des Établissements de Santé</span></div>"+
           "<div><span class=\"eln\">Direction des Établissements Publics de Santé</span></div>"+
           "<div style=\"font-weight:bold\"><span class=\"eln\">Centre Hospitalier National Cheikh Ahmadoul Khadim</span></div>"+
@@ -149,7 +212,7 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
       "<div class=\"info\"><span>Réf : <strong>"+r.reference+"</strong></span><span>Fournisseur : <strong>"+r.supplierName+"</strong></span><span>Date : "+r.date+"</span></div>"+
       "<table><thead><tr><th style=\"width:45%\">DÉSIGNATION</th><th>QTÉ</th><th>PRIX UNIT. (FCFA)</th><th>TOTAL (FCFA)</th></tr></thead><tbody>"+
       rows+"<tr class=\"tot\"><td colspan=\"3\" style=\"text-align:center\">TOTAL</td><td style=\"text-align:right\">"+total.toLocaleString("fr-FR")+"</td></tr></tbody></table>"+
-      (r.notes?"<div style=\"margin-top:8px;font-size:9px;color:#444;font-style:italic\">Notes : "+r.notes+"</div>":"")+
+      (r.notes?"<div style=\"margin-top:8px;font-size:9px;color:#444;font-style:italic\">Observations : "+r.notes+"</div>":"")+
       "<div class=\"sig\">"+
       "<div class=\"sb\"><div class=\"sl\">Le Fournisseur</div><div class=\"su\"></div></div>"+
       "<div class=\"sb\"><div class=\"sl\">Le Chef de service Pharmacie CHNCAK</div><div class=\"su\"></div></div>"+
@@ -201,7 +264,7 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
               </tr>
             </tbody>
           </table>
-          {r.notes&&<div style={{fontSize:11,color:"#64748b",fontStyle:"italic",marginBottom:12}}>Notes : {r.notes}</div>}
+          {r.notes&&<div style={{fontSize:11,color:"#64748b",fontStyle:"italic",marginBottom:12}}>Observations : {r.notes}</div>}
           {r.attachmentUrl&&(
             <div style={{marginBottom:12}}>
               <div style={{fontSize:11,fontWeight:700,color:"#374151",marginBottom:6}}>📎 Document joint</div>
@@ -275,6 +338,7 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
                 <div style={{position:"relative",flex:1}}>
                   <input ref={searchRef} style={{...input,paddingLeft:32}} placeholder="Nom ou code barre..."
                     value={search} onChange={e=>{setSearch(e.target.value);setShowResults(true);}}
+                    onKeyDown={handleSearchKeyDown}
                     onFocus={()=>setShowResults(true)} onBlur={()=>setTimeout(()=>setShowResults(false),150)}/>
                   <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:14,pointerEvents:"none"}}>🔍</span>
                 </div>
@@ -291,7 +355,7 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
                 </div>
               )}
             </div>
-            {showScanner&&<BarcodeScanner onDetected={code=>{setShowScanner(false);const p=suppProds.find(x=>[x.barcode1,x.barcode2,x.barcode3].includes(code)||x.name.toLowerCase().includes(code.toLowerCase()));if(p)addItem(p);else setSearch(code);}} onClose={()=>setShowScanner(false)}/>}
+            {showScanner&&<BarcodeScanner onDetected={code=>{setShowScanner(false);const matches=suppProds.filter(x=>[x.barcode1,x.barcode2,x.barcode3].includes(code));if(matches.length>1){setBarcodeChoices(matches);return;}const p=matches[0]||suppProds.find(x=>x.name.toLowerCase().includes(code.toLowerCase()));if(p)addItem(p);else setSearch(code);}} onClose={()=>setShowScanner(false)}/>}
             {/* Liste produits */}
             {form.items.map((it,i)=>(
               <div key={i} style={{background:"#f0fdf4",borderRadius:8,padding:"8px 10px",marginBottom:6,border:"1px solid #86efac"}}>
@@ -318,7 +382,7 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
                 </div>
               </div>
             ))}
-            <div style={{marginBottom:10}}><label style={label}>Notes</label><textarea style={{...input,height:50,resize:"none"}} value={form.notes||""} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/></div>
+            <div style={{marginBottom:10}}><label style={label}>Observations</label><textarea style={{...input,height:50,resize:"none"}} value={form.notes||""} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/></div>
 
             {/* Pièce jointe : bon de livraison scanné, facture fournisseur, photo
                 des produits reçus... Excel/PDF/Word/image, ou prise de photo
@@ -326,6 +390,7 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
             <div style={{marginBottom:10}}>
               <label style={label}>Document joint <span style={{fontWeight:400,color:"#94a3b8",fontSize:10}}>(bon de livraison, facture, photo — optionnel, 700 Ko max)</span></label>
               {attachError&&<div style={{background:"#fee2e2",color:"#b91c1c",borderRadius:8,padding:"6px 10px",fontSize:11,marginBottom:6}}>{attachError}</div>}
+              {scanMsg&&<div style={{background:scanMsg.startsWith("✅")?"#f0fdf4":"#fef3c7",color:scanMsg.startsWith("✅")?"#166534":"#92400e",borderRadius:8,padding:"6px 10px",fontSize:11,marginBottom:6}}>{scanMsg}</div>}
               {form.attachmentUrl?(
                 <div style={{display:"flex",alignItems:"center",gap:8,background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"8px 10px"}}>
                   {form.attachmentType?.startsWith("image/")
@@ -337,7 +402,7 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
               ):(
                 <div style={{display:"flex",gap:8}}>
                   <label style={{...btn(),background:"#eef2ff",color:"#4f46e5",border:"1px solid #c7d2fe",fontSize:12,flex:1,textAlign:"center",cursor:"pointer"}}>
-                    {uploadingAttachment?"⏳ Chargement...":"📎 Choisir un fichier"}
+                    {uploadingAttachment||scanning?"⏳ Analyse en cours...":"📎 Choisir un fichier"}
                     <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" style={{display:"none"}}
                       onChange={e=>handleAttachmentUpload(e.target.files?.[0])}/>
                   </label>
@@ -432,6 +497,23 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
               }} style={{...btn(),background:"#ef4444",color:"white",flex:1,padding:10}}>🚫 Confirmer l'annulation</button>
               <button onClick={()=>setCancelling(null)} style={{...btn(),background:"#f1f5f9",color:"#374151",padding:10}}>Retour</button>
             </div>
+          </div>
+        )}
+      </Modal>
+      <ScanReviewModal open={reviewOpen} onClose={()=>{setReviewOpen(false);setScanResult(null);}}
+        scanResult={scanResult} allProducts={store.products} activeSupplier={activeSupplier}
+        onConfirm={handleConfirmScan} mode="bon"/>
+      <Modal open={!!barcodeChoices} onClose={()=>setBarcodeChoices(null)} title="📦 Plusieurs produits correspondent">
+        {barcodeChoices&&(
+          <div>
+            <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>Ce code-barre correspond à {barcodeChoices.length} produits chez ce fournisseur (doublon de saisie possible). Choisissez lequel ajouter :</div>
+            {barcodeChoices.map(p=>(
+              <button key={p.id} onClick={()=>{addItem(p);setBarcodeChoices(null);}}
+                style={{...btn(),background:"#ecfeff",color:"#0891b2",border:"1px solid #a5f3fc",width:"100%",textAlign:"left",padding:"10px 12px",marginBottom:8,display:"block"}}>
+                <div style={{fontWeight:700,fontSize:13}}>{p.name}</div>
+              </button>
+            ))}
+            <button onClick={()=>setBarcodeChoices(null)} style={{...btn(),background:"#f1f5f9",color:"#374151",width:"100%",padding:10,marginTop:4}}>Annuler</button>
           </div>
         )}
       </Modal>

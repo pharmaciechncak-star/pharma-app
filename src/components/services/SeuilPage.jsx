@@ -25,6 +25,7 @@ export function SeuilPage({store,currentUser}){
   const [msg,setMsg] = useState("");
   const [showScannerSearch,setShowScannerSearch] = useState(false);
   const [showScannerBarcode,setShowScannerBarcode] = useState(false);
+  const [barcodeChoices,setBarcodeChoices]=useState(null); // plusieurs produits (fournisseurs différents) partagent ce code-barre
 
   const services = isServiceAgent
     ? (store.services||[]).filter(s=>s.id===userServiceId)
@@ -39,6 +40,20 @@ export function SeuilPage({store,currentUser}){
     setEditing(p);
     const t = p.reorderThresholds?.[svcId];
     setForm({ threshold: t!=null?String(t):"", barcode1:p.barcode1||"", barcode2:p.barcode2||"", barcode3:p.barcode3||"" });
+  };
+
+  // Lecteur de code-barre physique (USB/Bluetooth) : "tape" le code puis
+  // Entrée dans le champ actif — le bouton 📷 (caméra) ne le capte pas, donc
+  // on intercepte Entrée directement sur le champ de recherche.
+  const handleSearchKeyDown = e => {
+    if (e.key !== "Enter") return;
+    const code = search.trim();
+    if (!code) return;
+    const matches = products.filter(p=>[p.barcode1,p.barcode2,p.barcode3].some(b=>b&&b===code));
+    if (matches.length===0) return;
+    e.preventDefault();
+    if (matches.length>1) { setBarcodeChoices(matches); return; }
+    openEdit(matches[0]);
   };
 
   const save = async () => {
@@ -83,7 +98,7 @@ export function SeuilPage({store,currentUser}){
             <div style={{position:"relative",marginBottom:10}}>
               <div style={{display:"flex",gap:6}}>
                 <input style={{...input,flex:1}} placeholder="🔍 Rechercher un produit..."
-                  value={search} onChange={e=>setSearch(e.target.value)}/>
+                  value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={handleSearchKeyDown}/>
                 <button onClick={()=>setShowScannerSearch(true)} title="Scanner un code barre"
                   style={{...btn(),background:"#7e22ce",color:"white",padding:"8px 12px",flexShrink:0,fontSize:16}}>📷</button>
               </div>
@@ -91,8 +106,9 @@ export function SeuilPage({store,currentUser}){
                 <BarcodeScanner
                   onDetected={code=>{
                     setShowScannerSearch(false);
-                    const found=store.products.find(p=>[p.barcode1,p.barcode2,p.barcode3].some(b=>b&&b===code));
-                    if(found) openEdit(found);
+                    const matches=products.filter(p=>[p.barcode1,p.barcode2,p.barcode3].some(b=>b&&b===code));
+                    if(matches.length>1){ setBarcodeChoices(matches); return; }
+                    if(matches[0]) openEdit(matches[0]);
                     else setSearch(code);
                   }}
                   onClose={()=>setShowScannerSearch(false)}
@@ -160,6 +176,22 @@ export function SeuilPage({store,currentUser}){
           <button onClick={save} disabled={saving} style={{...btn(),background:"#7e22ce",color:"white",width:"100%",padding:11,marginTop:8}}>
             {saving?"⏳ Enregistrement...":"💾 Enregistrer"}
           </button>
+        </Modal>
+
+        <Modal open={!!barcodeChoices} onClose={()=>setBarcodeChoices(null)} title="📦 Plusieurs produits correspondent">
+          {barcodeChoices&&(
+            <div>
+              <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>Ce code-barre correspond à {barcodeChoices.length} produits (fournisseurs différents). Choisissez lequel modifier :</div>
+              {barcodeChoices.map(p=>(
+                <button key={p.id} onClick={()=>{openEdit(p);setBarcodeChoices(null);}}
+                  style={{...btn(),background:"#faf5ff",color:"#7e22ce",border:"1px solid #d8b4fe",width:"100%",textAlign:"left",padding:"10px 12px",marginBottom:8,display:"block"}}>
+                  <div style={{fontWeight:700,fontSize:13}}>{p.name}</div>
+                  <div style={{fontSize:11,color:"#64748b"}}>Fournisseur : {store.suppliers.find(s=>s.id===p.supplierId)?.name||"—"} · Stock service : {getServiceStock2(store,p.id,svcId)}</div>
+                </button>
+              ))}
+              <button onClick={()=>setBarcodeChoices(null)} style={{...btn(),background:"#f1f5f9",color:"#374151",width:"100%",padding:10,marginTop:4}}>Annuler</button>
+            </div>
+          )}
         </Modal>
       </div>
     </div>

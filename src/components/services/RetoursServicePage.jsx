@@ -21,6 +21,7 @@ export function RetoursServicePage({store,currentUser}){
   const [search,setSearch]=useState("");
   const [showResults,setShowResults]=useState(false);
   const [showScanner,setShowScanner]=useState(false);
+  const [barcodeChoices,setBarcodeChoices]=useState(null); // plusieurs produits (fournisseurs différents) partagent ce code-barre
   const [saving,setSaving]=useState(false);
   const [printSel,setPrintSel]=useState(null);
   const [msg,setMsg]=useState("");
@@ -46,6 +47,20 @@ export function RetoursServicePage({store,currentUser}){
       return {...f,items:[...f.items,{productId:prod.id,productName:prod.name,qty:"1",svcQty:prod.svcQty}]};
     });
     setSearch(""); setShowResults(false);
+  };
+
+  // Lecteur de code-barre physique (USB/Bluetooth) : "tape" le code puis
+  // Entrée dans le champ actif — le bouton 📷 (caméra) ne le capte pas, donc
+  // on intercepte Entrée directement sur le champ de recherche.
+  const handleSearchKeyDown = e => {
+    if (e.key !== "Enter") return;
+    const code = search.trim();
+    if (!code) return;
+    const matches = svcProds.filter(p=>[p.barcode1,p.barcode2,p.barcode3].some(b=>b&&b===code));
+    if (matches.length===0) return;
+    e.preventDefault();
+    if (matches.length>1) { setBarcodeChoices(matches); return; }
+    addItem(matches[0]);
   };
 
   const save=async()=>{
@@ -138,6 +153,7 @@ export function RetoursServicePage({store,currentUser}){
                   <div style={{position:"relative",flex:1}}>
                     <input style={{...input,paddingLeft:32}} placeholder="Rechercher dans stock service..."
                       value={search} onChange={e=>{setSearch(e.target.value);setShowResults(true);}}
+                      onKeyDown={handleSearchKeyDown}
                       onFocus={()=>setShowResults(true)} onBlur={()=>setTimeout(()=>setShowResults(false),150)}/>
                     <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:14,pointerEvents:"none"}}>🔍</span>
                   </div>
@@ -148,10 +164,9 @@ export function RetoursServicePage({store,currentUser}){
                   <BarcodeScanner
                     onDetected={code=>{
                       setShowScanner(false);
-                      const found=svcProds.find(p=>
-                        [p.barcode1,p.barcode2,p.barcode3].some(b=>b&&b===code)||
-                        p.name?.toLowerCase().includes(code.toLowerCase())
-                      );
+                      const matches=svcProds.filter(p=>[p.barcode1,p.barcode2,p.barcode3].some(b=>b&&b===code));
+                      if(matches.length>1){ setBarcodeChoices(matches); return; }
+                      const found=matches[0]||svcProds.find(p=>p.name?.toLowerCase().includes(code.toLowerCase()));
                       if(found) addItem(found);
                       else { setSearch(code); setShowResults(true); }
                     }}
@@ -181,7 +196,7 @@ export function RetoursServicePage({store,currentUser}){
                   style={{...btn(),background:"#fee2e2",color:"#ef4444",padding:"3px 7px",fontSize:11}}>✕</button>
               </div>
             ))}
-            <div style={{marginBottom:10}}><label style={label}>Notes</label><textarea style={{...input,height:50,resize:"none"}} value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/></div>
+            <div style={{marginBottom:10}}><label style={label}>Observations</label><textarea style={{...input,height:50,resize:"none"}} value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/></div>
             <div style={{display:"flex",gap:8}}>
               <button onClick={save} disabled={saving}
                 style={{...btn(),background:"#d97706",color:"white",flex:1,padding:10}}>
@@ -300,6 +315,21 @@ export function RetoursServicePage({store,currentUser}){
               }
               setEditingExpiry(null);
             }} style={{...btn(),background:"#d97706",color:"white",width:"100%",padding:10,marginTop:4}}>💾 Enregistrer</button>
+          </div>
+        )}
+      </Modal>
+      <Modal open={!!barcodeChoices} onClose={()=>setBarcodeChoices(null)} title="📦 Plusieurs produits correspondent">
+        {barcodeChoices&&(
+          <div>
+            <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>Ce code-barre correspond à {barcodeChoices.length} produits (fournisseurs différents). Choisissez lequel ajouter :</div>
+            {barcodeChoices.map(p=>(
+              <button key={p.id} onClick={()=>{addItem(p);setBarcodeChoices(null);}}
+                style={{...btn(),background:"#fffbeb",color:"#92400e",border:"1px solid #fcd34d",width:"100%",textAlign:"left",padding:"10px 12px",marginBottom:8,display:"block"}}>
+                <div style={{fontWeight:700,fontSize:13}}>{p.name}</div>
+                <div style={{fontSize:11,color:"#64748b"}}>Fournisseur : {store.suppliers.find(s=>s.id===p.supplierId)?.name||"—"} · Stock service : {getServiceStock2(store,p.id,form.serviceId)}</div>
+              </button>
+            ))}
+            <button onClick={()=>setBarcodeChoices(null)} style={{...btn(),background:"#f1f5f9",color:"#374151",width:"100%",padding:10,marginTop:4}}>Annuler</button>
           </div>
         )}
       </Modal>

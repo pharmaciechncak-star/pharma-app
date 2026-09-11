@@ -24,6 +24,7 @@ export function TransfertsPage({store,activeSupplier,currentUser}){
   const [search,setSearch]=useState("");
   const [showResults,setShowResults]=useState(false);
   const [showScanner,setShowScanner]=useState(false);
+  const [barcodeChoices,setBarcodeChoices]=useState(null); // ce code-barre correspond à plusieurs produits CHEZ CE FOURNISSEUR
   const [saving,setSaving]=useState(false);
   const [msg,setMsg]=useState("");
   const searchRef=useRef(null);
@@ -41,6 +42,30 @@ export function TransfertsPage({store,activeSupplier,currentUser}){
       return {...f,items:[...f.items,{productId:prod.id,productName:prod.name,qty:"1",stockDispo:getPharmacyStock2(store,prod.id)}]};
     });
     setSearch(""); setShowResults(false);
+  };
+
+  // Lecteur de code-barre physique (USB/Bluetooth) : il "tape" le code dans le
+  // champ actif puis envoie Entrée — aucune caméra impliquée, donc le bouton
+  // 📷 ne le capte pas. Cette page est déjà scopée à un seul fournisseur
+  // (activeSupplier) — suppProds n'en contient donc qu'un, jamais de choix à
+  // proposer : même si le même code-barre existe chez un autre fournisseur,
+  // on ne s'intéresse qu'à celui actuellement sélectionné.
+  // Lecteur de code-barre physique (USB/Bluetooth) : il "tape" le code dans le
+  // champ actif puis envoie Entrée — aucune caméra impliquée, donc le bouton
+  // 📷 ne le capte pas. Cette page est déjà scopée à un seul fournisseur
+  // (activeSupplier), mais CE fournisseur peut avoir donné le même code-barre
+  // à deux produits différents (erreur de saisie ou volontaire) — on propose
+  // donc un choix dès que plus d'une fiche correspond, même au sein de
+  // suppProds (déjà filtré sur le fournisseur actif).
+  const handleSearchKeyDown = e => {
+    if (e.key !== "Enter") return;
+    const code = search.trim();
+    if (!code) return;
+    const matches = suppProds.filter(p=>[p.barcode1,p.barcode2,p.barcode3].some(b=>b&&b===code));
+    if (matches.length===0) return; // pas un code-barre connu : on laisse la recherche texte normale
+    e.preventDefault();
+    if (matches.length>1) { setBarcodeChoices(matches); return; }
+    addItem(matches[0]);
   };
   const removeItem=i=>setForm(f=>({...f,items:f.items.filter((_,idx)=>idx!==i)}));
 
@@ -136,6 +161,7 @@ export function TransfertsPage({store,activeSupplier,currentUser}){
                 <div style={{position:"relative",flex:1}}>
                   <input ref={searchRef} style={{...input,paddingLeft:32}} placeholder="Rechercher ou scanner..." value={search}
                     onChange={e=>{setSearch(e.target.value);setShowResults(true);}}
+                    onKeyDown={handleSearchKeyDown}
                     onFocus={()=>setShowResults(true)} onBlur={()=>setTimeout(()=>setShowResults(false),150)}/>
                   <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:14,pointerEvents:"none"}}>🔍</span>
                 </div>
@@ -146,10 +172,12 @@ export function TransfertsPage({store,activeSupplier,currentUser}){
                 <BarcodeScanner
                   onDetected={code=>{
                     setShowScanner(false);
-                    const found=suppProds.find(p=>
-                      [p.barcode1,p.barcode2,p.barcode3].some(b=>b&&b===code)||
-                      p.name?.toLowerCase().includes(code.toLowerCase())
-                    );
+                    // Page déjà scopée à un seul fournisseur (activeSupplier),
+                    // mais ce fournisseur peut avoir donné le même code-barre à
+                    // deux produits différents — on propose un choix si besoin.
+                    const matches=suppProds.filter(p=>[p.barcode1,p.barcode2,p.barcode3].some(b=>b&&b===code));
+                    if(matches.length>1){ setBarcodeChoices(matches); return; }
+                    const found=matches[0]||suppProds.find(p=>p.name?.toLowerCase().includes(code.toLowerCase()));
                     if(found) addItem(found);
                     else { setSearch(code); setShowResults(true); }
                   }}
@@ -179,7 +207,7 @@ export function TransfertsPage({store,activeSupplier,currentUser}){
                 <button onClick={()=>removeItem(i)} style={{...btn(),background:"#fee2e2",color:"#ef4444",padding:"3px 7px",fontSize:11}}>✕</button>
               </div>
             ))}
-            <div style={{marginBottom:10}}><label style={label}>Notes</label><textarea style={{...input,height:50,resize:"none"}} value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/></div>
+            <div style={{marginBottom:10}}><label style={label}>Observations</label><textarea style={{...input,height:50,resize:"none"}} value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/></div>
             <div style={{display:"flex",gap:8}}>
               <button onClick={save} disabled={saving||!form.serviceId||form.items.length===0}
                 style={{...btn(),background:"#16a34a",color:"white",flex:1,padding:10}}>
@@ -300,6 +328,21 @@ export function TransfertsPage({store,activeSupplier,currentUser}){
               }
               setEditingExpiry(null);
             }} style={{...btn(),background:"#4f46e5",color:"white",width:"100%",padding:10,marginTop:4}}>💾 Enregistrer</button>
+          </div>
+        )}
+      </Modal>
+      <Modal open={!!barcodeChoices} onClose={()=>setBarcodeChoices(null)} title="📦 Plusieurs produits correspondent">
+        {barcodeChoices&&(
+          <div>
+            <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>Ce code-barre correspond à {barcodeChoices.length} produits chez ce fournisseur (doublon de saisie possible). Choisissez lequel ajouter :</div>
+            {barcodeChoices.map(p=>(
+              <button key={p.id} onClick={()=>{addItem(p);setBarcodeChoices(null);}}
+                style={{...btn(),background:"#f0fdf4",color:"#166534",border:"1px solid #86efac",width:"100%",textAlign:"left",padding:"10px 12px",marginBottom:8,display:"block"}}>
+                <div style={{fontWeight:700,fontSize:13}}>{p.name}</div>
+                <div style={{fontSize:11,color:"#64748b"}}>Stock dispo : {getPharmacyStock2(store,p.id)}</div>
+              </button>
+            ))}
+            <button onClick={()=>setBarcodeChoices(null)} style={{...btn(),background:"#f1f5f9",color:"#374151",width:"100%",padding:10,marginTop:4}}>Annuler</button>
           </div>
         )}
       </Modal>

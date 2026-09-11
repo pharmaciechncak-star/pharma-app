@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { PageHeader } from "../ui/PageHeader";
 import { can, hasServiceAccess, productAllowedForService } from "../../permissions";
 import { btn, card, label, input } from "../../helpers/styles";
@@ -11,21 +11,48 @@ import { computeAge, birthDateFromAge } from "../../helpers/age";
 import { getServiceStock2 } from "../../helpers/stock2";
 
 const EMPTY_FORM = {serviceId:"",patientId:"",patientName:"",patientBirthDate:"",patientAge:"",note:"",items:[]};
+// Brouillon local (par appareil/navigateur) — pas synchronisé entre
+// utilisateurs, c'est juste "reprendre où on en était" en cas de sortie
+// accidentelle de la page en cours de saisie (jamais de perte de travail).
+const DRAFT_KEY = "pharma_conso_draft";
+const hasDraftContent = f => f && (f.items?.length>0 || f.patientId?.trim() || f.patientName?.trim());
 
 export function ConsommationsPage({store,currentUser}){
   const [show,setShow]=useState(false);
   const [editingId,setEditingId]=useState(null);
   const [cancelling,setCancelling]=useState(null);
   const [printSel,setPrintSel]=useState(null);
-  const [form,setForm]=useState(EMPTY_FORM);
+  const [form,setForm]=useState(()=>{
+    try {
+      const saved = JSON.parse(localStorage.getItem(DRAFT_KEY)||"null");
+      if (hasDraftContent(saved)) return saved;
+    } catch(e) {}
+    return EMPTY_FORM;
+  });
+  // Si un brouillon a été restauré, rouvrir directement le formulaire pour
+  // que l'utilisateur retrouve exactement où il en était.
   const [search,setSearch]=useState("");
   const [showResults,setShowResults]=useState(false);
   const [saving,setSaving]=useState(false);
   const [msg,setMsg]=useState("");
   const [showScanner,setShowScanner]=useState(false);
   const [dupWarning,setDupWarning]=useState(null); // {prod, conso} en attente de confirmation
+  const [barcodeChoices,setBarcodeChoices]=useState(null); // plusieurs produits (fournisseurs différents) partagent ce code-barre
   const searchRef=useRef(null);
   const lastQtyRef=useRef(null);
+
+  useEffect(()=>{
+    if (hasDraftContent(form) && !editingId) { setShow(true); setMsg("📝 Brouillon restauré — reprise là où vous en étiez."); setTimeout(()=>setMsg(""),5000); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
+
+  // Sauvegarde continue du brouillon pendant la saisie (jamais en mode
+  // modification d'une consommation existante, pour ne pas mélanger les deux).
+  useEffect(()=>{
+    if (editingId) return;
+    if (hasDraftContent(form)) localStorage.setItem(DRAFT_KEY, JSON.stringify(form));
+    else localStorage.removeItem(DRAFT_KEY);
+  },[form, editingId]);
 
   // Suggestion de filiation à la ressaisie d'un Patient ID déjà connu.
   // patientMode : null (pas encore de choix) | "suggestion" | "update" | "new"
@@ -147,6 +174,20 @@ export function ConsommationsPage({store,currentUser}){
     doAddItem(prod);
   };
 
+  // Lecteur de code-barre physique (USB/Bluetooth) : "tape" le code puis
+  // Entrée dans le champ actif — le bouton 📷 (caméra) ne le capte pas, donc
+  // on intercepte Entrée directement sur le champ de recherche.
+  const handleSearchKeyDown = e => {
+    if (e.key !== "Enter") return;
+    const code = search.trim();
+    if (!code) return;
+    const matches = svcProds.filter(p=>[p.barcode1,p.barcode2,p.barcode3].some(b=>b&&b===code));
+    if (matches.length===0) return;
+    e.preventDefault();
+    if (matches.length>1) { setBarcodeChoices(matches); return; }
+    addItem(matches[0]);
+  };
+
   const resetForm = () => {
     setForm({...EMPTY_FORM, serviceId:isServiceAgent?userServiceId:""});
     setPatientMatch(null); setPatientMode(null); setPatientIdChecked("");
@@ -162,6 +203,9 @@ export function ConsommationsPage({store,currentUser}){
 
   const save=async()=>{
     if(!form.serviceId){setMsg("⚠️ Sélectionnez un service.");return;}
+    if(!form.patientId.trim()){setMsg("⚠️ Le Patient ID est obligatoire.");return;}
+    if(!form.patientName.trim()){setMsg("⚠️ Le nom du patient est obligatoire.");return;}
+    if(!form.patientAge.toString().trim()){setMsg("⚠️ L'âge du patient est obligatoire.");return;}
     if(form.items.length===0){setMsg("⚠️ Ajoutez au moins un produit.");return;}
     setSaving(true);
     try{
@@ -224,7 +268,7 @@ export function ConsommationsPage({store,currentUser}){
             {/* Patient ID en premier — permet de proposer la filiation avant
                 de saisir le reste des champs patient. */}
             <div style={{marginBottom:10}}>
-              <label style={label}>Patient ID (voir cubix) <span style={{fontWeight:400,color:"#94a3b8",fontSize:10}}>(optionnel — à saisir en premier)</span></label>
+              <label style={label}>Patient ID (voir cubix) <span style={{fontWeight:700,color:"#ef4444"}}>*</span> <span style={{fontWeight:400,color:"#94a3b8",fontSize:10}}>(à saisir en premier)</span></label>
               <input style={input} value={form.patientId}
                 onChange={e=>{setForm(f=>({...f,patientId:e.target.value}));setPatientMatch(null);setPatientMode(null);}}
                 onBlur={checkPatientId}
@@ -254,10 +298,10 @@ export function ConsommationsPage({store,currentUser}){
             {patientMode==="new"&&<div style={{fontSize:11,color:"#64748b",marginBottom:8}}>🆕 Nouveau patient — le dossier existant pour cet ID ne sera pas modifié.</div>}
 
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
-              <div><label style={label}>Patient (optionnel)</label><input style={input} value={form.patientName} onChange={e=>setForm(f=>({...f,patientName:e.target.value}))} placeholder="Nom du patient"/></div>
+              <div><label style={label}>Patient <span style={{fontWeight:700,color:"#ef4444"}}>*</span></label><input style={input} value={form.patientName} onChange={e=>setForm(f=>({...f,patientName:e.target.value}))} placeholder="Nom du patient"/></div>
               <div><label style={label}>Date de naissance</label><input style={input} type="date" value={form.patientBirthDate} onChange={e=>onBirthDateChange(e.target.value)}/></div>
               <div>
-                <label style={label}>Âge <span style={{fontWeight:400,color:"#94a3b8",fontSize:10}}>(se recalcule automatiquement chaque année si la date de naissance est connue)</span></label>
+                <label style={label}>Âge <span style={{fontWeight:700,color:"#ef4444"}}>*</span> <span style={{fontWeight:400,color:"#94a3b8",fontSize:10}}>(se recalcule automatiquement chaque année si la date de naissance est connue)</span></label>
                 <input style={input} type="number" min="0" max="130" value={form.patientAge} onChange={e=>onAgeChange(e.target.value)} placeholder="Ex: 35"/>
               </div>
             </div>
@@ -279,6 +323,7 @@ export function ConsommationsPage({store,currentUser}){
                   <div style={{position:"relative",flex:1}}>
                     <input ref={searchRef} style={{...input,paddingLeft:32}} placeholder="Nom, code barre ou scanner..."
                       value={search} onChange={e=>{setSearch(e.target.value);setShowResults(true);}}
+                      onKeyDown={handleSearchKeyDown}
                       onFocus={()=>setShowResults(true)} onBlur={()=>setTimeout(()=>setShowResults(false),150)}/>
                     <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:14,pointerEvents:"none"}}>🔍</span>
                   </div>
@@ -292,10 +337,13 @@ export function ConsommationsPage({store,currentUser}){
                   <BarcodeScanner
                     onDetected={code=>{
                       setShowScanner(false);
-                      const found=svcProds.find(p=>
-                        [p.barcode1,p.barcode2,p.barcode3].some(b=>b&&b===code)||
-                        p.name?.toLowerCase().includes(code.toLowerCase())
-                      );
+                      // Plusieurs fournisseurs peuvent livrer le même produit avec le
+                      // même code-barre — chacun correspond à une fiche produit
+                      // distincte (supplierId différent). On propose un choix dès
+                      // que plus d'une fiche avec du stock disponible correspond.
+                      const matches=svcProds.filter(p=>[p.barcode1,p.barcode2,p.barcode3].some(b=>b&&b===code));
+                      if(matches.length>1){ setBarcodeChoices(matches); return; }
+                      const found=matches[0]||svcProds.find(p=>p.name?.toLowerCase().includes(code.toLowerCase()));
                       if(found) addItem(found);
                       else { setSearch(code); setShowResults(true); }
                     }}
@@ -335,13 +383,13 @@ export function ConsommationsPage({store,currentUser}){
                   style={{...btn(),background:"#fee2e2",color:"#ef4444",padding:"3px 7px",fontSize:11}}>✕</button>
               </div>
             ))}
-            <div style={{marginBottom:10}}><label style={label}>Note</label><textarea style={{...input,height:50,resize:"none"}} value={form.note} onChange={e=>setForm(f=>({...f,note:e.target.value}))}/></div>
+            <div style={{marginBottom:10}}><label style={label}>Observations</label><textarea style={{...input,height:50,resize:"none"}} value={form.note} onChange={e=>setForm(f=>({...f,note:e.target.value}))}/></div>
             <div style={{display:"flex",gap:8}}>
               <button onClick={save} disabled={saving}
                 style={{...btn(),background:"#4f46e5",color:"white",flex:1,padding:10}}>
                 {saving?"⏳ Enregistrement...":"✅ Enregistrer"}
               </button>
-              <button onClick={()=>setShow(false)} style={{...btn(),background:"#f1f5f9",color:"#374151",padding:10}}>Annuler</button>
+              <button onClick={()=>{resetForm();setShow(false);}} style={{...btn(),background:"#f1f5f9",color:"#374151",padding:10}}>Annuler</button>
             </div>
           </div>
         )}
@@ -433,6 +481,22 @@ export function ConsommationsPage({store,currentUser}){
               }} style={{...btn(),background:"#ef4444",color:"white",flex:1,padding:10}}>🚫 Confirmer l'annulation</button>
               <button onClick={()=>setCancelling(null)} style={{...btn(),background:"#f1f5f9",color:"#374151",padding:10}}>Retour</button>
             </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal open={!!barcodeChoices} onClose={()=>setBarcodeChoices(null)} title="📦 Plusieurs produits correspondent">
+        {barcodeChoices&&(
+          <div>
+            <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>Ce code-barre correspond à {barcodeChoices.length} produits (fournisseurs différents). Choisissez lequel ajouter :</div>
+            {barcodeChoices.map(p=>(
+              <button key={p.id} onClick={()=>{addItem(p);setBarcodeChoices(null);}}
+                style={{...btn(),background:"#eef2ff",color:"#4f46e5",border:"1px solid #c7d2fe",width:"100%",textAlign:"left",padding:"10px 12px",marginBottom:8,display:"block"}}>
+                <div style={{fontWeight:700,fontSize:13}}>{p.name}</div>
+                <div style={{fontSize:11,color:"#64748b"}}>Fournisseur : {store.suppliers.find(s=>s.id===p.supplierId)?.name||"—"} · Stock service : {p.svcQty}</div>
+              </button>
+            ))}
+            <button onClick={()=>setBarcodeChoices(null)} style={{...btn(),background:"#f1f5f9",color:"#374151",width:"100%",padding:10,marginTop:4}}>Annuler</button>
           </div>
         )}
       </Modal>

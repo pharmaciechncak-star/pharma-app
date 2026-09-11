@@ -150,7 +150,7 @@ export function BonPrint({ bon, suppName, depotName, products }) {
         </div>
       </div>
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:20 }}>
-        {[["Fournisseur", suppName], ["Dépôt", depotName], ["Date", bon.date ? new Date(bon.date).toLocaleDateString("fr-FR") : "—"], ["Saisi par", bon.createdByName||"—"], ["Notes", bon.notes || "—"]].map(([l,v]) => (
+        {[["Fournisseur", suppName], ["Dépôt", depotName], ["Date", bon.date ? new Date(bon.date).toLocaleDateString("fr-FR") : "—"], ["Saisi par", bon.createdByName||"—"], ["Observations", bon.notes || "—"]].map(([l,v]) => (
           <div key={l} style={{ background:"#f8fafc", borderRadius:8, padding:12 }}>
             <div style={{ fontSize:10, fontWeight:700, color:"#64748b", textTransform:"uppercase", marginBottom:3 }}>{l}</div>
             <div style={{ fontSize:13, fontWeight:600, color:"#1e293b" }}>{v}</div>
@@ -204,7 +204,7 @@ export function ConsumptionPrint({ c }) {
         </div>
       </div>
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:20 }}>
-        {[["Service", c.serviceName||"—"], ["Patient", c.patientName||"—"], ["Patient ID (voir cubix)", c.patientId||"—"], ["Âge", c.patientBirthDate?computeAge(c.patientBirthDate)+" ans":(c.patientAge||"—")], ["Date", dateStr], ["Saisi par", c.consumedByName||"—"], ["Note", c.note||"—"]].map(([l,v]) => (
+        {[["Service", c.serviceName||"—"], ["Patient", c.patientName||"—"], ["Patient ID (voir cubix)", c.patientId||"—"], ["Âge", c.patientBirthDate?computeAge(c.patientBirthDate)+" ans":(c.patientAge||"—")], ["Date", dateStr], ["Saisi par", c.consumedByName||"—"], ["Observations", c.note||"—"]].map(([l,v]) => (
           <div key={l} style={{ background:"#f8fafc", borderRadius:8, padding:12 }}>
             <div style={{ fontSize:10, fontWeight:700, color:"#64748b", textTransform:"uppercase", marginBottom:3 }}>{l}</div>
             <div style={{ fontSize:13, fontWeight:600, color:"#1e293b" }}>{v}</div>
@@ -254,7 +254,7 @@ export function TransferPrint({ t }) {
         </div>
       </div>
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:20 }}>
-        {[["Destination", t.serviceName||"—"], ["Statut", statusLabel], ["Date", dateStr], ["Envoyé par", t.transferredByName||"—"], ["Confirmé par", t.confirmedByName||"—"], ["Notes", t.notes||"—"]].map(([l,v]) => (
+        {[["Destination", t.serviceName||"—"], ["Statut", statusLabel], ["Date", dateStr], ["Envoyé par", t.transferredByName||"—"], ["Confirmé par", t.confirmedByName||"—"], ["Observations", t.notes||"—"]].map(([l,v]) => (
           <div key={l} style={{ background:"#f8fafc", borderRadius:8, padding:12 }}>
             <div style={{ fontSize:10, fontWeight:700, color:"#64748b", textTransform:"uppercase", marginBottom:3 }}>{l}</div>
             <div style={{ fontSize:13, fontWeight:600, color:"#1e293b" }}>{v}</div>
@@ -277,6 +277,15 @@ export function TransferPrint({ t }) {
           ))}
         </tbody>
       </table>
+      <div style={{ display:"flex", justifyContent:"space-between", marginTop:50, paddingTop:10 }}>
+        {["Le Pharmacien","Le Gestionnaire de stock","Le Service bénéficiaire"].map(sig => (
+          <div key={sig} style={{ textAlign:"center", width:"30%" }}>
+            <div style={{ fontWeight:700, fontSize:11, borderBottom:"1px solid #1e293b", paddingBottom:2, marginBottom:2 }}>{sig}</div>
+            <div style={{ fontSize:9, color:"#94a3b8" }}>Nom, date et signature</div>
+            <div style={{ height:55 }}></div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -300,7 +309,7 @@ export function SvcReturnPrint({ r }) {
         </div>
       </div>
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:20 }}>
-        {[["Service", r.serviceName||"—"], ["Statut", statusLabel], ["Date", dateStr], ["Retourné par", r.returnedByName||"—"], ["Contrôlé par", r.confirmedByName||"—"], ["Notes", r.notes||"—"]].map(([l,v]) => (
+        {[["Service", r.serviceName||"—"], ["Statut", statusLabel], ["Date", dateStr], ["Retourné par", r.returnedByName||"—"], ["Contrôlé par", r.confirmedByName||"—"], ["Observations", r.notes||"—"]].map(([l,v]) => (
           <div key={l} style={{ background:"#f8fafc", borderRadius:8, padding:12 }}>
             <div style={{ fontSize:10, fontWeight:700, color:"#64748b", textTransform:"uppercase", marginBottom:3 }}>{l}</div>
             <div style={{ fontSize:13, fontWeight:600, color:"#1e293b" }}>{v}</div>
