@@ -105,21 +105,6 @@ export function RetoursServicePage({store,currentUser}){
       return true;
     });
 
-  // Pré-remplit un nouveau retour avec les quantités manquantes (écart négatif)
-  // d'un retour non conforme, pour que le service puisse le "reprendre" facilement.
-  const reprendre=async(r)=>{
-    if(r.repris){setMsg("⚠️ Ce retour a déjà été repris.");return;}
-    try{
-      await store.reprendreSvcReturn(r.id);
-    }catch(e){setMsg("❌ "+e.message);return;}
-    const items=(r.items||[]).filter(it=>it.conforme===false&&it.ecart<0).map(it=>({
-      productId:it.productId, productName:it.productName, qty:String(Math.abs(it.ecart)), svcQty:store.svcStock?.[r.serviceId+"_"+it.productId]||0,
-    }));
-    setForm({serviceId:r.serviceId,items,notes:"Reprise suite écart — retour d'origine du "+(r.createdAt?.seconds?new Date(r.createdAt.seconds*1000).toLocaleDateString("fr-FR"):"")});
-    setShow(true);
-    window.scrollTo({top:0,behavior:"smooth"});
-  };
-
   const statusBadge=(r)=>{
     if(r.status==="annule") return <span style={{background:"#f1f5f9",color:"#64748b",fontSize:10,fontWeight:700,borderRadius:99,padding:"2px 8px"}}>🚫 Annulé</span>;
     if(r.status==="confirme") return <span style={{background:"#dcfce7",color:"#166534",fontSize:10,fontWeight:700,borderRadius:99,padding:"2px 8px"}}>✅ Conforme</span>;
@@ -265,17 +250,14 @@ export function RetoursServicePage({store,currentUser}){
                 📅 Péremption la plus proche : {(r.items||[]).filter(it=>it.expiry).sort((a,b)=>a.expiry<b.expiry?-1:1)[0]?.expiry} ✏️
               </button>
             )}
-            {r.repris&&<div style={{fontSize:11,color:"#059669",marginTop:6,fontWeight:600}}>✅ Repris — manquant recrédité au stock service ({r.reprisAt?.seconds?new Date(r.reprisAt.seconds*1000).toLocaleDateString("fr-FR"):""})</div>}
-            {r.status==="non_conforme"&&!r.repris&&can(currentUser,"retours-service","w")&&(r.items||[]).some(it=>it.ecart<0)&&(
-              <button onClick={e=>{e.stopPropagation();reprendre(r);}} style={{...btn(),background:"#fef3c7",color:"#92400e",border:"1px solid #fcd34d",fontSize:11,marginTop:8}}>🔁 Reprendre le retour (manquants)</button>
-            )}
-            {r.status==="en_attente"&&can(currentUser,"retours-service","w")&&(
+            {r.status==="non_conforme"&&<div style={{fontSize:11,color:"#b91c1c",marginTop:6,fontWeight:600}}>⚠️ Écart signalé par la pharmacie — rien n'a été crédité à son stock. Corrigez les quantités anormales puis renvoyez.</div>}
+            {(r.status==="en_attente"||r.status==="non_conforme")&&can(currentUser,"retours-service","w")&&(
               <div style={{display:"flex",gap:6,marginTop:8}}>
                 {can(currentUser,"retours-service","w")&&<button onClick={e=>{e.stopPropagation();openEdit(r);}} style={{...btn(),background:"#fffbeb",color:"#92400e",border:"1px solid #fcd34d",fontSize:11}}>✏️ Modifier</button>}
                 {can(currentUser,"retours-service","w")&&<button onClick={e=>{e.stopPropagation();setCancelling(r);}} style={{...btn(),background:"#fee2e2",color:"#ef4444",border:"1px solid #fca5a5",fontSize:11}}>🚫 Annuler</button>}
               </div>
             )}
-            {(r.status==="confirme"||r.status==="non_conforme")&&!r.repris&&<div style={{fontSize:10,color:"#94a3b8",marginTop:6,fontStyle:"italic"}}>Déjà contrôlé par la pharmacie — non modifiable tant qu'elle n'a pas annulé son contrôle.</div>}
+            {r.status==="confirme"&&<div style={{fontSize:10,color:"#94a3b8",marginTop:6,fontStyle:"italic"}}>Déjà contrôlé par la pharmacie — non modifiable tant qu'elle n'a pas annulé son contrôle.</div>}
           </div>
         ))}
       </div>

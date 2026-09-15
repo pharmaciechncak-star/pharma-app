@@ -38,8 +38,9 @@ export function TransfertsPage({store,activeSupplier,currentUser}){
   const addItem=(prod)=>{
     setForm(f=>{
       const ex=f.items.find(it=>it.productId===prod.id);
-      if(ex) return {...f,items:f.items.map(it=>it.productId===prod.id?{...it,qty:String(Number(it.qty)+1)}:it)};
-      return {...f,items:[...f.items,{productId:prod.id,productName:prod.name,qty:"1",stockDispo:getPharmacyStock2(store,prod.id)}]};
+      const dispo=getPharmacyStock2(store,prod.id);
+      if(ex) return {...f,items:f.items.map(it=>it.productId===prod.id?{...it,qty:String(Math.min(Number(it.qty)+1,dispo))}:it)};
+      return {...f,items:[...f.items,{productId:prod.id,productName:prod.name,qty:String(Math.min(1,dispo)),stockDispo:dispo}]};
     });
     setSearch(""); setShowResults(false);
   };
@@ -72,6 +73,12 @@ export function TransfertsPage({store,activeSupplier,currentUser}){
   const save=async()=>{
     if(!form.serviceId){setMsg("⚠️ Sélectionnez un service.");return;}
     if(form.items.length===0){setMsg("⚠️ Ajoutez au moins un produit.");return;}
+    // Dernière barrière : le stock a pu changer depuis l'ouverture du formulaire
+    // (autre utilisateur, etc.) — jamais de transfert au-delà du disponible réel.
+    for (const it of form.items) {
+      const dispo = getPharmacyStock2(store, it.productId);
+      if (Number(it.qty) > dispo) { setMsg(`⚠️ "${it.productName}" : quantité (${it.qty}) supérieure au stock disponible (${dispo}).`); return; }
+    }
     setSaving(true);
     try{
       if (editingId) {
@@ -92,23 +99,6 @@ export function TransfertsPage({store,activeSupplier,currentUser}){
   const openEdit=(t)=>{
     setEditingId(t.id);
     setForm({serviceId:t.serviceId, items:(t.items||[]).map(it=>({productId:it.productId,productName:it.productName,qty:String(it.qty),stockDispo:getPharmacyStock2(store,it.productId)})), notes:t.notes||""});
-    setShow(true);
-    window.scrollTo({top:0,behavior:"smooth"});
-  };
-
-  // Pré-remplit un nouveau transfert avec les quantités manquantes (écart
-  // négatif) d'un transfert non conforme, pour que la pharmacie puisse le
-  // "reprendre" facilement. Un écart positif (surplus reçu) ne nécessite pas
-  // de reprise.
-  const reprendre=async(t)=>{
-    if(t.repris){setMsg("⚠️ Ce transfert a déjà été repris.");return;}
-    try{
-      await store.reprendreTransfer(t.id);
-    }catch(e){setMsg("❌ "+e.message);return;}
-    const items=(t.items||[]).filter(it=>it.conforme===false&&it.ecart<0).map(it=>({
-      productId:it.productId, productName:it.productName, qty:String(Math.abs(it.ecart)), stockDispo:getPharmacyStock2(store,it.productId),
-    }));
-    setForm({serviceId:t.serviceId,items,notes:"Reprise suite écart — transfert d'origine du "+(t.createdAt?.seconds?new Date(t.createdAt.seconds*1000).toLocaleDateString("fr-FR"):"")});
     setShow(true);
     window.scrollTo({top:0,behavior:"smooth"});
   };
@@ -202,7 +192,12 @@ export function TransfertsPage({store,activeSupplier,currentUser}){
                 <div style={{flex:1,fontSize:12,fontWeight:600}}>{it.productName}</div>
                 <div style={{fontSize:11,color:"#64748b"}}>Dispo:{it.stockDispo}</div>
                 <input type="number" min="1" max={it.stockDispo} value={it.qty}
-                  onChange={e=>setForm(f=>({...f,items:f.items.map((x,j)=>j===i?{...x,qty:e.target.value}:x)}))}
+                  onChange={e=>{
+                    // Jamais plus que le stock disponible — évite un stock pharmacie négatif.
+                    const raw=e.target.value;
+                    const clamped = raw==="" ? "" : String(Math.min(Number(raw)||0, it.stockDispo));
+                    setForm(f=>({...f,items:f.items.map((x,j)=>j===i?{...x,qty:clamped}:x)}));
+                  }}
                   style={{width:60,padding:"4px 6px",border:"1px solid #86efac",borderRadius:6,fontSize:12,textAlign:"center"}}/>
                 <button onClick={()=>removeItem(i)} style={{...btn(),background:"#fee2e2",color:"#ef4444",padding:"3px 7px",fontSize:11}}>✕</button>
               </div>
@@ -278,17 +273,14 @@ export function TransfertsPage({store,activeSupplier,currentUser}){
                 📅 Péremption la plus proche : {(t.items||[]).filter(it=>it.expiry).sort((a,b)=>a.expiry<b.expiry?-1:1)[0]?.expiry} ✏️
               </button>
             )}
-            {t.repris&&<div style={{fontSize:11,color:"#059669",marginTop:6,fontWeight:600}}>✅ Repris — manquant réconcilié avec le stock pharmacie ({t.reprisAt?.seconds?new Date(t.reprisAt.seconds*1000).toLocaleDateString("fr-FR"):""})</div>}
-            {t.status==="non_conforme"&&!t.repris&&can(currentUser,"transferts","w")&&(t.items||[]).some(it=>it.ecart<0)&&(
-              <button onClick={e=>{e.stopPropagation();reprendre(t);}} style={{...btn(),background:"#fef3c7",color:"#92400e",border:"1px solid #fcd34d",fontSize:11,marginTop:8}}>🔁 Reprendre le transfert (manquants)</button>
-            )}
-            {t.status==="en_attente"&&can(currentUser,"transferts","w")&&(
+            {t.status==="non_conforme"&&<div style={{fontSize:11,color:"#b91c1c",marginTop:6,fontWeight:600}}>⚠️ Écart signalé par le service — rien n'a été crédité à son stock. Corrigez les quantités anormales puis renvoyez.</div>}
+            {(t.status==="en_attente"||t.status==="non_conforme")&&can(currentUser,"transferts","w")&&(
               <div style={{display:"flex",gap:6,marginTop:8}}>
                 {can(currentUser,"transferts","w")&&<button onClick={e=>{e.stopPropagation();openEdit(t);}} style={{...btn(),background:"#eef2ff",color:"#4f46e5",border:"1px solid #c7d2fe",fontSize:11}}>✏️ Modifier</button>}
                 {can(currentUser,"transferts","w")&&<button onClick={e=>{e.stopPropagation();setCancelling(t);}} style={{...btn(),background:"#fee2e2",color:"#ef4444",border:"1px solid #fca5a5",fontSize:11}}>🚫 Annuler</button>}
               </div>
             )}
-            {(t.status==="confirme"||t.status==="non_conforme")&&!t.repris&&<div style={{fontSize:10,color:"#94a3b8",marginTop:6,fontStyle:"italic"}}>Déjà reçu par le service — non modifiable tant qu'il n'a pas annulé sa réception.</div>}
+            {t.status==="confirme"&&<div style={{fontSize:10,color:"#94a3b8",marginTop:6,fontStyle:"italic"}}>Déjà reçu par le service — non modifiable tant qu'il n'a pas annulé sa réception.</div>}
           </div>
         ))}
       </div>

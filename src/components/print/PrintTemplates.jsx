@@ -281,7 +281,6 @@ export function TransferPrint({ t }) {
         {["Le Pharmacien","Le Gestionnaire de stock","Le Service bénéficiaire"].map(sig => (
           <div key={sig} style={{ textAlign:"center", width:"30%" }}>
             <div style={{ fontWeight:700, fontSize:11, borderBottom:"1px solid #1e293b", paddingBottom:2, marginBottom:2 }}>{sig}</div>
-            <div style={{ fontSize:9, color:"#94a3b8" }}>Nom, date et signature</div>
             <div style={{ height:55 }}></div>
           </div>
         ))}
@@ -328,6 +327,89 @@ export function SvcReturnPrint({ r }) {
               <td style={tdStyle}>{it.qtyOriginal!=null ? it.qtyOriginal : it.qty}</td>
               <td style={tdStyle}>{it.qtyConfirmed!=null ? it.qtyConfirmed : "—"}</td>
               <td style={{ ...tdStyle, color: it.ecart<0 ? "#b91c1c" : it.ecart>0 ? "#0e7490" : "inherit", fontWeight: it.ecart!==0 ? 700 : 400 }}>{it.ecart ? (it.ecart>0?"+":"")+it.ecart : "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function InventoryChecklistPrint({ products, scopeLabel, currentQtyLabel }) {
+  const thStyle = { padding:"9px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:"#64748b", borderBottom:"2px solid #e2e8f0", background:"#f8fafc" };
+  const tdStyle = { padding:"9px 12px", borderBottom:"1px solid #f1f5f9" };
+  return (
+    <div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:24, paddingBottom:16, borderBottom:"2px solid #e2e8f0" }}>
+        <div>
+          <div style={{fontSize:14,fontWeight:800,color:"#0891b2"}}>CHNCAK — PharmaStock</div>
+          <div style={{fontSize:9,color:"#64748b"}}>Centre Hospitalier National Cheikh Ahmadoul Khadim</div>
+        </div>
+        <div style={{ textAlign:"right" }}>
+          <div style={{ fontSize:18, fontWeight:800 }}>LISTE D'INVENTAIRE — STOCK (2)</div>
+          <div style={{ fontSize:12, color:"#64748b" }}>{scopeLabel}</div>
+          <div style={{ fontSize:11, color:"#94a3b8" }}>{new Date().toLocaleDateString("fr-FR")}</div>
+        </div>
+      </div>
+      <table style={{ width:"100%", borderCollapse:"collapse", marginBottom:16 }}>
+        <thead>
+          <tr>{["Produit", currentQtyLabel, "Quantité comptée", "Écart"].map(h => <th key={h} style={thStyle}>{h}</th>)}</tr>
+        </thead>
+        <tbody>
+          {(products || []).map((p, i) => (
+            <tr key={i}>
+              <td style={{ ...tdStyle, fontWeight:600 }}>{p.name}</td>
+              <td style={tdStyle}>{p.computed}</td>
+              <td style={{ ...tdStyle, borderBottom:"1px solid #94a3b8", minWidth:80 }}>&nbsp;</td>
+              <td style={{ ...tdStyle, borderBottom:"1px solid #94a3b8", minWidth:80 }}>&nbsp;</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div style={{ display:"flex", justifyContent:"space-between", marginTop:50, paddingTop:10 }}>
+        {["Compté par","Vérifié par"].map(sig => (
+          <div key={sig} style={{ textAlign:"center", width:"45%" }}>
+            <div style={{ fontWeight:700, fontSize:11, borderBottom:"1px solid #1e293b", paddingBottom:2, marginBottom:2 }}>{sig}</div>
+            <div style={{ fontSize:9, color:"#94a3b8" }}>Nom et signature</div>
+            <div style={{ height:50 }}></div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function Stock2InventoryHistoryPrint({ lines, scopeLabel }) {
+  const thStyle = { padding:"9px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:"#64748b", borderBottom:"2px solid #e2e8f0", background:"#f8fafc" };
+  const tdStyle = { padding:"9px 12px", borderBottom:"1px solid #f1f5f9" };
+  const statusLabel = s => s==="confirme" ? "✅ Confirmé" : s==="rejete" ? "✕ Rejeté" : "⏳ En attente";
+  return (
+    <div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:24, paddingBottom:16, borderBottom:"2px solid #e2e8f0" }}>
+        <div>
+          <div style={{fontSize:14,fontWeight:800,color:"#0891b2"}}>CHNCAK — PharmaStock</div>
+          <div style={{fontSize:9,color:"#64748b"}}>Centre Hospitalier National Cheikh Ahmadoul Khadim</div>
+        </div>
+        <div style={{ textAlign:"right" }}>
+          <div style={{ fontSize:18, fontWeight:800 }}>HISTORIQUE D'INVENTAIRE — STOCK (2)</div>
+          <div style={{ fontSize:12, color:"#64748b" }}>{scopeLabel}</div>
+          <div style={{ fontSize:11, color:"#94a3b8" }}>{new Date().toLocaleDateString("fr-FR")}</div>
+        </div>
+      </div>
+      <table style={{ width:"100%", borderCollapse:"collapse", marginBottom:16 }}>
+        <thead>
+          <tr>{["Date","Produit","Calculé","Compté","Écart","Statut","Par"].map(h => <th key={h} style={thStyle}>{h}</th>)}</tr>
+        </thead>
+        <tbody>
+          {(lines || []).map((l, i) => (
+            <tr key={i}>
+              <td style={tdStyle}>{l.date}</td>
+              <td style={{ ...tdStyle, fontWeight:600 }}>{l.productName}</td>
+              <td style={tdStyle}>{l.computedQty}</td>
+              <td style={tdStyle}>{l.countedQty}</td>
+              <td style={{ ...tdStyle, color: l.ecart<0 ? "#b91c1c" : l.ecart>0 ? "#0e7490" : "inherit", fontWeight: l.ecart!==0 ? 700 : 400 }}>{l.ecart>0?"+":""}{l.ecart}</td>
+              <td style={tdStyle}>{statusLabel(l.status)}</td>
+              <td style={tdStyle}>{l.by}</td>
             </tr>
           ))}
         </tbody>

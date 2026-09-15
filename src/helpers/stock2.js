@@ -36,19 +36,34 @@ export function sumConfirmedQty(docs, productId) {
   }, 0);
 }
 
-// Stock (2) pharmacie = Σ réceptionné − Σ transféré (vers service) + Σ retourné CONFIRMÉ (reçu et contrôlé, par la pharmacie)
+// Ajustements issus d'un inventaire Stock (2) — un écart n'est compté que s'il
+// est CONFIRMÉ (côté pharmacie : confirmé immédiatement à la validation par
+// l'agent qui compte ; côté service : confirmé seulement par un agent DE ce
+// service, jamais par la pharmacie ou un autre service). scope vaut "pharmacy"
+// ou "service:<id>".
+export function sumInventoryAdjustments(inventories, productId, scope) {
+  return (inventories || []).reduce((s, d) => {
+    if (d.status !== "confirme") return s;
+    if (d.productId !== productId || d.scope !== scope) return s;
+    return s + Number(d.ecart || 0);
+  }, 0);
+}
+
+// Stock (2) pharmacie = Σ réceptionné − Σ transféré (vers service) + Σ retourné CONFIRMÉ (reçu et contrôlé, par la pharmacie) + ajustements d'inventaire confirmés
 export function getPharmacyStock2(store, productId) {
   const recu   = sumItemsQty(store.receptions, productId);
   const transf = sumItemsQty(store.transfers, productId);
   const retour = sumConfirmedQty(store.svcReturns, productId);
-  return recu - transf + retour;
+  const ajust  = sumInventoryAdjustments(store.stock2Inventories, productId, "pharmacy");
+  return recu - transf + retour + ajust;
 }
 
-// Stock (2) service = Σ transféré CONFIRMÉ (reçu et contrôlé) − Σ consommé − Σ retourné (à la pharmacie)
+// Stock (2) service = Σ transféré CONFIRMÉ (reçu et contrôlé) − Σ consommé − Σ retourné (à la pharmacie) + ajustements d'inventaire confirmés PAR CE SERVICE
 export function getServiceStock2(store, productId, serviceId) {
   const byService = docs => (docs || []).filter(d => d.serviceId === serviceId);
   const transf = sumConfirmedQty(byService(store.transfers), productId);
   const conso  = sumItemsQty(byService(store.consumptions), productId);
   const retour = sumItemsQty(byService(store.svcReturns), productId);
-  return transf - conso - retour;
+  const ajust  = sumInventoryAdjustments(store.stock2Inventories, productId, "service:"+serviceId);
+  return transf - conso - retour + ajust;
 }

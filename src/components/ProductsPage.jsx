@@ -71,7 +71,14 @@ export function ProductsPage({store,activeSupplier,currentUser}){
     if(!file) return;
     setScanMsg("⏳ Analyse du document...");
     try {
-      const res=await scanDocumentWithAI(file, store.products);
+      // Un produit importé doit être comparé aux produits DU MÊME fournisseur
+      // uniquement — sinon un produit similaire chez un autre fournisseur est
+      // reconnu à tort comme "déjà existant" et l'import écrase sa fiche au
+      // lieu de créer une entrée distincte pour ce fournisseur.
+      const suppScopedProducts = activeSupplier
+        ? store.products.filter(p=>p.supplierId===activeSupplier.id)
+        : store.products.filter(p=>hasSupplierAccess(currentUser,p.supplierId));
+      const res=await scanDocumentWithAI(file, suppScopedProducts);
       if(!res.success || !res.items || res.items.length===0){
         setScanMsg("⚠️ " + (res.error || "Aucun produit détecté. Vérifiez le fichier."));
         scanProdRef.current.value=""; return;

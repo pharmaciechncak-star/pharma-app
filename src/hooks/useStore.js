@@ -12,7 +12,13 @@ export function liveCol(collName, setter, ...constraints) {
     setter(snap.docs.map(d => ({
       id: d.id, ...d.data(),
       date: d.data().createdAt?.toDate?.()?.toISOString() || d.data().date || new Date().toISOString()
-    })))
+    }))),
+    // Sans ce second callback, une erreur de permission Firestore remonte
+    // comme "Uncaught Error in snapshot listener" générique dans la console,
+    // sans jamais dire QUELLE collection est en cause — impossible à
+    // diagnostiquer. Avec ce callback, l'erreur est capturée proprement et
+    // identifie la collection concernée.
+    err => console.warn(`[liveCol] Erreur d'écoute sur "${collName}" :`, err.code || err.message || err)
   );
 }
 
@@ -174,6 +180,7 @@ export function useStore(userId, userName, page) {
   // plus bas) est consulté via une requête ciblée getDoc(), jamais via une liste
   // complète : inutile de maintenir un écouteur temps réel sur toute la collection.
   const [carouselSlides, setCarouselSlides] = useState(null); // null = pas encore chargé
+  const [stock2Inventories, setStock2Inventories] = useState([]);
   const [svcStock,     setSvcStock]     = useState({}); // { "serviceId_productId": qty }
   const [stock,        setStock]        = useState({});
   const [loading,      setLoading]      = useState(true);
@@ -201,6 +208,7 @@ export function useStore(userId, userName, page) {
       safeLiveCol("consumptions", setConsumptions,orderBy("createdAt","desc")),
       safeLiveCol("svcReturns",   setSvcReturns,  orderBy("createdAt","desc")),
       safeLiveCol("receptions",   setReceptions,  orderBy("createdAt","desc")),
+      safeLiveCol("stock2Inventories", setStock2Inventories, orderBy("createdAt","desc")),
       // batches : nécessaire à l'assistant IA (péremptions) qui peut être ouvert
       // depuis n'importe quelle page, donc pas de chargement "à la demande"
       // possible ici sans perdre cette capacité — reste en écoute permanente.
@@ -274,7 +282,7 @@ export function useStore(userId, userName, page) {
   return {
     suppliers, depots, products, users,
     entries, returns, inventories, invoices, messages, activities,
-    services, transfers, consumptions, svcReturns, receptions, svcStock, batches, carouselSlides,
+    services, transfers, consumptions, svcReturns, receptions, svcStock, batches, carouselSlides, stock2Inventories,
     stock, loading,
 
     addSupplier:    s    => addDoc(collection(db,"suppliers"), { ...s, createdBy:userId, createdByName:userName, createdAt: serverTimestamp() }), // retourne Promise<DocumentReference>
@@ -542,27 +550,35 @@ export function useStore(userId, userName, page) {
       const t = tSnap.data();
       const byProduct = Object.fromEntries(lineResults.map(l => [l.productId, l]));
       let allConforme = true;
-      const newItems = (t.items||[]).map(it => {
+      const checked = (t.items||[]).map(it => {
         const res = byProduct[it.productId];
         if (!res) return it;
         const ecart = Number(res.ecart)||0;
         const conforme = ecart === 0;
-        const qtyConfirmed = Math.max(0, Number(it.qty) + ecart);
         if (!conforme) allConforme = false;
-        return { ...it, qtyConfirmed, conforme, ecart };
+        return { ...it, conforme, ecart };
       });
+      // Si l'ensemble n'est PAS conforme, aucune quantité n'entre dans le stock
+      // du service — qtyConfirmed reste null pour TOUS les articles (même ceux
+      // individuellement corrects), tant que la pharmacie n'a pas révisé et
+      // corrigé le transfert (voir updateTransfer, désormais aussi autorisé sur
+      // un transfert "non_conforme"). Seul un contrôle intégralement conforme
+      // crédite le stock destinataire.
+      const newItems = checked.map(it => ({ ...it, qtyConfirmed: allConforme ? Number(it.qty) : null }));
       await updateDoc(doc(db,"transfers",transferId), {
         items: newItems,
         status: allConforme ? "confirme" : "non_conforme",
         confirmedBy: userId, confirmedByName: userName, confirmedAt: serverTimestamp(),
       });
-      // Crédit du Stock (2) service — uniquement la quantité confirmée
-      for (const it of newItems) {
-        if (!it.productId || !it.qtyConfirmed) continue;
-        const sKey = t.serviceId+"_"+it.productId;
-        const sSnap = await getDoc(doc(db,"svcStock",sKey));
-        const sCur = sSnap.data()?.qty || 0;
-        await setDoc(doc(db,"svcStock",sKey), { serviceId:t.serviceId, productId:it.productId, qty: sCur + Number(it.qtyConfirmed) }, { merge:true });
+      // Crédit du Stock (2) service — uniquement si l'ensemble est conforme
+      if (allConforme) {
+        for (const it of newItems) {
+          if (!it.productId || !it.qtyConfirmed) continue;
+          const sKey = t.serviceId+"_"+it.productId;
+          const sSnap = await getDoc(doc(db,"svcStock",sKey));
+          const sCur = sSnap.data()?.qty || 0;
+          await setDoc(doc(db,"svcStock",sKey), { serviceId:t.serviceId, productId:it.productId, qty: sCur + Number(it.qtyConfirmed) }, { merge:true });
+        }
       }
       await addDoc(collection(db,"activities"), {
         action:"update", entity:"transfer", entityId:transferId,
@@ -653,7 +669,7 @@ export function useStore(userId, userName, page) {
       if (!tSnap.exists()) throw new Error("Transfert introuvable");
       const t = tSnap.data();
       if (t.status === "annule") throw new Error("Ce transfert est déjà annulé.");
-      if (t.status !== "en_attente") throw new Error("Ce transfert a déjà été contrôlé par le service — demandez-lui d'abord d'annuler le contrôle.");
+      if (t.status !== "en_attente" && t.status !== "non_conforme") throw new Error("Ce transfert a déjà été confirmé conforme par le service — demandez-lui d'abord d'annuler le contrôle.");
       await reverseBatchesOf("transfer", transferId, locPharmacy(), userId, userName);
       await updateDoc(doc(db,"transfers",transferId), { status:"annule", cancelledBy:userId, cancelledByName:userName, cancelledAt:serverTimestamp() });
       await addDoc(collection(db,"activities"), { action:"update", entity:"transfer", entityId:transferId, details:`Transfert annulé (vers ${t.serviceName}) — quantités retournées au stock pharmacie`, userId, userName, createdAt:serverTimestamp() });
@@ -667,7 +683,10 @@ export function useStore(userId, userName, page) {
       const tSnap = await getDoc(doc(db,"transfers",transferId));
       if (!tSnap.exists()) throw new Error("Transfert introuvable");
       const t = tSnap.data();
-      if (t.status !== "en_attente") throw new Error("Ce transfert a déjà été contrôlé par le service — demandez-lui d'abord d'annuler le contrôle.");
+      // Modifiable si "en_attente" (pas encore contrôlé) OU "non_conforme" (le
+      // service a signalé un écart — rien n'a été crédité côté service, c'est
+      // à la pharmacie de corriger les quantités anormales et resoumettre).
+      if (t.status !== "en_attente" && t.status !== "non_conforme") throw new Error("Ce transfert a déjà été confirmé conforme par le service — demandez-lui d'abord d'annuler le contrôle.");
       await reverseBatchesOf("transfer", transferId, locPharmacy(), userId, userName);
       const itemsInit = (newData.items||[]).map(it => ({ ...it, qtyConfirmed:null, conforme:null, ecart:0, expiry:"", lot:"" }));
       const itemExpiries = {};
@@ -687,7 +706,10 @@ export function useStore(userId, userName, page) {
         }
       }
       const finalItems = itemsInit.map(it => itemExpiries[it.productId] ? { ...it, ...itemExpiries[it.productId] } : it);
-      await updateDoc(doc(db,"transfers",transferId), { items: finalItems, notes: newData.notes ?? t.notes });
+      await updateDoc(doc(db,"transfers",transferId), {
+        items: finalItems, notes: newData.notes ?? t.notes,
+        status:"en_attente", confirmedBy:null, confirmedByName:null, confirmedAt:null,
+      });
       await addDoc(collection(db,"activities"), { action:"update", entity:"transfer", entityId:transferId, details:`Transfert modifié (vers ${t.serviceName})`, userId, userName, createdAt:serverTimestamp() });
     },
 
@@ -838,15 +860,19 @@ export function useStore(userId, userName, page) {
       const r = rSnap.data();
       const byProduct = Object.fromEntries(lineResults.map(l => [l.productId, l]));
       let allConforme = true;
-      const newItems = (r.items||[]).map(it => {
+      const checked = (r.items||[]).map(it => {
         const res = byProduct[it.productId];
         if (!res) return it;
         const ecart = Number(res.ecart)||0;
         const conforme = ecart === 0;
-        const qtyConfirmed = Math.max(0, Number(it.qty) + ecart);
         if (!conforme) allConforme = false;
-        return { ...it, qtyConfirmed, conforme, ecart };
+        return { ...it, conforme, ecart };
       });
+      // Si l'ensemble n'est PAS conforme, aucune quantité n'entre dans le stock
+      // pharmacie — qtyConfirmed reste null pour tous les articles tant que le
+      // service n'a pas révisé et corrigé le retour (updateSvcReturn, désormais
+      // aussi autorisé sur un retour "non_conforme").
+      const newItems = checked.map(it => ({ ...it, qtyConfirmed: allConforme ? Number(it.qty) : null }));
       await updateDoc(doc(db,"svcReturns",returnId), {
         items: newItems,
         status: allConforme ? "confirme" : "non_conforme",
@@ -927,7 +953,7 @@ export function useStore(userId, userName, page) {
       if (!rSnap.exists()) throw new Error("Retour introuvable");
       const r = rSnap.data();
       if (r.status === "annule") throw new Error("Ce retour est déjà annulé.");
-      if (r.status !== "en_attente") throw new Error("Ce retour a déjà été contrôlé par la pharmacie — demandez-lui d'abord d'annuler le contrôle.");
+      if (r.status !== "en_attente" && r.status !== "non_conforme") throw new Error("Ce retour a déjà été confirmé conforme par la pharmacie — demandez-lui d'abord d'annuler le contrôle.");
       await reverseBatchesOf("svcReturn", returnId, locService(r.serviceId), userId, userName);
       for (const it of (r.items||[])) {
         if (!it.productId || !it.qty) continue;
@@ -945,7 +971,9 @@ export function useStore(userId, userName, page) {
       const rSnap = await getDoc(doc(db,"svcReturns",returnId));
       if (!rSnap.exists()) throw new Error("Retour introuvable");
       const r = rSnap.data();
-      if (r.status !== "en_attente") throw new Error("Ce retour a déjà été contrôlé par la pharmacie — demandez-lui d'abord d'annuler le contrôle.");
+      // Modifiable si "en_attente" OU "non_conforme" (rien n'a été crédité côté
+      // pharmacie — c'est au service de corriger les quantités anormales).
+      if (r.status !== "en_attente" && r.status !== "non_conforme") throw new Error("Ce retour a déjà été confirmé conforme par la pharmacie — demandez-lui d'abord d'annuler le contrôle.");
       await reverseBatchesOf("svcReturn", returnId, locService(r.serviceId), userId, userName);
       for (const it of (r.items||[])) {
         if (!it.productId || !it.qty) continue;
@@ -976,7 +1004,10 @@ export function useStore(userId, userName, page) {
         }
       }
       const finalItems = itemsInit.map(it => itemExpiries[it.productId] ? { ...it, ...itemExpiries[it.productId] } : it);
-      await updateDoc(doc(db,"svcReturns",returnId), { items: finalItems, notes: newData.notes ?? r.notes });
+      await updateDoc(doc(db,"svcReturns",returnId), {
+        items: finalItems, notes: newData.notes ?? r.notes,
+        status:"en_attente", confirmedBy:null, confirmedByName:null, confirmedAt:null,
+      });
       await addDoc(collection(db,"activities"), { action:"update", entity:"svcReturn", entityId:returnId, details:`Retour modifié (${r.serviceName})`, userId, userName, createdAt:serverTimestamp() });
     },
 
@@ -1076,6 +1107,67 @@ export function useStore(userId, userName, page) {
         attachmentType: newData.attachmentType ?? r.attachmentType ?? "",
       });
       await addDoc(collection(db,"activities"), { action:"update", entity:"reception", entityId:receptionId, details:`Réception modifiée : ${r.reference}`, userId, userName, createdAt:serverTimestamp() });
+    },
+
+    // ── Inventaire Stock (2) ──
+    // Un ajustement par produit compté, jamais un "gros document" avec une
+    // liste imbriquée — cohérent avec le reste (batches, etc.), plus simple à
+    // confirmer/rejeter ligne par ligne. scope = "pharmacy" ou "service:<id>".
+    // Côté pharmacie : confirmé immédiatement (l'agent qui compte est déjà
+    // légitime sur son propre domaine). Côté service : reste "attente" tant
+    // qu'un agent DE CE SERVICE (et lui seul) n'a pas confirmé — voir
+    // confirmStock2Inventory, dont la permission est vérifiée par les règles
+    // Firestore (userServiceId doit correspondre au service de la ligne).
+    createStock2Inventory: async (scope, lines) => {
+      const isPharmacy = scope === "pharmacy";
+      // Un sessionId commun regroupe les lignes d'un même passage d'inventaire
+      // (une session = plusieurs produits comptés en une fois) — sans lui,
+      // impossible d'afficher "la liste des inventaires" plutôt que "la liste
+      // des produits" (chaque produit reste un document séparé pour permettre
+      // à un service de confirmer/rejeter ligne par ligne).
+      const sessionId = Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+      const refs = [];
+      for (const l of lines) {
+        if (!l.productId) continue;
+        const ecart = Number(l.countedQty) - Number(l.computedQty);
+        const ref = await addDoc(collection(db,"stock2Inventories"), {
+          sessionId, scope, productId:l.productId, productName:l.productName||"",
+          computedQty:Number(l.computedQty)||0, countedQty:Number(l.countedQty)||0, ecart,
+          status: isPharmacy ? "confirme" : "attente",
+          createdBy:userId, createdByName:userName, createdAt:serverTimestamp(),
+          confirmedBy: isPharmacy ? userId : null, confirmedByName: isPharmacy ? userName : null,
+          confirmedAt: isPharmacy ? serverTimestamp() : null,
+        });
+        refs.push(ref.id);
+      }
+      await addDoc(collection(db,"activities"), {
+        action:"create", entity:"stock2Inventory", entityId:refs.join(","),
+        details: `Inventaire Stock (2) ${isPharmacy?"Pharmacie":"— "+scope} : ${lines.length} produit(s) compté(s)${isPharmacy?"":" (en attente de confirmation par le service)"}`,
+        userId, userName, createdAt:serverTimestamp(),
+      });
+      return refs;
+    },
+    confirmStock2Inventory: async (id) => {
+      const snap = await getDoc(doc(db,"stock2Inventories",id));
+      if (!snap.exists()) throw new Error("Ligne d'inventaire introuvable");
+      const d = snap.data();
+      if (d.status !== "attente") throw new Error("Cette ligne a déjà été traitée.");
+      await updateDoc(doc(db,"stock2Inventories",id), {
+        status:"confirme", confirmedBy:userId, confirmedByName:userName, confirmedAt:serverTimestamp(),
+      });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"stock2Inventory", entityId:id, details:`Inventaire Stock (2) confirmé : ${d.productName} (écart ${d.ecart>0?"+":""}${d.ecart})`, userId, userName, createdAt:serverTimestamp() });
+    },
+    rejectStock2Inventory: async (id) => {
+      const snap = await getDoc(doc(db,"stock2Inventories",id));
+      if (!snap.exists()) throw new Error("Ligne d'inventaire introuvable");
+      const d = snap.data();
+      if (d.status !== "attente") throw new Error("Cette ligne a déjà été traitée.");
+      // Jamais de suppression : on marque "rejete", sans effet sur le stock
+      // (comme si le comptage n'avait pas eu lieu).
+      await updateDoc(doc(db,"stock2Inventories",id), {
+        status:"rejete", confirmedBy:userId, confirmedByName:userName, confirmedAt:serverTimestamp(),
+      });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"stock2Inventory", entityId:id, details:`Inventaire Stock (2) rejeté : ${d.productName}`, userId, userName, createdAt:serverTimestamp() });
     },
 
     logActivity: (action, details) =>

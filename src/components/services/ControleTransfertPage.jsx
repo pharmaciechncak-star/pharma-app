@@ -37,7 +37,7 @@ export function ControleTransfertPage({store,activeSupplier,currentUser}){
   const openConfirm=(t)=>{
     setConfirmOpen(t.id);
     const init={};
-    (t.items||[]).forEach(it=>{ init[it.productId]=0; });
+    (t.items||[]).forEach(it=>{ init[it.productId]="0"; });
     setConfirmLines(init);
   };
 
@@ -102,8 +102,9 @@ export function ControleTransfertPage({store,activeSupplier,currentUser}){
                       <div style={{fontSize:12,fontWeight:600,marginBottom:6}}>{it.productName} <span style={{color:"#94a3b8",fontWeight:400}}>({it.qty} envoyé(s))</span></div>
                       <div style={{display:"flex",alignItems:"center",gap:6}}>
                         <label style={{fontSize:11,color:"#64748b"}}>Écart <span style={{color:"#94a3b8"}}>(négatif=manquant, positif=surplus, 0=conforme)</span> :</label>
-                        <input type="number" value={confirmLines[it.productId]||0}
+                        <input type="number" value={confirmLines[it.productId] ?? ""}
                           onChange={e=>setConfirmLines(cl=>({...cl,[it.productId]:e.target.value}))}
+                          onBlur={e=>{ if(e.target.value.trim()==="") setConfirmLines(cl=>({...cl,[it.productId]:"0"})); }}
                           style={{width:70,padding:"3px 6px",border:"1px solid "+(ecart<0?"#fca5a5":ecart>0?"#7dd3fc":"#cbd5e1"),borderRadius:6,fontSize:12,textAlign:"center",fontWeight:ecart!==0?700:400,color:ecart<0?"#b91c1c":ecart>0?"#0e7490":"inherit"}}/>
                         <span style={{fontSize:11,color:"#64748b"}}>→ reçu : <b>{Math.max(0,Number(it.qty)+ecart)}</b></span>
                       </div>

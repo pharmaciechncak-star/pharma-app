@@ -43,6 +43,7 @@ export function Sidebar({open,onClose,page,onNav,user,unread,activeSupplier,onCh
     // Vue d'ensemble commune à tout le monde (pharmacie ET services).
     { id:"suivi", label:"Suivi",   icon:"📈", items:[
       { id:"stock-service",   label:"Stock Services",  icon:"📊", perm:"stock-service" },
+      { id:"inventaire-stock2", label:"Inventaire Stock 2", icon:"🗒️", perm:"inventaire-stock2" },
       { id:"statistiques",    label:"Statistiques",    icon:"📈", perm:"statistiques" },
     ]},
     { id:"admin", label:"Administration", icon:"⚙️", items:[
