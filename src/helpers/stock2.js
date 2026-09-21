@@ -67,3 +67,44 @@ export function getServiceStock2(store, productId, serviceId) {
   const ajust  = sumInventoryAdjustments(store.stock2Inventories, productId, "service:"+serviceId);
   return transf - conso - retour + ajust;
 }
+
+// ── Circuit "fonctionnement" (Comptabilité Matières) ──
+// Domaine totalement séparé du Stock (2) "vente" ci-dessus : collections
+// dédiées (entreesFonct/sortiesFonct), pas de contrôle/confirmation côté
+// service (le bon de sortie envoie directement, comme convenu). Le stock
+// pharmacie se déduit simplement des entrées moins les sorties, et le stock
+// par service est la somme cumulée de ce qui lui a été remis.
+
+// Stock fonctionnement pharmacie = Σ entrées − Σ sorties + ajustements d'inventaire confirmés
+export function getFonctPharmacyStock2(store, productId) {
+  const entrees = sumItemsQty(store.entreesFonct, productId);
+  const sorties = sumItemsQty(store.sortiesFonct, productId);
+  const ajust   = sumInventoryAdjustments(store.stock2InventoriesFonct, productId, "fonct-pharmacy");
+  return entrees - sorties + ajust;
+}
+
+// Stock fonctionnement d'un service = Σ des sorties qui lui ont été remises +
+// ajustements d'inventaire confirmés PAR CE SERVICE (pas de consommation
+// trackée ici — un produit de fonctionnement, une fois remis au service, sort
+// du périmètre suivi par cette application).
+export function getFonctServiceStock2(store, productId, serviceId) {
+  const byService = (store.sortiesFonct||[]).filter(d => d.serviceId === serviceId);
+  const ajust = sumInventoryAdjustments(store.stock2InventoriesFonct, productId, "fonct-service:"+serviceId);
+  return sumItemsQty(byService, productId) + ajust;
+}
+
+// ── Circuit "non pharmaceutique" — même principe que le circuit
+// fonctionnement, collections dédiées (entreesNp/sortiesNp), autre comptable.
+
+export function getNpPharmacyStock2(store, productId) {
+  const entrees = sumItemsQty(store.entreesNp, productId);
+  const sorties = sumItemsQty(store.sortiesNp, productId);
+  const ajust   = sumInventoryAdjustments(store.stock2InventoriesNp, productId, "np-pharmacy");
+  return entrees - sorties + ajust;
+}
+
+export function getNpServiceStock2(store, productId, serviceId) {
+  const byService = (store.sortiesNp||[]).filter(d => d.serviceId === serviceId);
+  const ajust = sumInventoryAdjustments(store.stock2InventoriesNp, productId, "np-service:"+serviceId);
+  return sumItemsQty(byService, productId) + ajust;
+}

@@ -10,7 +10,7 @@ import { Badge, Alert } from "./ui/FormControls";
 
 // Rôles qu'un admin secondaire a le droit d'assigner à un nouvel utilisateur —
 // évite qu'un "admin secondaire" puisse se créer un pair ou s'auto-élever.
-const PHARMACY_ASSIGNABLE_ROLES = ["gestionnaire","pharmacien","magasinier","comptable"];
+const PHARMACY_ASSIGNABLE_ROLES = ["gestionnaire","pharmacien","magasinier","comptable","comptable_matiere","comptable_non_pharma"];
 const SERVICE_ASSIGNABLE_ROLES  = ["agent_service"];
 
 export function UsersPage({store, currentUser}){

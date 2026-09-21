@@ -460,6 +460,12 @@ Analyse ce document et extrais les informations de bon d'entrée ou d'inventaire
 LISTE EXACTE DES PRODUITS CONNUS (utilise EXACTEMENT ces noms, ne les modifie pas) :
 ${productList}
 
+STRUCTURE DU TABLEAU — lis attentivement avant d'extraire :
+- Le tableau peut commencer par une colonne "N°", "N° ligne", "Ref" ou similaire qui ne sert qu'à numéroter les lignes : ce n'est PAS une donnée à extraire, ignore-la complètement (ne l'utilise ni comme quantité, ni comme référence produit).
+- Le document peut comporter un en-tête avant le tableau (logo, nom d'établissement, titre, date, numéro de bon) : ignore tout ce texte d'en-tête, seules les LIGNES DU TABLEAU nous intéressent.
+- Le tableau peut aussi avoir des sous-en-têtes ou des lignes de total/sous-total : ignore toute ligne qui n'est pas un article individuel (une ligne "TOTAL", "Sous-total" ou vide ne doit jamais devenir un item).
+- Identifie les colonnes par leur EN-TÊTE DE COLONNE, pas par leur position : la colonne produit n'est pas forcément la première si une colonne de numérotation la précède.
+
 RÈGLES STRICTES DE CORRESPONDANCE :
 - Pour chaque ligne du document, trouve le produit qui correspond LE MIEUX dans la liste ci-dessus
 - La correspondance doit être PRÉCISE : "Perfuseur" → cherche un produit avec "PERFUSEUR" dans son nom, PAS "SODIUM CHLORURE"
@@ -505,11 +511,30 @@ Extrait TOUTES les lignes du document.`;
     const data    = await res.json();
     const rawText = data.reply || "";
 
+    // Extraction robuste : l'IA respecte généralement la consigne "JSON pur",
+    // mais peut parfois entourer sa réponse de balises markdown ```json ... ```
+    // ou ajouter une phrase avant/après — surtout sur des documents complexes
+    // (colonne de numérotation, en-tête chargé). On essaie plusieurs stratégies
+    // avant d'abandonner.
     let parsed = null;
-    try { parsed = JSON.parse(rawText.trim()); }
+    const cleaned = rawText.trim()
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/```\s*$/,"");
+    try { parsed = JSON.parse(cleaned); }
     catch {
-      const m = rawText.match(/\{[\s\S]*\}/);
-      if (m) try { parsed = JSON.parse(m[0]); } catch { parsed = null; }
+      // Repli : le premier bloc { ... } équilibré (pas juste greedy jusqu'au
+      // dernier "}", qui peut capturer du texte parasite après le JSON).
+      const start = cleaned.indexOf("{");
+      if (start !== -1) {
+        let depth = 0, end = -1;
+        for (let i = start; i < cleaned.length; i++) {
+          if (cleaned[i] === "{") depth++;
+          else if (cleaned[i] === "}") { depth--; if (depth === 0) { end = i; break; } }
+        }
+        if (end !== -1) {
+          try { parsed = JSON.parse(cleaned.slice(start, end+1)); } catch { parsed = null; }
+        }
+      }
     }
 
     if (!parsed?.items?.length)

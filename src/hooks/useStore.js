@@ -45,6 +45,14 @@ export async function adjustStockFB(items, sign) {
 
 function locPharmacy() { return "pharmacy"; }
 function locService(serviceId) { return "service:" + serviceId; }
+// Circuit "fonctionnement" (Comptabilité Matières) — emplacements distincts
+// de ceux du circuit "vente" ci-dessus, pour que les lots des deux circuits
+// ne se mélangent jamais dans le suivi FEFO/péremptions.
+function locFonctPharmacy() { return "fonct-pharmacy"; }
+function locFonctService(serviceId) { return "fonct-service:" + serviceId; }
+// Circuit "non pharmaceutique" — emplacements distincts, même logique.
+function locNpPharmacy() { return "np-pharmacy"; }
+function locNpService(serviceId) { return "np-service:" + serviceId; }
 
 export async function createBatch({ productId, productName, lot, expiry, qty, location, source, sourceRef, userId, userName }) {
   if (!productId || !Number(qty)) return null;
@@ -181,6 +189,15 @@ export function useStore(userId, userName, page) {
   // complète : inutile de maintenir un écouteur temps réel sur toute la collection.
   const [carouselSlides, setCarouselSlides] = useState(null); // null = pas encore chargé
   const [stock2Inventories, setStock2Inventories] = useState([]);
+  const [entreesFonct, setEntreesFonct] = useState([]);
+  const [stock2InventoriesFonct, setStock2InventoriesFonct] = useState([]);
+  const [productTypesFonct, setProductTypesFonct] = useState([]);
+  const [circuitsRegistry, setCircuitsRegistry] = useState([]);
+  const [demandes, setDemandes] = useState([]);
+  const [entreesNp, setEntreesNp] = useState([]);
+  const [sortiesNp, setSortiesNp] = useState([]);
+  const [stock2InventoriesNp, setStock2InventoriesNp] = useState([]);
+  const [sortiesFonct, setSortiesFonct] = useState([]);
   const [svcStock,     setSvcStock]     = useState({}); // { "serviceId_productId": qty }
   const [stock,        setStock]        = useState({});
   const [loading,      setLoading]      = useState(true);
@@ -209,6 +226,15 @@ export function useStore(userId, userName, page) {
       safeLiveCol("svcReturns",   setSvcReturns,  orderBy("createdAt","desc")),
       safeLiveCol("receptions",   setReceptions,  orderBy("createdAt","desc")),
       safeLiveCol("stock2Inventories", setStock2Inventories, orderBy("createdAt","desc")),
+      safeLiveCol("entreesFonct", setEntreesFonct, orderBy("createdAt","desc")),
+      safeLiveCol("stock2InventoriesFonct", setStock2InventoriesFonct, orderBy("createdAt","desc")),
+      safeLiveCol("productTypesFonct", setProductTypesFonct, orderBy("name","asc")),
+      safeLiveCol("circuitsRegistry", setCircuitsRegistry, orderBy("createdAt","asc")),
+      safeLiveCol("demandes", setDemandes, orderBy("createdAt","desc")),
+      safeLiveCol("entreesNp", setEntreesNp, orderBy("createdAt","desc")),
+      safeLiveCol("sortiesNp", setSortiesNp, orderBy("createdAt","desc")),
+      safeLiveCol("stock2InventoriesNp", setStock2InventoriesNp, orderBy("createdAt","desc")),
+      safeLiveCol("sortiesFonct", setSortiesFonct, orderBy("createdAt","desc")),
       // batches : nécessaire à l'assistant IA (péremptions) qui peut être ouvert
       // depuis n'importe quelle page, donc pas de chargement "à la demande"
       // possible ici sans perdre cette capacité — reste en écoute permanente.
@@ -282,7 +308,7 @@ export function useStore(userId, userName, page) {
   return {
     suppliers, depots, products, users,
     entries, returns, inventories, invoices, messages, activities,
-    services, transfers, consumptions, svcReturns, receptions, svcStock, batches, carouselSlides, stock2Inventories,
+    services, transfers, consumptions, svcReturns, receptions, svcStock, batches, carouselSlides, stock2Inventories, entreesFonct, sortiesFonct, stock2InventoriesFonct, productTypesFonct, circuitsRegistry, demandes, entreesNp, sortiesNp, stock2InventoriesNp,
     stock, loading,
 
     addSupplier:    s    => addDoc(collection(db,"suppliers"), { ...s, createdBy:userId, createdByName:userName, createdAt: serverTimestamp() }), // retourne Promise<DocumentReference>
@@ -536,6 +562,21 @@ export function useStore(userId, userName, page) {
         await updateDoc(doc(db,"batches",b.id), { expiry:newExpiry });
       }
       await addDoc(collection(db,"activities"), { action:"update", entity:"transfer", entityId:transferId, details:`Date de péremption corrigée (${productId}) : ${newExpiry}`, userId, userName, createdAt:serverTimestamp() });
+    },
+
+    // Même correction de péremption, pour un bon de sortie du circuit
+    // fonctionnement (mêmes emplacements de lots séparés, source "sortieFonct").
+    updateSortieFonctItemExpiry: async (sortieId, productId, newExpiry) => {
+      const sSnap = await getDoc(doc(db,"sortiesFonct",sortieId));
+      if (!sSnap.exists()) throw new Error("Bon de sortie introuvable");
+      const s = sSnap.data();
+      const newItems = (s.items||[]).map(it => it.productId===productId ? { ...it, expiry:newExpiry } : it);
+      await updateDoc(doc(db,"sortiesFonct",sortieId), { items:newItems });
+      const batchesSnap = await getDocs(query(collection(db,"batches"), where("source","==","sortieFonct"), where("sourceRef","==",sortieId), where("productId","==",productId)));
+      for (const b of batchesSnap.docs) {
+        await updateDoc(doc(db,"batches",b.id), { expiry:newExpiry });
+      }
+      await addDoc(collection(db,"activities"), { action:"update", entity:"sortieFonct", entityId:sortieId, details:`Date de péremption corrigée (${productId}) : ${newExpiry}`, userId, userName, createdAt:serverTimestamp() });
     },
 
     // Confirmation de réception par le service : contrôle ligne par ligne
@@ -1109,6 +1150,382 @@ export function useStore(userId, userName, page) {
       await addDoc(collection(db,"activities"), { action:"update", entity:"reception", entityId:receptionId, details:`Réception modifiée : ${r.reference}`, userId, userName, createdAt:serverTimestamp() });
     },
 
+    // ── Bon d'Entrée — circuit fonctionnement (Comptabilité Matières) ──
+    // Copie fidèle du modèle addReception/cancelReception/updateReception
+    // ci-dessus, mais collection et emplacements de lots séparés (circuit
+    // totalement indépendant du circuit vente).
+    addEntreeFonct: async r => {
+      const ref = await addDoc(collection(db,"entreesFonct"), {
+        ...r, receivedBy:userId, receivedByName:userName,
+        status:"reçu", createdAt:serverTimestamp(),
+      });
+      for (const it of (r.items||[])) {
+        if (!it.productId || !Number(it.qty)) continue;
+        await createBatch({
+          productId: it.productId, productName: it.productName,
+          lot: it.lot, expiry: it.expiry, qty: it.qty,
+          location: locFonctPharmacy(), source: "entreeFonct", sourceRef: ref.id,
+          userId, userName,
+        });
+      }
+      await addDoc(collection(db,"activities"), {
+        action:"create", entity:"entreeFonct", entityId:ref.id,
+        details:`Bon d'entrée (fonctionnement) : ${r.reference} — ${r.supplierName||""} (${r.items?.length||0} produit(s))`,
+        userId, userName, createdAt:serverTimestamp(),
+      });
+      return ref;
+    },
+
+    cancelEntreeFonct: async (entreeId) => {
+      const rSnap = await getDoc(doc(db,"entreesFonct",entreeId));
+      if (!rSnap.exists()) throw new Error("Bon d'entrée introuvable");
+      const r = rSnap.data();
+      if (r.status === "annule") throw new Error("Ce bon d'entrée est déjà annulé.");
+      const batches = await getBatchesFor("entreeFonct", entreeId);
+      for (const b of batches) {
+        if (b.qtyRemaining < b.qtyInitial) {
+          throw new Error(`Impossible d'annuler : quantité insuffisante (${b.productName||"produit"} déjà sortie).`);
+        }
+      }
+      for (const b of batches) {
+        await updateDoc(doc(db,"batches",b.id), { qtyRemaining:0, qtyInitial:0 });
+      }
+      await updateDoc(doc(db,"entreesFonct",entreeId), { status:"annule", cancelledBy:userId, cancelledByName:userName, cancelledAt:serverTimestamp() });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"entreeFonct", entityId:entreeId, details:`Bon d'entrée (fonctionnement) annulé : ${r.reference}`, userId, userName, createdAt:serverTimestamp() });
+    },
+
+    updateEntreeFonct: async (entreeId, newData) => {
+      const rSnap = await getDoc(doc(db,"entreesFonct",entreeId));
+      if (!rSnap.exists()) throw new Error("Bon d'entrée introuvable");
+      const r = rSnap.data();
+      if (r.status === "annule") throw new Error("Ce bon d'entrée est annulé — impossible de le modifier.");
+      const batches = await getBatchesFor("entreeFonct", entreeId);
+      const newItems = newData.items||[];
+      for (const b of batches) {
+        const consumedSoFar = b.qtyInitial - b.qtyRemaining;
+        const target = newItems.find(i=>i.productId===b.productId);
+        const targetQty = target ? Number(target.qty||0) : 0;
+        if (consumedSoFar > targetQty) {
+          throw new Error(`Impossible de modifier "${b.productName||"produit"}" : quantité insuffisante (déjà sortie).`);
+        }
+      }
+      for (const it of newItems) {
+        if (!it.productId) continue;
+        const b = batches.find(x=>x.productId===it.productId);
+        const newQty = Number(it.qty||0);
+        if (b) {
+          const consumedSoFar = b.qtyInitial - b.qtyRemaining;
+          await updateDoc(doc(db,"batches",b.id), { qtyInitial:newQty, qtyRemaining: newQty - consumedSoFar, lot:it.lot||b.lot, expiry:it.expiry||b.expiry });
+        } else if (newQty > 0) {
+          await createBatch({ productId:it.productId, productName:it.productName, lot:it.lot, expiry:it.expiry, qty:newQty, location:locFonctPharmacy(), source:"entreeFonct", sourceRef:entreeId, userId, userName });
+        }
+      }
+      for (const b of batches) {
+        if (!newItems.some(i=>i.productId===b.productId)) {
+          await updateDoc(doc(db,"batches",b.id), { qtyInitial:0, qtyRemaining:0 });
+        }
+      }
+      await updateDoc(doc(db,"entreesFonct",entreeId), {
+        items:newItems, notes:newData.notes ?? r.notes,
+        attachmentUrl: newData.attachmentUrl ?? r.attachmentUrl ?? "",
+        attachmentName: newData.attachmentName ?? r.attachmentName ?? "",
+        attachmentType: newData.attachmentType ?? r.attachmentType ?? "",
+      });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"entreeFonct", entityId:entreeId, details:`Bon d'entrée (fonctionnement) modifié : ${r.reference}`, userId, userName, createdAt:serverTimestamp() });
+    },
+
+    // ── Bon de Sortie — circuit fonctionnement (Comptabilité Matières) ──
+    // Envoi DIRECT vers le service, sans étape de contrôle/confirmation côté
+    // service (convenu explicitement — à la différence des Transferts du
+    // circuit vente). Le stock du service est donc crédité immédiatement.
+    addSortieFonct: async s => {
+      const itemsInit = (s.items||[]).map(it => ({ ...it, expiry:it.expiry||"", lot:it.lot||"" }));
+      const ref = await addDoc(collection(db,"sortiesFonct"), {
+        ...s, items:itemsInit, sentBy:userId, sentByName:userName, status:"envoye", createdAt:serverTimestamp(),
+      });
+      const itemExpiries = {};
+      for (const it of (s.items||[])) {
+        if (!it.productId || !Number(it.qty)) continue;
+        // FEFO côté pharmacie fonctionnement, puis les mêmes lots "voyagent"
+        // vers l'emplacement du service — même mécanique que les transferts.
+        const { consumed } = await consumeFEFO(it.productId, Number(it.qty), locFonctPharmacy());
+        for (const c of consumed) {
+          await createBatch({
+            productId: it.productId, productName: it.productName,
+            lot: c.lot, expiry: c.expiry, qty: c.qty,
+            location: locFonctService(s.serviceId), source: "sortieFonct", sourceRef: ref.id,
+            userId, userName,
+          });
+          if (!itemExpiries[it.productId] || (c.expiry && c.expiry < itemExpiries[it.productId].expiry)) {
+            itemExpiries[it.productId] = { expiry: c.expiry||"", lot: c.lot||"" };
+          }
+        }
+      }
+      if (Object.keys(itemExpiries).length > 0) {
+        const finalItems = itemsInit.map(it => itemExpiries[it.productId] ? { ...it, ...itemExpiries[it.productId] } : it);
+        await updateDoc(doc(db,"sortiesFonct",ref.id), { items: finalItems });
+      }
+      await addDoc(collection(db,"activities"), {
+        action:"create", entity:"sortieFonct", entityId:ref.id,
+        details:`Bon de sortie (fonctionnement) vers ${s.serviceName} : ${s.items?.length||0} produit(s)`,
+        userId, userName, createdAt:serverTimestamp(),
+      });
+      return ref;
+    },
+
+    cancelSortieFonct: async (sortieId) => {
+      const sSnap = await getDoc(doc(db,"sortiesFonct",sortieId));
+      if (!sSnap.exists()) throw new Error("Bon de sortie introuvable");
+      const s = sSnap.data();
+      if (s.status === "annule") throw new Error("Ce bon de sortie est déjà annulé.");
+      await reverseBatchesOf("sortieFonct", sortieId, locFonctPharmacy(), userId, userName);
+      await updateDoc(doc(db,"sortiesFonct",sortieId), { status:"annule", cancelledBy:userId, cancelledByName:userName, cancelledAt:serverTimestamp() });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"sortieFonct", entityId:sortieId, details:`Bon de sortie (fonctionnement) annulé : vers ${s.serviceName}`, userId, userName, createdAt:serverTimestamp() });
+    },
+
+    updateSortieFonct: async (sortieId, newData) => {
+      const sSnap = await getDoc(doc(db,"sortiesFonct",sortieId));
+      if (!sSnap.exists()) throw new Error("Bon de sortie introuvable");
+      const s = sSnap.data();
+      if (s.status === "annule") throw new Error("Ce bon de sortie est annulé — impossible de le modifier.");
+      await reverseBatchesOf("sortieFonct", sortieId, locFonctPharmacy(), userId, userName);
+      const itemsInit = (newData.items||[]).map(it => ({ ...it, expiry:"", lot:"" }));
+      const itemExpiries = {};
+      for (const it of (newData.items||[])) {
+        if (!it.productId || !it.qty) continue;
+        const { consumed } = await consumeFEFO(it.productId, Number(it.qty), locFonctPharmacy());
+        for (const c of consumed) {
+          await createBatch({
+            productId: it.productId, productName: it.productName,
+            lot: c.lot, expiry: c.expiry, qty: c.qty,
+            location: locFonctService(s.serviceId), source: "sortieFonct", sourceRef: sortieId,
+            userId, userName,
+          });
+          if (!itemExpiries[it.productId] || (c.expiry && c.expiry < itemExpiries[it.productId].expiry)) {
+            itemExpiries[it.productId] = { expiry: c.expiry||"", lot: c.lot||"" };
+          }
+        }
+      }
+      const finalItems = itemsInit.map(it => itemExpiries[it.productId] ? { ...it, ...itemExpiries[it.productId] } : it);
+      await updateDoc(doc(db,"sortiesFonct",sortieId), { items: finalItems, notes: newData.notes ?? s.notes });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"sortieFonct", entityId:sortieId, details:`Bon de sortie (fonctionnement) modifié : vers ${s.serviceName}`, userId, userName, createdAt:serverTimestamp() });
+    },
+
+    // ── Bon d'Entrée — circuit non pharmaceutique ──
+    // Copie fidèle du modèle Entrée Fonctionnement, collection et emplacements
+    // de lots séparés (circuit totalement indépendant).
+    addEntreeNp: async r => {
+      const ref = await addDoc(collection(db,"entreesNp"), {
+        ...r, receivedBy:userId, receivedByName:userName,
+        status:"reçu", createdAt:serverTimestamp(),
+      });
+      for (const it of (r.items||[])) {
+        if (!it.productId || !Number(it.qty)) continue;
+        await createBatch({
+          productId: it.productId, productName: it.productName,
+          lot: it.lot, expiry: it.expiry, qty: it.qty,
+          location: locNpPharmacy(), source: "entreeNp", sourceRef: ref.id,
+          userId, userName,
+        });
+      }
+      await addDoc(collection(db,"activities"), {
+        action:"create", entity:"entreeNp", entityId:ref.id,
+        details:`Bon d'entrée (non pharmaceutique) : ${r.reference} — ${r.supplierName||""} (${r.items?.length||0} produit(s))`,
+        userId, userName, createdAt:serverTimestamp(),
+      });
+      return ref;
+    },
+
+    cancelEntreeNp: async (entreeId) => {
+      const rSnap = await getDoc(doc(db,"entreesNp",entreeId));
+      if (!rSnap.exists()) throw new Error("Bon d'entrée introuvable");
+      const r = rSnap.data();
+      if (r.status === "annule") throw new Error("Ce bon d'entrée est déjà annulé.");
+      const batches = await getBatchesFor("entreeNp", entreeId);
+      for (const b of batches) {
+        if (b.qtyRemaining < b.qtyInitial) {
+          throw new Error(`Impossible d'annuler : quantité insuffisante (${b.productName||"produit"} déjà sortie).`);
+        }
+      }
+      for (const b of batches) {
+        await updateDoc(doc(db,"batches",b.id), { qtyRemaining:0, qtyInitial:0 });
+      }
+      await updateDoc(doc(db,"entreesNp",entreeId), { status:"annule", cancelledBy:userId, cancelledByName:userName, cancelledAt:serverTimestamp() });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"entreeNp", entityId:entreeId, details:`Bon d'entrée (non pharmaceutique) annulé : ${r.reference}`, userId, userName, createdAt:serverTimestamp() });
+    },
+
+    updateEntreeNp: async (entreeId, newData) => {
+      const rSnap = await getDoc(doc(db,"entreesNp",entreeId));
+      if (!rSnap.exists()) throw new Error("Bon d'entrée introuvable");
+      const r = rSnap.data();
+      if (r.status === "annule") throw new Error("Ce bon d'entrée est annulé — impossible de le modifier.");
+      const batches = await getBatchesFor("entreeNp", entreeId);
+      const newItems = newData.items||[];
+      for (const b of batches) {
+        const consumedSoFar = b.qtyInitial - b.qtyRemaining;
+        const target = newItems.find(i=>i.productId===b.productId);
+        const targetQty = target ? Number(target.qty||0) : 0;
+        if (consumedSoFar > targetQty) {
+          throw new Error(`Impossible de modifier "${b.productName||"produit"}" : quantité insuffisante (déjà sortie).`);
+        }
+      }
+      for (const it of newItems) {
+        if (!it.productId) continue;
+        const b = batches.find(x=>x.productId===it.productId);
+        const newQty = Number(it.qty||0);
+        if (b) {
+          const consumedSoFar = b.qtyInitial - b.qtyRemaining;
+          await updateDoc(doc(db,"batches",b.id), { qtyInitial:newQty, qtyRemaining: newQty - consumedSoFar, lot:it.lot||b.lot, expiry:it.expiry||b.expiry });
+        } else if (newQty > 0) {
+          await createBatch({ productId:it.productId, productName:it.productName, lot:it.lot, expiry:it.expiry, qty:newQty, location:locNpPharmacy(), source:"entreeNp", sourceRef:entreeId, userId, userName });
+        }
+      }
+      for (const b of batches) {
+        if (!newItems.some(i=>i.productId===b.productId)) {
+          await updateDoc(doc(db,"batches",b.id), { qtyInitial:0, qtyRemaining:0 });
+        }
+      }
+      await updateDoc(doc(db,"entreesNp",entreeId), {
+        items:newItems, notes:newData.notes ?? r.notes,
+        attachmentUrl: newData.attachmentUrl ?? r.attachmentUrl ?? "",
+        attachmentName: newData.attachmentName ?? r.attachmentName ?? "",
+        attachmentType: newData.attachmentType ?? r.attachmentType ?? "",
+      });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"entreeNp", entityId:entreeId, details:`Bon d'entrée (non pharmaceutique) modifié : ${r.reference}`, userId, userName, createdAt:serverTimestamp() });
+    },
+
+    // ── Bon de Sortie — circuit non pharmaceutique ──
+    // Envoi direct, comme le circuit fonctionnement. Peut en plus répondre à
+    // une Demande d'un service (s.demandeId) : dans ce cas, la demande est
+    // marquée "traitée" et gardera la trace demandé/envoyé par produit — y
+    // compris les articles que le comptable a retirés (qtyEnvoyee:0).
+    addSortieNp: async s => {
+      const itemsInit = (s.items||[]).map(it => ({ ...it, expiry:it.expiry||"", lot:it.lot||"" }));
+      const ref = await addDoc(collection(db,"sortiesNp"), {
+        ...s, items:itemsInit, sentBy:userId, sentByName:userName, status:"envoye", createdAt:serverTimestamp(),
+      });
+      const itemExpiries = {};
+      for (const it of (s.items||[])) {
+        if (!it.productId || !Number(it.qty)) continue;
+        const { consumed } = await consumeFEFO(it.productId, Number(it.qty), locNpPharmacy());
+        for (const c of consumed) {
+          await createBatch({
+            productId: it.productId, productName: it.productName,
+            lot: c.lot, expiry: c.expiry, qty: c.qty,
+            location: locNpService(s.serviceId), source: "sortieNp", sourceRef: ref.id,
+            userId, userName,
+          });
+          if (!itemExpiries[it.productId] || (c.expiry && c.expiry < itemExpiries[it.productId].expiry)) {
+            itemExpiries[it.productId] = { expiry: c.expiry||"", lot: c.lot||"" };
+          }
+        }
+      }
+      if (Object.keys(itemExpiries).length > 0) {
+        const finalItems = itemsInit.map(it => itemExpiries[it.productId] ? { ...it, ...itemExpiries[it.productId] } : it);
+        await updateDoc(doc(db,"sortiesNp",ref.id), { items: finalItems });
+      }
+      // Répond à une demande, le cas échéant : trace demandé/envoyé par
+      // produit, y compris les articles retirés (présents dans la demande
+      // d'origine mais absents de s.items ici → qtyEnvoyee 0).
+      if (s.demandeId) {
+        const dSnap = await getDoc(doc(db,"demandes",s.demandeId));
+        if (dSnap.exists() && dSnap.data().status==="attente") {
+          const d = dSnap.data();
+          const sentByProduct = {};
+          (s.items||[]).forEach(it => { sentByProduct[it.productId] = Number(it.qty)||0; });
+          const finalDemandeItems = (d.items||[]).map(it => {
+            const qtyEnvoyee = sentByProduct[it.productId] ?? 0;
+            return { productId:it.productId, productName:it.productName, qtyDemandee:it.qtyDemandee, qtyEnvoyee, fourni: qtyEnvoyee>0 };
+          });
+          await updateDoc(doc(db,"demandes",s.demandeId), {
+            items: finalDemandeItems, status:"traite", sortieRef: ref.id,
+            processedBy:userId, processedByName:userName, processedAt:serverTimestamp(),
+          });
+        }
+      }
+      await addDoc(collection(db,"activities"), {
+        action:"create", entity:"sortieNp", entityId:ref.id,
+        details:`Bon de sortie (non pharmaceutique) vers ${s.serviceName} : ${s.items?.length||0} produit(s)`,
+        userId, userName, createdAt:serverTimestamp(),
+      });
+      return ref;
+    },
+
+    cancelSortieNp: async (sortieId) => {
+      const sSnap = await getDoc(doc(db,"sortiesNp",sortieId));
+      if (!sSnap.exists()) throw new Error("Bon de sortie introuvable");
+      const s = sSnap.data();
+      if (s.status === "annule") throw new Error("Ce bon de sortie est déjà annulé.");
+      await reverseBatchesOf("sortieNp", sortieId, locNpPharmacy(), userId, userName);
+      await updateDoc(doc(db,"sortiesNp",sortieId), { status:"annule", cancelledBy:userId, cancelledByName:userName, cancelledAt:serverTimestamp() });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"sortieNp", entityId:sortieId, details:`Bon de sortie (non pharmaceutique) annulé : vers ${s.serviceName}`, userId, userName, createdAt:serverTimestamp() });
+    },
+
+    updateSortieNp: async (sortieId, newData) => {
+      const sSnap = await getDoc(doc(db,"sortiesNp",sortieId));
+      if (!sSnap.exists()) throw new Error("Bon de sortie introuvable");
+      const s = sSnap.data();
+      if (s.status === "annule") throw new Error("Ce bon de sortie est annulé — impossible de le modifier.");
+      await reverseBatchesOf("sortieNp", sortieId, locNpPharmacy(), userId, userName);
+      const itemsInit = (newData.items||[]).map(it => ({ ...it, expiry:"", lot:"" }));
+      const itemExpiries = {};
+      for (const it of (newData.items||[])) {
+        if (!it.productId || !it.qty) continue;
+        const { consumed } = await consumeFEFO(it.productId, Number(it.qty), locNpPharmacy());
+        for (const c of consumed) {
+          await createBatch({
+            productId: it.productId, productName: it.productName,
+            lot: c.lot, expiry: c.expiry, qty: c.qty,
+            location: locNpService(s.serviceId), source: "sortieNp", sourceRef: sortieId,
+            userId, userName,
+          });
+          if (!itemExpiries[it.productId] || (c.expiry && c.expiry < itemExpiries[it.productId].expiry)) {
+            itemExpiries[it.productId] = { expiry: c.expiry||"", lot: c.lot||"" };
+          }
+        }
+      }
+      const finalItems = itemsInit.map(it => itemExpiries[it.productId] ? { ...it, ...itemExpiries[it.productId] } : it);
+      await updateDoc(doc(db,"sortiesNp",sortieId), { items: finalItems, notes: newData.notes ?? s.notes });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"sortieNp", entityId:sortieId, details:`Bon de sortie (non pharmaceutique) modifié : vers ${s.serviceName}`, userId, userName, createdAt:serverTimestamp() });
+    },
+
+    updateSortieNpItemExpiry: async (sortieId, productId, newExpiry) => {
+      const sSnap = await getDoc(doc(db,"sortiesNp",sortieId));
+      if (!sSnap.exists()) throw new Error("Bon de sortie introuvable");
+      const s = sSnap.data();
+      const newItems = (s.items||[]).map(it => it.productId===productId ? { ...it, expiry:newExpiry } : it);
+      await updateDoc(doc(db,"sortiesNp",sortieId), { items:newItems });
+      const batchesSnap = await getDocs(query(collection(db,"batches"), where("source","==","sortieNp"), where("sourceRef","==",sortieId), where("productId","==",productId)));
+      for (const b of batchesSnap.docs) {
+        await updateDoc(doc(db,"batches",b.id), { expiry:newExpiry });
+      }
+      await addDoc(collection(db,"activities"), { action:"update", entity:"sortieNp", entityId:sortieId, details:`Date de péremption corrigée (${productId}) : ${newExpiry}`, userId, userName, createdAt:serverTimestamp() });
+    },
+
+    createStock2InventoryNp: async (scope, lines) => {
+      const isPharmacy = scope === "np-pharmacy";
+      const refs = [];
+      for (const l of lines) {
+        if (!l.productId) continue;
+        const ecart = Number(l.countedQty) - Number(l.computedQty);
+        const ref = await addDoc(collection(db,"stock2InventoriesNp"), {
+          scope, productId:l.productId, productName:l.productName||"",
+          computedQty:Number(l.computedQty)||0, countedQty:Number(l.countedQty)||0, ecart,
+          status: isPharmacy ? "confirme" : "attente",
+          createdBy:userId, createdByName:userName, createdAt:serverTimestamp(),
+          confirmedBy: isPharmacy ? userId : null, confirmedByName: isPharmacy ? userName : null,
+          confirmedAt: isPharmacy ? serverTimestamp() : null,
+        });
+        refs.push(ref.id);
+      }
+      await addDoc(collection(db,"activities"), {
+        action:"create", entity:"stock2InventoryNp", entityId:refs.join(","),
+        details: `Inventaire Non Pharmaceutique ${isPharmacy?"Pharmacie":"— "+scope} : ${lines.length} produit(s) compté(s)`,
+        userId, userName, createdAt:serverTimestamp(),
+      });
+      return refs;
+    },
+
     // ── Inventaire Stock (2) ──
     // Un ajustement par produit compté, jamais un "gros document" avec une
     // liste imbriquée — cohérent avec le reste (batches, etc.), plus simple à
@@ -1168,6 +1585,171 @@ export function useStore(userId, userName, page) {
         status:"rejete", confirmedBy:userId, confirmedByName:userName, confirmedAt:serverTimestamp(),
       });
       await addDoc(collection(db,"activities"), { action:"update", entity:"stock2Inventory", entityId:id, details:`Inventaire Stock (2) rejeté : ${d.productName}`, userId, userName, createdAt:serverTimestamp() });
+    },
+
+    // ── Inventaire — circuit fonctionnement (Comptabilité Matières) ──
+    // Collection séparée de stock2Inventories (circuit vente), mais logique
+    // identique : côté pharmacie fonctionnement, confirmé immédiatement ;
+    // côté service fonctionnement, "attente" jusqu'à confirmation par un agent
+    // DE CE SERVICE. scope vaut "fonct-pharmacy" ou "fonct-service:<id>".
+    createStock2InventoryFonct: async (scope, lines) => {
+      const isPharmacy = scope === "fonct-pharmacy";
+      const refs = [];
+      for (const l of lines) {
+        if (!l.productId) continue;
+        const ecart = Number(l.countedQty) - Number(l.computedQty);
+        const ref = await addDoc(collection(db,"stock2InventoriesFonct"), {
+          scope, productId:l.productId, productName:l.productName||"",
+          computedQty:Number(l.computedQty)||0, countedQty:Number(l.countedQty)||0, ecart,
+          status: isPharmacy ? "confirme" : "attente",
+          createdBy:userId, createdByName:userName, createdAt:serverTimestamp(),
+          confirmedBy: isPharmacy ? userId : null, confirmedByName: isPharmacy ? userName : null,
+          confirmedAt: isPharmacy ? serverTimestamp() : null,
+        });
+        refs.push(ref.id);
+      }
+      await addDoc(collection(db,"activities"), {
+        action:"create", entity:"stock2InventoryFonct", entityId:refs.join(","),
+        details: `Inventaire Fonctionnement ${isPharmacy?"Pharmacie":"— "+scope} : ${lines.length} produit(s) compté(s)${isPharmacy?"":" (en attente de confirmation par le service)"}`,
+        userId, userName, createdAt:serverTimestamp(),
+      });
+      return refs;
+    },
+    confirmStock2InventoryFonct: async (id) => {
+      const snap = await getDoc(doc(db,"stock2InventoriesFonct",id));
+      if (!snap.exists()) throw new Error("Ligne d'inventaire introuvable");
+      const d = snap.data();
+      if (d.status !== "attente") throw new Error("Cette ligne a déjà été traitée.");
+      await updateDoc(doc(db,"stock2InventoriesFonct",id), {
+        status:"confirme", confirmedBy:userId, confirmedByName:userName, confirmedAt:serverTimestamp(),
+      });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"stock2InventoryFonct", entityId:id, details:`Inventaire Fonctionnement confirmé : ${d.productName} (écart ${d.ecart>0?"+":""}${d.ecart})`, userId, userName, createdAt:serverTimestamp() });
+    },
+    rejectStock2InventoryFonct: async (id) => {
+      const snap = await getDoc(doc(db,"stock2InventoriesFonct",id));
+      if (!snap.exists()) throw new Error("Ligne d'inventaire introuvable");
+      const d = snap.data();
+      if (d.status !== "attente") throw new Error("Cette ligne a déjà été traitée.");
+      await updateDoc(doc(db,"stock2InventoriesFonct",id), {
+        status:"rejete", confirmedBy:userId, confirmedByName:userName, confirmedAt:serverTimestamp(),
+      });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"stock2InventoryFonct", entityId:id, details:`Inventaire Fonctionnement rejeté : ${d.productName}`, userId, userName, createdAt:serverTimestamp() });
+    },
+
+    // ── Types de produits — circuit fonctionnement ──
+    // Liste libre, créée et modifiable par le Comptable Matière (pas une
+    // nomenclature officielle à reproduire) — sert à classer/filtrer ses
+    // produits (Inventaire, Statistiques). Suppression réelle possible ici
+    // (contrairement aux documents de mouvement) : ce n'est qu'une étiquette
+    // de classement, pas un enregistrement comptable.
+    addProductTypeFonct: async (name) => {
+      const n = (name||"").trim();
+      if (!n) throw new Error("Le nom du type est obligatoire.");
+      const ref = await addDoc(collection(db,"productTypesFonct"), { name:n, createdBy:userId, createdByName:userName, createdAt:serverTimestamp() });
+      return ref.id;
+    },
+    renameProductTypeFonct: async (id, name) => {
+      const n = (name||"").trim();
+      if (!n) throw new Error("Le nom du type est obligatoire.");
+      await updateDoc(doc(db,"productTypesFonct",id), { name:n });
+    },
+    deleteProductTypeFonct: async (id) => {
+      await deleteDoc(doc(db,"productTypesFonct",id));
+    },
+
+    // ── Registre des circuits — préparation pour de futures "comptabilités" ──
+    // "vente" et "fonctionnement" restent codés en dur (ils ont leurs propres
+    // pages, formules de stock et rôles dédiés) ; ce registre sert à ajouter
+    // un TROISIÈME (ou plus) circuit qui n'a pas encore cette infrastructure
+    // dédiée, en attendant qu'elle soit construite — la case à cocher existe
+    // déjà sur chaque produit dès l'ajout ici, prête à être exploitée plus
+    // tard. Réservé à l'admin principal (la portée d'un nouveau circuit —
+    // quel rôle le gère, quelles pages, quelles règles — reste à définir cas
+    // par cas, donc pas de délégation automatique comme pour vente/fonct.).
+    addCircuit: async (key, label, icon) => {
+      const k = (key||"").trim().toLowerCase().replace(/[^a-z0-9_]/g,"_");
+      if (!k) throw new Error("La clé du circuit est obligatoire (lettres/chiffres/underscore).");
+      if (["vente","fonctionnement"].includes(k)) throw new Error("Cette clé est déjà utilisée par un circuit existant.");
+      const existing = (await getDocs(query(collection(db,"circuitsRegistry"), where("key","==",k)))).docs;
+      if (existing.length>0) throw new Error("Un circuit avec cette clé existe déjà.");
+      const ref = await addDoc(collection(db,"circuitsRegistry"), {
+        key:k, label:(label||k).trim(), icon:icon||"📁",
+        createdBy:userId, createdByName:userName, createdAt:serverTimestamp(),
+      });
+      return ref.id;
+    },
+    renameCircuit: async (id, label, icon) => {
+      await updateDoc(doc(db,"circuitsRegistry",id), { label:(label||"").trim(), icon:icon||"📁" });
+    },
+    deleteCircuit: async (id) => {
+      // NB : ne retire pas ce circuit des produits qui l'avaient déjà coché
+      // (leur champ "circuits" garde la clé) — seulement de la liste des
+      // circuits proposés pour de nouveaux produits.
+      await deleteDoc(doc(db,"circuitsRegistry",id));
+    },
+
+    // ── Demandes — commun à tous les circuits qui en ont besoin ──
+    // Un service crée une demande (liste de produits + quantités souhaités)
+    // pour UN circuit précis (jamais "vente", jamais "fonctionnement" — géré
+    // par un logiciel externe pour ce dernier). Le comptable du circuit
+    // concerné la traite : il peut ajuster les quantités, retirer des
+    // produits qu'il ne donne pas — mais la demande GARDE la trace complète
+    // de ce qui a été demandé à l'origine, avec ce qui a été réellement
+    // fourni pour chaque ligne (jamais de perte de traçabilité, même pour un
+    // produit finalement retiré : qtyEnvoyee passe à 0, fourni à false, la
+    // ligne reste visible).
+    addDemande: async (circuit, serviceId, serviceName, items, notes) => {
+      const itemsInit = (items||[]).map(it => ({
+        productId: it.productId, productName: it.productName, qtyDemandee: Number(it.qty)||0,
+        qtyEnvoyee: null, fourni: null,
+      }));
+      const ref = await addDoc(collection(db,"demandes"), {
+        circuit, serviceId, serviceName, items: itemsInit, notes: notes||"",
+        status: "attente",
+        requestedBy: userId, requestedByName: userName, createdAt: serverTimestamp(),
+      });
+      await addDoc(collection(db,"activities"), { action:"create", entity:"demande", entityId:ref.id, details:`Demande de ${serviceName} (${circuit}) : ${itemsInit.length} produit(s)`, userId, userName, createdAt:serverTimestamp() });
+      return ref;
+    },
+
+    // resultItems: [{productId, productName, qtyDemandee, qtyEnvoyee}] — TOUS
+    // les articles d'origine, y compris ceux retirés (qtyEnvoyee:0). sortieRef
+    // = l'id du bon de sortie créé en réponse, pour naviguer de l'un à l'autre.
+    processDemande: async (demandeId, resultItems, sortieRef) => {
+      const dSnap = await getDoc(doc(db,"demandes",demandeId));
+      if (!dSnap.exists()) throw new Error("Demande introuvable");
+      const d = dSnap.data();
+      if (d.status !== "attente") throw new Error("Cette demande a déjà été traitée.");
+      const finalItems = (resultItems||[]).map(it => ({
+        productId: it.productId, productName: it.productName,
+        qtyDemandee: Number(it.qtyDemandee)||0, qtyEnvoyee: Number(it.qtyEnvoyee)||0,
+        fourni: Number(it.qtyEnvoyee)>0,
+      }));
+      await updateDoc(doc(db,"demandes",demandeId), {
+        items: finalItems, status:"traite", sortieRef: sortieRef||null,
+        processedBy:userId, processedByName:userName, processedAt:serverTimestamp(),
+      });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"demande", entityId:demandeId, details:`Demande de ${d.serviceName} traitée`, userId, userName, createdAt:serverTimestamp() });
+    },
+    rejectDemande: async (demandeId, reason) => {
+      const dSnap = await getDoc(doc(db,"demandes",demandeId));
+      if (!dSnap.exists()) throw new Error("Demande introuvable");
+      const d = dSnap.data();
+      if (d.status !== "attente") throw new Error("Cette demande a déjà été traitée.");
+      await updateDoc(doc(db,"demandes",demandeId), {
+        status:"rejete", rejectReason: reason||"",
+        processedBy:userId, processedByName:userName, processedAt:serverTimestamp(),
+      });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"demande", entityId:demandeId, details:`Demande de ${d.serviceName} rejetée`, userId, userName, createdAt:serverTimestamp() });
+    },
+    // Le service peut retirer SA PROPRE demande tant qu'elle est en attente.
+    cancelDemande: async (demandeId) => {
+      const dSnap = await getDoc(doc(db,"demandes",demandeId));
+      if (!dSnap.exists()) throw new Error("Demande introuvable");
+      const d = dSnap.data();
+      if (d.status !== "attente") throw new Error("Cette demande a déjà été traitée — impossible de l'annuler.");
+      await updateDoc(doc(db,"demandes",demandeId), { status:"annulee", processedBy:userId, processedByName:userName, processedAt:serverTimestamp() });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"demande", entityId:demandeId, details:`Demande de ${d.serviceName} annulée par le service`, userId, userName, createdAt:serverTimestamp() });
     },
 
     logActivity: (action, details) =>

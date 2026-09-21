@@ -30,6 +30,12 @@ import { SeuilPage } from "./components/services/SeuilPage";
 import { ReceptionsPage } from "./components/services/ReceptionsPage";
 import { StockServicePage } from "./components/services/StockServicePage";
 import { InventaireStock2Page } from "./components/services/InventaireStock2Page";
+import { EntreesFonctPage } from "./components/comptabilite-matieres/EntreesFonctPage";
+import { SortiesFonctPage } from "./components/comptabilite-matieres/SortiesFonctPage";
+import { StockFonctPage } from "./components/comptabilite-matieres/StockFonctPage";
+import { InventaireFonctPage } from "./components/comptabilite-matieres/InventaireFonctPage";
+import { EntreesNpPage } from "./components/comptabilite-non-pharma/EntreesNpPage";
+import { StatistiquesFonctPage } from "./components/comptabilite-matieres/StatistiquesFonctPage";
 import { StatistiquesPage } from "./components/StatistiquesPage";
 import { DepotsPage } from "./components/DepotsPage";
 import { FournisseursPage } from "./components/FournisseursPage";
@@ -253,6 +259,12 @@ export default function App(){
       case "receptions":      return can(user,"receptions","r")?<ReceptionsPage store={store} activeSupplier={activeSupplier} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;
       case "stock-service":   return can(user,"stock-service","r")?<StockServicePage store={store} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;
       case "inventaire-stock2": return can(user,"inventaire-stock2","r")?<InventaireStock2Page store={store} activeSupplier={activeSupplier} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;
+      case "entrees-fonct": return can(user,"entrees-fonct","r")?<EntreesFonctPage store={store} activeSupplier={activeSupplier} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;
+      case "sorties-fonct": return can(user,"sorties-fonct","r")?<SortiesFonctPage store={store} activeSupplier={activeSupplier} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;
+      case "stock-fonct": return can(user,"stock-fonct","r")?<StockFonctPage store={store} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;
+      case "inventaire-fonct": return can(user,"inventaire-fonct","r")?<InventaireFonctPage store={store} activeSupplier={activeSupplier} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;
+      case "statistiques-fonct": return can(user,"statistiques-fonct","r")?<StatistiquesFonctPage store={store} activeSupplier={activeSupplier} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;
+      case "entrees-np": return can(user,"entrees-np","r")?<EntreesNpPage store={store} activeSupplier={activeSupplier} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;
       case "statistiques":    return can(user,"statistiques","r")?<StatistiquesPage store={store} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;
       case "depots":       return <DepotsPage store={store} activeSupplier={activeSupplier} currentUser={user}/>;
 

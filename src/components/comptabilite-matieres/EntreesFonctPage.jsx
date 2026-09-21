@@ -4,13 +4,13 @@ import { IMG_CARDIO_SRC, IMG_LABEL_SRC, IMG_CHNCAK_SRC } from "../../images";
 import { imageUrlToDataURL } from "../../helpers/fileUtils";
 import { PageHeader } from "../ui/PageHeader";
 import { btn, card, label, input } from "../../helpers/styles";
-import { can, visibleSuppliers, hasSupplierAccess } from "../../permissions";
+import { can, visibleSuppliers, hasSupplierAccess, productVisibleInCircuit } from "../../permissions";
 import { Alert } from "../ui/FormControls";
 import { BarcodeScanner, ScanReviewModal } from "../ui/ScanReviewModal";
 import { Modal } from "../ui/Modal";
 import { scanDocumentWithAI } from "../../hooks/useAI";
 
-export function ReceptionsPage({store,activeSupplier,currentUser}){
+export function EntreesFonctPage({store,activeSupplier,currentUser}){
   const [show,setShow]=useState(false);
   const [selected,setSelected]=useState(null);
   const [editing,setEditing]=useState(null);
@@ -35,11 +35,11 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
   const searchRef=useRef(null);
   const lastQtyRef=useRef(null);
 
-  const suppProds=activeSupplier?store.products.filter(p=>p.supplierId===activeSupplier.id):store.products.filter(p=>hasSupplierAccess(currentUser,p.supplierId));
+  const suppProds=(activeSupplier?store.products.filter(p=>p.supplierId===activeSupplier.id):store.products.filter(p=>hasSupplierAccess(currentUser,p.supplierId))).filter(p=>productVisibleInCircuit(p,"fonctionnement",store.suppliers));
   const filtered=search.trim()
     ?suppProds.filter(p=>p.name.toLowerCase().includes(search.toLowerCase())||[p.barcode1,p.barcode2,p.barcode3].some(b=>b&&b.includes(search)))
     :suppProds;
-  const receptions=(store.receptions||[]).filter(r=>activeSupplier?r.supplierId===activeSupplier.id:hasSupplierAccess(currentUser,r.supplierId))
+  const receptions=(store.entreesFonct||[]).filter(r=>activeSupplier?r.supplierId===activeSupplier.id:hasSupplierAccess(currentUser,r.supplierId))
     .filter(r=>{
       if (filters.dateFrom || filters.dateTo) {
         const d = r.createdAt?.seconds ? new Date(r.createdAt.seconds*1000) : null;
@@ -56,7 +56,7 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
 
   const openNew=()=>{
     setEditing(null);
-    setForm({reference:"BON-REC-"+genId(),supplierId:activeSupplier?.id||"",supplierName:activeSupplier?.name||"",date:new Date().toISOString().split("T")[0],items:[],notes:"",attachmentUrl:"",attachmentName:"",attachmentType:""});
+    setForm({reference:"BON-ENT-FONCT-"+genId(),supplierId:activeSupplier?.id||"",supplierName:activeSupplier?.name||"",date:new Date().toISOString().split("T")[0],items:[],notes:"",attachmentUrl:"",attachmentName:"",attachmentType:""});
     setAttachError("");
     setShow(true); setSelected(null);
   };
@@ -104,7 +104,7 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
     const newProds = selectedRows.filter(r=>r.isNew && r.productName?.trim());
     let newlyCreated = [];
     for (const np of newProds) {
-      const id = await store.addProduct({name:np.productName.trim(), price:Number(np.unitPrice||0), unit:np.unit||"Boîte", supplierId:form.supplierId||activeSupplier?.id||"", circuits:["vente"]});
+      const id = await store.addProduct({name:np.productName.trim(), price:Number(np.unitPrice||0), unit:np.unit||"Boîte", supplierId:form.supplierId||activeSupplier?.id||"", circuits:["fonctionnement"]});
       newlyCreated.push({...np, productId:id});
     }
     const items = selectedRows.map(r=>{
@@ -161,11 +161,11 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
     setSaving(true);
     try{
       if(editing){
-        await store.updateReception(editing,{...form});
-        setMsg("✅ Réception modifiée !");
+        await store.updateEntreeFonct(editing,{...form});
+        setMsg("✅ Bon d'entrée modifié !");
       } else {
-        await store.addReception({...form});
-        setMsg("✅ Réception enregistrée !");
+        await store.addEntreeFonct({...form});
+        setMsg("✅ Bon d'entrée enregistré !");
       }
       setShow(false); setEditing(null);
       setTimeout(()=>setMsg(""),4000);
@@ -187,7 +187,7 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
     ).join("");
     const total=r.items?.reduce((s,i)=>s+Number(i.qty||0)*Number(i.unitPrice||0),0)||0;
     const html=
-      "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Réception "+r.reference+"</title>"+
+      "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Bon d'entrée fonctionnement "+r.reference+"</title>"+
       "<style>@page{size:A4;margin:1.5cm}*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:10px}"+
       ".ph{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #065f46;padding-bottom:8px;margin-bottom:6px}"+
       ".ent{flex:1;text-align:center;font-size:8.5px;line-height:1.8;color:#111;padding:0 8px}"+
@@ -216,14 +216,14 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
           "<img src=\"" + chncakB64 + "\" style=\"width:65px;height:50px;object-fit:contain\"/>"+
         "</div>"+
       "</div>"+
-      "<div class=\"sub\">BON DE RÉCEPTION — PHARMACIE CHNCAK</div>"+
+      "<div class=\"sub\">BON D'ENTRÉE (FONCTIONNEMENT) — PHARMACIE CHNCAK</div>"+
       "<div class=\"info\"><span>Réf : <strong>"+r.reference+"</strong></span><span>Fournisseur : <strong>"+r.supplierName+"</strong></span><span>Date : "+r.date+"</span></div>"+
       "<table><thead><tr><th style=\"width:45%\">DÉSIGNATION</th><th>QTÉ</th><th>PRIX UNIT. (FCFA)</th><th>TOTAL (FCFA)</th></tr></thead><tbody>"+
       rows+"<tr class=\"tot\"><td colspan=\"3\" style=\"text-align:center\">TOTAL</td><td style=\"text-align:right\">"+total.toLocaleString("fr-FR")+"</td></tr></tbody></table>"+
       (r.notes?"<div style=\"margin-top:8px;font-size:9px;color:#444;font-style:italic\">Observations : "+r.notes+"</div>":"")+
       "<div class=\"sig\">"+
       "<div class=\"sb\"><div class=\"sl\">Le Fournisseur</div><div class=\"su\"></div></div>"+
-      "<div class=\"sb\"><div class=\"sl\">Le Chef de service Pharmacie CHNCAK</div><div class=\"su\"></div></div>"+
+      "<div class=\"sb\"><div class=\"sl\">Le Comptable Matière CHNCAK</div><div class=\"su\"></div></div>"+
       "</div>"+
       "</body></html>";
     const blob=new Blob([html],{type:"text/html;charset=utf-8"});
@@ -238,7 +238,7 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
     const total=r.items?.reduce((s,i)=>s+Number(i.qty||0)*Number(i.unitPrice||0),0)||0;
     return(
       <div style={{padding:0}}>
-        <PageHeader pageId="receptions" title="📦 Bon de Réception" subtitle={r.reference}>
+        <PageHeader pageId="entrees-fonct" title="📦 Bon d'Entrée (Fonctionnement)" subtitle={r.reference}>
           <button onClick={()=>setSelected(null)} style={{...btn(),background:"rgba(255,255,255,0.15)",color:"white",border:"1px solid rgba(255,255,255,0.3)",fontSize:12}}>← Retour</button>
         </PageHeader>
         <div style={{padding:16}}>
@@ -287,14 +287,14 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
               )}
             </div>
           )}
-          {r.status==="annule"&&<div style={{background:"#fee2e2",color:"#b91c1c",borderRadius:8,padding:"8px 12px",fontSize:12,fontWeight:600,marginBottom:12}}>🚫 Cette réception a été annulée{r.cancelledByName?" par "+r.cancelledByName:""}{r.cancelledAt?.seconds?" le "+new Date(r.cancelledAt.seconds*1000).toLocaleString("fr-FR"):""}.</div>}
+          {r.status==="annule"&&<div style={{background:"#fee2e2",color:"#b91c1c",borderRadius:8,padding:"8px 12px",fontSize:12,fontWeight:600,marginBottom:12}}>🚫 Ce bon d'entrée a été annulé{r.cancelledByName?" par "+r.cancelledByName:""}{r.cancelledAt?.seconds?" le "+new Date(r.cancelledAt.seconds*1000).toLocaleString("fr-FR"):""}.</div>}
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            {r.status!=="annule"&&can(currentUser,"receptions","w")&&<button onClick={()=>{setEditing(r.id);setForm({...r});setShow(true);setSelected(null);}} style={{...btn(),background:"#f0fdf4",color:"#059669",border:"1px solid #86efac",fontSize:12}}>✏️ Modifier</button>}
+            {r.status!=="annule"&&can(currentUser,"entrees-fonct","w")&&<button onClick={()=>{setEditing(r.id);setForm({...r});setShow(true);setSelected(null);}} style={{...btn(),background:"#f0fdf4",color:"#059669",border:"1px solid #86efac",fontSize:12}}>✏️ Modifier</button>}
             <button onClick={()=>printReception(r)} style={{...btn(),background:"#fef3c7",color:"#92400e",border:"1px solid #fcd34d",fontSize:12}}>🖨️ Imprimer</button>
-            {r.status!=="annule"&&can(currentUser,"receptions","w")&&<button onClick={()=>{setCancelError("");setCancelling(r);}} style={{...btn(),background:"#fee2e2",color:"#ef4444",border:"1px solid #fca5a5",fontSize:12}}>🚫 Annuler</button>}
+            {r.status!=="annule"&&can(currentUser,"entrees-fonct","w")&&<button onClick={()=>{setCancelError("");setCancelling(r);}} style={{...btn(),background:"#fee2e2",color:"#ef4444",border:"1px solid #fca5a5",fontSize:12}}>🚫 Annuler</button>}
           </div>
         </div>
-        <Modal open={!!cancelling} onClose={()=>setCancelling(null)} title="🚫 Annuler ce bon de réception ?">
+        <Modal open={!!cancelling} onClose={()=>setCancelling(null)} title="🚫 Annuler ce bon d'entrée ?">
           {cancelling&&(
             <div>
               <div style={{fontSize:13,color:"#374151",marginBottom:12}}>
@@ -303,7 +303,7 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
               {cancelError&&<Alert type="warn">{cancelError}</Alert>}
               <div style={{display:"flex",gap:8,marginTop:12}}>
                 <button onClick={async()=>{
-                  try{ await store.cancelReception(cancelling.id); setCancelling(null); setSelected(null); }
+                  try{ await store.cancelEntreeFonct(cancelling.id); setCancelling(null); setSelected(null); }
                   catch(e){ setCancelError(e.message); }
                 }} style={{...btn(),background:"#ef4444",color:"white",flex:1,padding:10}}>🚫 Confirmer l'annulation</button>
                 <button onClick={()=>setCancelling(null)} style={{...btn(),background:"#f1f5f9",color:"#374151",padding:10}}>Retour</button>
@@ -317,8 +317,8 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
 
   return(
     <div style={{padding:0}}>
-      <PageHeader pageId="receptions" title="📦 Réceptions Service" subtitle={activeSupplier?.name||"Tous fournisseurs"}>
-        {can(currentUser,"receptions","w")&&<button onClick={openNew} style={{...btn(),background:"rgba(255,255,255,0.15)",color:"white",border:"1px solid rgba(255,255,255,0.3)",fontSize:12}}>+ Nouveau bon</button>}
+      <PageHeader pageId="entrees-fonct" title="📦 Bon d'Entrée (Fonctionnement)" subtitle={activeSupplier?.name||"Tous fournisseurs"}>
+        {can(currentUser,"entrees-fonct","w")&&<button onClick={openNew} style={{...btn(),background:"rgba(255,255,255,0.15)",color:"white",border:"1px solid rgba(255,255,255,0.3)",fontSize:12}}>+ Nouveau bon</button>}
       </PageHeader>
       <div style={{padding:16}}>
         {msg&&<Alert type={msg.startsWith("✅")?"success":"warn"}>{msg}</Alert>}
@@ -326,7 +326,7 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
         {/* Formulaire */}
         {show&&(
           <div style={{...card,marginBottom:14,border:"2px solid #059669"}}>
-            <div style={{fontWeight:700,fontSize:14,marginBottom:12,color:"#065f46"}}>📦 {editing?"Modifier":"Nouveau"} Bon de Réception</div>
+            <div style={{fontWeight:700,fontSize:14,marginBottom:12,color:"#065f46"}}>📦 {editing?"Modifier":"Nouveau"} Bon d'Entrée (Fonctionnement)</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
               <div><label style={label}>Référence</label><input style={input} value={form.reference} onChange={e=>setForm(f=>({...f,reference:e.target.value}))}/></div>
               <div><label style={label}>Date</label><input style={{...input}} type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}/></div>
@@ -425,7 +425,7 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
             <div style={{display:"flex",gap:8}}>
               <button onClick={save} disabled={saving||form.items.length===0}
                 style={{...btn(),background:form.items.length===0?"#cbd5e1":"#059669",color:"white",flex:1,padding:10}}>
-                {saving?"⏳ Enregistrement...":"✅ Valider le bon de réception"}
+                {saving?"⏳ Enregistrement...":"✅ Valider le bon d'entrée"}
               </button>
               <button onClick={()=>{setShow(false);setEditing(null);}} style={{...btn(),background:"#f1f5f9",color:"#374151",padding:10}}>Annuler</button>
             </div>
@@ -451,7 +451,7 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
                 {visibleSuppliers(currentUser,store.suppliers).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>}
-            <div style={{marginBottom:8}}><label style={label}>Référence</label><input style={input} value={filters.reference} onChange={e=>setFilters(f=>({...f,reference:e.target.value}))} placeholder="Ex: BON-REC-..."/></div>
+            <div style={{marginBottom:8}}><label style={label}>Référence</label><input style={input} value={filters.reference} onChange={e=>setFilters(f=>({...f,reference:e.target.value}))} placeholder="Ex: BON-ENT-FONCT-..."/></div>
             <div style={{marginBottom:8}}><label style={label}>Créé par</label>
               <select style={input} value={filters.createdBy} onChange={e=>setFilters(f=>({...f,createdBy:e.target.value}))}>
                 <option value="">— Tous —</option>
@@ -467,7 +467,7 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
             </div>
           </div>
         )}
-        {receptions.length===0&&!show&&<div style={{...card,textAlign:"center",padding:40,color:"#94a3b8"}}>{hasActiveFilters?"Aucun bon de réception ne correspond à ce filtre.":"Aucun bon de réception."}</div>}
+        {receptions.length===0&&!show&&<div style={{...card,textAlign:"center",padding:40,color:"#94a3b8"}}>{hasActiveFilters?"Aucun bon d'entrée (fonctionnement) ne correspond à ce filtre.":"Aucun bon d'entrée (fonctionnement)."}</div>}
         {receptions.map(r=>{
           const total=r.items?.reduce((s,i)=>s+Number(i.qty||0)*Number(i.unitPrice||0),0)||0;
           return(
@@ -491,7 +491,7 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
           );
         })}
       </div>
-      <Modal open={!!cancelling} onClose={()=>setCancelling(null)} title="🚫 Annuler ce bon de réception ?">
+      <Modal open={!!cancelling} onClose={()=>setCancelling(null)} title="🚫 Annuler ce bon d'entrée ?">
         {cancelling&&(
           <div>
             <div style={{fontSize:13,color:"#374151",marginBottom:12}}>
@@ -500,7 +500,7 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
             {cancelError&&<Alert type="warn">{cancelError}</Alert>}
             <div style={{display:"flex",gap:8,marginTop:12}}>
               <button onClick={async()=>{
-                try{ await store.cancelReception(cancelling.id); setCancelling(null); setSelected(null); }
+                try{ await store.cancelEntreeFonct(cancelling.id); setCancelling(null); setSelected(null); }
                 catch(e){ setCancelError(e.message); }
               }} style={{...btn(),background:"#ef4444",color:"white",flex:1,padding:10}}>🚫 Confirmer l'annulation</button>
               <button onClick={()=>setCancelling(null)} style={{...btn(),background:"#f1f5f9",color:"#374151",padding:10}}>Retour</button>

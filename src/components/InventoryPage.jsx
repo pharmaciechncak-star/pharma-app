@@ -155,6 +155,7 @@ export function InventoryPage({store,activeSupplier,currentUser}){
         price: Number(np.unitPrice||0),
         unit: np.unit||"Boîte",
         supplierId: activeSupplier?.id||"",
+        circuits: ["vente"],
       });
       createdIds[np.productName] = id;
     }

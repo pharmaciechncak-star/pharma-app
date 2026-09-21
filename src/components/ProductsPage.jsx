@@ -12,7 +12,26 @@ import { LOGO_B64 } from "../images";
 import { monthLabel } from "../constants";
 
 export function ProductsPage({store,activeSupplier,currentUser}){
+  // Un gestionnaire/pharmacien (circuit vente) ne doit pas pouvoir marquer un
+  // produit "Fonctionnement" — c'est le domaine réservé au Comptable Matière,
+  // et inversement. L'admin principal seul peut toucher aux deux.
+  const isFonctRole = currentUser?.role==="comptable_matiere"||currentUser?.role==="comptable_matiere_principal";
+  const canEditVenteCircuit = currentUser?.role==="admin" || !isFonctRole;
+  const canEditFonctCircuit = currentUser?.role==="admin" || isFonctRole;
   const [showAdd,setShowAdd]=useState(false);
+  const [showTypesManager,setShowTypesManager]=useState(false);
+  const [showCircuitsManager,setShowCircuitsManager]=useState(false);
+  const [newCircuitKey,setNewCircuitKey]=useState("");
+  const [newCircuitLabel,setNewCircuitLabel]=useState("");
+  const [newCircuitIcon,setNewCircuitIcon]=useState("📁");
+  const [circuitError,setCircuitError]=useState("");
+  const [editingCircuitId,setEditingCircuitId]=useState(null);
+  const [editingCircuitLabel,setEditingCircuitLabel]=useState("");
+  const [deletingCircuit,setDeletingCircuit]=useState(null);
+  const [newTypeName,setNewTypeName]=useState("");
+  const [editingTypeId,setEditingTypeId]=useState(null);
+  const [editingTypeName,setEditingTypeName]=useState("");
+  const [deletingType,setDeletingType]=useState(null);
   const [editing,setEditing]=useState(null);
   const [form,setForm]=useState({name:"",price:"",unit:"Boîte",supplierId:""});
   const [printModal,setPrintModal]=useState(false);
@@ -40,18 +59,29 @@ export function ProductsPage({store,activeSupplier,currentUser}){
 
   const openAdd=()=>{
     setEditing(null);
-    setForm({name:"",price:"",unit:"",supplierId:activeSupplier?.id||"",barcode1:"",barcode2:"",barcode3:"",reorderThreshold:""});
+    setForm({name:"",price:"",unit:"",supplierId:activeSupplier?.id||"",barcode1:"",barcode2:"",barcode3:"",reorderThreshold:"",circuits:[isFonctRole?"fonctionnement":"vente"],compteNumero:"",typeFonct:""});
     setShowAdd(true);
   };
   const openEdit=(p)=>{
     setEditing(p.id);
-    setForm({name:p.name,price:String(p.price||""),unit:p.unit||"",supplierId:p.supplierId,barcode1:p.barcode1||"",barcode2:p.barcode2||"",barcode3:p.barcode3||"",reorderThreshold:p.reorderThreshold!=null?String(p.reorderThreshold):""});
+    setForm({name:p.name,price:String(p.price||""),unit:p.unit||"",supplierId:p.supplierId,barcode1:p.barcode1||"",barcode2:p.barcode2||"",barcode3:p.barcode3||"",reorderThreshold:p.reorderThreshold!=null?String(p.reorderThreshold):"",circuits:(p.circuits&&p.circuits.length)?p.circuits:["vente"],compteNumero:p.compteNumero||"",typeFonct:p.typeFonct||""});
     setShowAdd(true);
   };
   const openDuplicate=(p)=>{
     setEditing(null);
-    setForm({name:p.name,price:String(p.price||""),unit:p.unit||"",supplierId:activeSupplier?.id||p.supplierId,barcode1:"",barcode2:"",barcode3:"",reorderThreshold:p.reorderThreshold!=null?String(p.reorderThreshold):""});
+    setForm({name:p.name,price:String(p.price||""),unit:p.unit||"",supplierId:activeSupplier?.id||p.supplierId,barcode1:"",barcode2:"",barcode3:"",reorderThreshold:p.reorderThreshold!=null?String(p.reorderThreshold):"",circuits:(p.circuits&&p.circuits.length)?p.circuits:["vente"],compteNumero:p.compteNumero||"",typeFonct:p.typeFonct||""});
     setShowAdd(true);
+  };
+  const toggleCircuit = (c) => {
+    // Sécurité : ignore un clic sur un circuit que ce rôle n'a pas le droit
+    // de gérer (case déjà désactivée visuellement, ceci est le filet).
+    if (c==="vente" && !canEditVenteCircuit) return;
+    if (c==="fonctionnement" && !canEditFonctCircuit) return;
+    if (c!=="vente" && c!=="fonctionnement" && currentUser?.role!=="admin") return; // circuits additionnels : admin uniquement
+    setForm(f=>{
+      const cur=f.circuits||["vente"];
+      return {...f, circuits: cur.includes(c)?cur.filter(x=>x!==c):[...cur,c]};
+    });
   };
   const save=()=>{
     const data={...form,price:Number(form.price)||0,unit:form.unit||"Boîte",supplierId:form.supplierId||activeSupplier?.id||"",reorderThreshold:form.reorderThreshold===""?null:Number(form.reorderThreshold)};
@@ -106,6 +136,7 @@ export function ProductsPage({store,activeSupplier,currentUser}){
           price:      Number(row.unitPrice||0),
           unit:       row.unit || "Boîte",
           supplierId: activeSupplier?.id || "",
+          circuits:   [isFonctRole?"fonctionnement":"vente"],
         });
         added++;
       } else {
@@ -247,6 +278,46 @@ export function ProductsPage({store,activeSupplier,currentUser}){
         </div>
 
         <div style={{marginBottom:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <label style={label}>Circuit(s) <span style={{fontWeight:400,color:"#94a3b8",fontSize:10}}>(où ce produit est visible)</span></label>
+            {currentUser?.role==="admin"&&<button onClick={()=>setShowCircuitsManager(true)} style={{...btn(),background:"#f1f5f9",color:"#374151",border:"1px solid #e2e8f0",fontSize:10,padding:"3px 8px"}}>⚙️ Gérer les circuits</button>}
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {[
+              ["vente","💊 Vente",canEditVenteCircuit],
+              ["fonctionnement","📦 Fonctionnement",canEditFonctCircuit],
+              // Circuits additionnels (préparation pour de futures comptabilités)
+              // — éditables par l'admin principal uniquement pour l'instant.
+              ...(store.circuitsRegistry||[]).map(c=>[c.key, c.icon+" "+c.label, currentUser?.role==="admin"]),
+            ].map(([c,lb,editable])=>(
+              <label key={c} title={editable?"":"Réservé à l'autre domaine — vous ne pouvez pas le modifier"}
+                style={{display:"flex",alignItems:"center",gap:5,fontSize:12,background:(form.circuits||["vente"]).includes(c)?"#eef2ff":"white",border:"1px solid "+((form.circuits||["vente"]).includes(c)?"#818cf8":"#e2e8f0"),borderRadius:6,padding:"6px 10px",cursor:editable?"pointer":"not-allowed",flex:1,minWidth:120,opacity:editable?1:0.5}}>
+                <input type="checkbox" checked={(form.circuits||["vente"]).includes(c)} onChange={()=>toggleCircuit(c)} disabled={!editable}/>
+                {lb}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div style={{marginBottom:16}}>
+          <label style={label}>N° Compte <span style={{fontWeight:400,color:"#94a3b8",fontSize:10}}>(nomenclature comptable — optionnel, ex: 28.01.408)</span></label>
+          <input style={input} value={form.compteNumero||""} onChange={e=>setForm(f=>({...f,compteNumero:e.target.value}))} placeholder="Ex: 28.01.408"/>
+        </div>
+
+        {(form.circuits||[]).includes("fonctionnement")&&(
+          <div style={{marginBottom:16}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <label style={label}>Type <span style={{fontWeight:400,color:"#94a3b8",fontSize:10}}>(classement — optionnel)</span></label>
+              {isFonctRole&&<button onClick={()=>setShowTypesManager(true)} style={{...btn(),background:"#fff7ed",color:"#9a3412",border:"1px solid #fdba74",fontSize:10,padding:"3px 8px"}}>⚙️ Gérer les types</button>}
+            </div>
+            <select style={input} value={form.typeFonct||""} onChange={e=>setForm(f=>({...f,typeFonct:e.target.value}))}>
+              <option value="">— Aucun —</option>
+              {(store.productTypesFonct||[]).map(t=><option key={t.id} value={t.name}>{t.name}</option>)}
+            </select>
+          </div>
+        )}
+
+        <div style={{marginBottom:16}}>
           <label style={label}>Seuil de réapprovisionnement <span style={{fontWeight:400,color:"#94a3b8",fontSize:10}}>(optionnel)</span></label>
           <input style={input} type="number" min="0" value={form.reorderThreshold||""}
             onChange={e=>setForm(f=>({...f,reorderThreshold:e.target.value}))}
@@ -366,6 +437,9 @@ export function ProductsPage({store,activeSupplier,currentUser}){
                   <div style={{fontWeight:700,color:"#1e293b",fontSize:13}}>{p.name}</div>
                   <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{p.unit||"Boîte"} · {Number(p.price||0).toLocaleString("fr-FR")} FCFA</div>
                   <div style={{fontSize:11,color:"#94a3b8"}}>{getSupplierName(p.supplierId)}</div>
+                  <div style={{fontSize:10,color:"#b45309",fontWeight:600}}>
+                    {(p.circuits&&p.circuits.length?p.circuits:["vente"]).map(c=>c==="vente"?"💊 Vente":"📦 Fonctionnement").join(" · ")}
+                  </div>
                   {p.createdByName&&<div style={{fontSize:10,color:"#cbd5e1"}}>👤 {p.createdByName}</div>}
                 </div>
                 <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:5,flexShrink:0}}>
@@ -383,6 +457,73 @@ export function ProductsPage({store,activeSupplier,currentUser}){
         })}
         {filtered.length===0&&<div style={{...card,textAlign:"center",padding:40,color:"#94a3b8"}}>Aucun produit trouvé.</div>}
       </div>
+
+      <Modal open={showTypesManager} onClose={()=>{setShowTypesManager(false);setEditingTypeId(null);setNewTypeName("");}} title="⚙️ Gérer les types">
+        <div style={{fontSize:11,color:"#64748b",marginBottom:12}}>Liste libre — ajoutez, renommez ou supprimez les types que vous utilisez pour classer vos produits.</div>
+        <div style={{display:"flex",gap:6,marginBottom:14}}>
+          <input style={input} placeholder="Nouveau type..." value={newTypeName} onChange={e=>setNewTypeName(e.target.value)}
+            onKeyDown={async e=>{ if(e.key==="Enter" && newTypeName.trim()){ await store.addProductTypeFonct(newTypeName.trim()); setNewTypeName(""); } }}/>
+          <button onClick={async()=>{ if(newTypeName.trim()){ await store.addProductTypeFonct(newTypeName.trim()); setNewTypeName(""); } }}
+            style={{...btn(),background:"#9a3412",color:"white",fontSize:12,padding:"8px 14px"}}>+ Ajouter</button>
+        </div>
+        {(store.productTypesFonct||[]).length===0&&<div style={{fontSize:12,color:"#94a3b8",textAlign:"center",padding:10}}>Aucun type créé.</div>}
+        {(store.productTypesFonct||[]).map(t=>(
+          <div key={t.id} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 0",borderBottom:"1px solid #f1f5f9"}}>
+            {editingTypeId===t.id?(
+              <>
+                <input style={{...input,flex:1,padding:"5px 8px"}} value={editingTypeName} onChange={e=>setEditingTypeName(e.target.value)} autoFocus/>
+                <button onClick={async()=>{ if(editingTypeName.trim()){ await store.renameProductTypeFonct(t.id,editingTypeName.trim()); } setEditingTypeId(null); }} style={{...btn(),background:"#dcfce7",color:"#166534",fontSize:11,padding:"4px 8px"}}>✓</button>
+                <button onClick={()=>setEditingTypeId(null)} style={{...btn(),background:"#f1f5f9",color:"#64748b",fontSize:11,padding:"4px 8px"}}>✕</button>
+              </>
+            ):(
+              <>
+                <div style={{flex:1,fontSize:12,fontWeight:600}}>{t.name}</div>
+                <button onClick={()=>{setEditingTypeId(t.id);setEditingTypeName(t.name);}} style={{...btn(),background:"#f0f9ff",color:"#0891b2",fontSize:11,padding:"4px 8px"}}>✏️</button>
+                <button onClick={()=>setDeletingType(t)} style={{...btn(),background:"#fee2e2",color:"#ef4444",fontSize:11,padding:"4px 8px"}}>🗑️</button>
+              </>
+            )}
+          </div>
+        ))}
+      </Modal>
+      <ConfirmDelete open={!!deletingType} onClose={()=>setDeletingType(null)}
+        label={deletingType?.name||""}
+        onConfirm={async()=>{ await store.deleteProductTypeFonct(deletingType.id); setDeletingType(null); }}/>
+
+      <Modal open={showCircuitsManager} onClose={()=>{setShowCircuitsManager(false);setEditingCircuitId(null);setNewCircuitKey("");setNewCircuitLabel("");setCircuitError("");}} title="⚙️ Gérer les circuits">
+        <div style={{fontSize:11,color:"#64748b",marginBottom:12}}>« Vente » et « Fonctionnement » sont les circuits existants (avec leurs propres pages). Ajoutez ici un circuit supplémentaire si une nouvelle comptabilité doit un jour différencier ses propres produits — la case à cocher apparaîtra immédiatement sur chaque produit.</div>
+        {circuitError&&<div style={{background:"#fee2e2",color:"#b91c1c",borderRadius:8,padding:"6px 10px",fontSize:11,marginBottom:10}}>{circuitError}</div>}
+        <div style={{display:"flex",gap:6,marginBottom:14}}>
+          <input style={{...input,width:50,textAlign:"center"}} value={newCircuitIcon} onChange={e=>setNewCircuitIcon(e.target.value)} placeholder="📁"/>
+          <input style={input} placeholder="Clé (ex: administratif)" value={newCircuitKey} onChange={e=>setNewCircuitKey(e.target.value)}/>
+          <input style={input} placeholder="Libellé affiché" value={newCircuitLabel} onChange={e=>setNewCircuitLabel(e.target.value)}/>
+          <button onClick={async()=>{
+            setCircuitError("");
+            try{ await store.addCircuit(newCircuitKey,newCircuitLabel,newCircuitIcon); setNewCircuitKey("");setNewCircuitLabel("");setNewCircuitIcon("📁"); }
+            catch(e){ setCircuitError(e.message); }
+          }} style={{...btn(),background:"#374151",color:"white",fontSize:12,padding:"8px 14px",flexShrink:0}}>+ Ajouter</button>
+        </div>
+        {(store.circuitsRegistry||[]).length===0&&<div style={{fontSize:12,color:"#94a3b8",textAlign:"center",padding:10}}>Aucun circuit supplémentaire créé.</div>}
+        {(store.circuitsRegistry||[]).map(c=>(
+          <div key={c.id} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 0",borderBottom:"1px solid #f1f5f9"}}>
+            {editingCircuitId===c.id?(
+              <>
+                <input style={{...input,flex:1,padding:"5px 8px"}} value={editingCircuitLabel} onChange={e=>setEditingCircuitLabel(e.target.value)} autoFocus/>
+                <button onClick={async()=>{ if(editingCircuitLabel.trim()){ await store.renameCircuit(c.id,editingCircuitLabel.trim(),c.icon); } setEditingCircuitId(null); }} style={{...btn(),background:"#dcfce7",color:"#166534",fontSize:11,padding:"4px 8px"}}>✓</button>
+                <button onClick={()=>setEditingCircuitId(null)} style={{...btn(),background:"#f1f5f9",color:"#64748b",fontSize:11,padding:"4px 8px"}}>✕</button>
+              </>
+            ):(
+              <>
+                <div style={{flex:1,fontSize:12,fontWeight:600}}>{c.icon} {c.label} <span style={{fontWeight:400,color:"#94a3b8"}}>({c.key})</span></div>
+                <button onClick={()=>{setEditingCircuitId(c.id);setEditingCircuitLabel(c.label);}} style={{...btn(),background:"#f0f9ff",color:"#0891b2",fontSize:11,padding:"4px 8px"}}>✏️</button>
+                <button onClick={()=>setDeletingCircuit(c)} style={{...btn(),background:"#fee2e2",color:"#ef4444",fontSize:11,padding:"4px 8px"}}>🗑️</button>
+              </>
+            )}
+          </div>
+        ))}
+      </Modal>
+      <ConfirmDelete open={!!deletingCircuit} onClose={()=>setDeletingCircuit(null)}
+        label={deletingCircuit?.label||""}
+        onConfirm={async()=>{ await store.deleteCircuit(deletingCircuit.id); setDeletingCircuit(null); }}/>
     </div>
   );
 }

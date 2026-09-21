@@ -46,6 +46,20 @@ export function Sidebar({open,onClose,page,onNav,user,unread,activeSupplier,onCh
       { id:"inventaire-stock2", label:"Inventaire Stock 2", icon:"🗒️", perm:"inventaire-stock2" },
       { id:"statistiques",    label:"Statistiques",    icon:"📈", perm:"statistiques" },
     ]},
+    { id:"comptabilite-matieres", label:"Comptabilité Matières", icon:"🧾", items:[
+      { id:"entrees-fonct", label:"Bon d'Entrée", icon:"📥", perm:"entrees-fonct" },
+      { id:"sorties-fonct", label:"Bon de Sortie", icon:"📤", perm:"sorties-fonct" },
+      { id:"stock-fonct",   label:"Stock Fonctionnement", icon:"📊", perm:"stock-fonct" },
+      { id:"inventaire-fonct", label:"Inventaire", icon:"🗒️", perm:"inventaire-fonct" },
+      { id:"statistiques-fonct", label:"Statistiques", icon:"📚", perm:"statistiques-fonct" },
+    ]},
+    { id:"comptabilite-non-pharma", label:"Comptabilité Non-Pharma.", icon:"🧰", items:[
+      { id:"entrees-np", label:"Bon d'Entrée", icon:"📥", perm:"entrees-np" },
+      { id:"sorties-np", label:"Bon de Sortie", icon:"📤", perm:"sorties-np" },
+      { id:"stock-np",   label:"Stock", icon:"📊", perm:"stock-np" },
+      { id:"inventaire-np", label:"Inventaire", icon:"🗒️", perm:"inventaire-np" },
+      { id:"statistiques-np", label:"Statistiques", icon:"📚", perm:"statistiques-np" },
+    ]},
     { id:"admin", label:"Administration", icon:"⚙️", items:[
       { id:"utilisateurs", label:"Utilisateurs",      icon:"👥", perm:"utilisateurs" },
       { id:"activites",    label:"Journal d'activité",icon:"📜", adminOnly:true },

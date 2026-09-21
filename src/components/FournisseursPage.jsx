@@ -8,13 +8,19 @@ import { Badge } from "./ui/FormControls";
 export function FournisseursPage({store,activeSupplier,onActivate,currentUser}){
   const [show,setShow]=useState(false);
   const [editing,setEditing]=useState(null);
-  const [form,setForm]=useState({name:"",email:"",phone:"",address:"",allowedServices:[]});
+  const [form,setForm]=useState({name:"",email:"",phone:"",address:"",allowedServices:[],circuits:["vente"]});
   const [deletingFour,setDeletingFour]=useState(null);
 
   const open=(s=null)=>{
     setEditing(s?.id||null);
-    setForm(s?{name:s.name,email:s.email,phone:s.phone,address:s.address,allowedServices:s.allowedServices||[]}:{name:"",email:"",phone:"",address:"",allowedServices:[]});
+    setForm(s?{name:s.name,email:s.email,phone:s.phone,address:s.address,allowedServices:s.allowedServices||[],circuits:(s.circuits&&s.circuits.length)?s.circuits:["vente"]}:{name:"",email:"",phone:"",address:"",allowedServices:[],circuits:["vente"]});
     setShow(true);
+  };
+  const toggleCircuit = (c) => {
+    setForm(f=>{
+      const cur=f.circuits||[];
+      return {...f, circuits: cur.includes(c)?cur.filter(x=>x!==c):[...cur,c]};
+    });
   };
   const toggleAllowedService = (sid) => {
     setForm(f=>{
@@ -54,6 +60,17 @@ export function FournisseursPage({store,activeSupplier,onActivate,currentUser}){
         {[["Nom","name","Ex: PharmaCorp"],["Email","email","contact@..."],["Téléphone","phone","01 23..."],["Adresse","address","12 rue..."]].map(([lb,field,ph])=>(
           <div key={field} style={{marginBottom:12}}><label style={label}>{lb}</label><input style={input} value={form[field]||""} onChange={e=>setForm(f=>({...f,[field]:e.target.value}))} placeholder={ph}/></div>
         ))}
+        <div style={{marginBottom:12}}>
+          <label style={label}>Circuit(s) <span style={{fontWeight:400,color:"#94a3b8",fontSize:10}}>(quel(s) circuit(s) ce fournisseur concerne)</span></label>
+          <div style={{display:"flex",gap:8}}>
+            {[["vente","💊 Vente"],["fonctionnement","📦 Fonctionnement"]].map(([c,lb])=>(
+              <label key={c} style={{display:"flex",alignItems:"center",gap:5,fontSize:12,background:(form.circuits||[]).includes(c)?"#eef2ff":"white",border:"1px solid "+((form.circuits||[]).includes(c)?"#818cf8":"#e2e8f0"),borderRadius:6,padding:"6px 10px",cursor:"pointer",flex:1}}>
+                <input type="checkbox" checked={(form.circuits||[]).includes(c)} onChange={()=>toggleCircuit(c)}/>
+                {lb}
+              </label>
+            ))}
+          </div>
+        </div>
         <div style={{marginBottom:12}}>
           <label style={label}>Services autorisés <span style={{fontWeight:400,color:"#94a3b8",fontSize:10}}>(cochez chaque service qui doit voir ces produits)</span></label>
           <div style={{display:"flex",flexWrap:"wrap",gap:6,background:"#f8fafc",borderRadius:8,padding:10,maxHeight:120,overflowY:"auto"}}>
@@ -95,6 +112,9 @@ export function FournisseursPage({store,activeSupplier,onActivate,currentUser}){
               <div style={{fontSize:12,color:"#64748b"}}>{s.email}</div>
               <div style={{fontSize:12,color:"#64748b"}}>{s.phone} · {s.address}</div>
               <div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>{depots.length} dépôt(s) · {prods.length} produit(s)</div>
+              <div style={{fontSize:11,color:"#b45309",marginTop:2,fontWeight:600}}>
+                {(s.circuits&&s.circuits.length?s.circuits:["vente"]).map(c=>c==="vente"?"💊 Vente":"📦 Fonctionnement").join(" · ")}
+              </div>
               <div style={{fontSize:11,color:"#7c3aed",marginTop:4}}>
                 🏥 {(s.allowedServices&&s.allowedServices.length>0) ? s.allowedServices.map(sid=>store.services.find(sv=>sv.id===sid)?.name).filter(Boolean).join(", ") : "Aucun service (invisible pour les services)"}
               </div>

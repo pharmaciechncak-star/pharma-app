@@ -71,3 +71,25 @@ export function productAllowedForService(product, serviceId, suppliers) {
   const supplier = (suppliers || []).find(s => s.id === product.supplierId);
   return (supplier?.allowedServices || []).includes(serviceId);
 }
+
+// Un produit ou un fournisseur peut être visible dans le circuit "vente"
+// (existant depuis le début), le circuit "fonctionnement" (Comptabilité
+// Matières), ou les deux — champ `circuits: string[]` sur le document.
+// Rétrocompatibilité : tout document créé avant l'introduction de ce champ
+// (circuits absent/vide) est traité comme "vente" uniquement, pour ne rien
+// casser de l'existant — le circuit fonctionnement est toujours un choix
+// explicite (opt-in), jamais un repli implicite.
+export function isVisibleInCircuit(entity, circuit) {
+  const circuits = entity?.circuits;
+  if (!circuits || circuits.length === 0) return circuit === "vente";
+  return circuits.includes(circuit);
+}
+
+// Un produit n'est réellement utilisable dans un circuit que si LUI et SON
+// FOURNISSEUR y sont tous les deux visibles.
+export function productVisibleInCircuit(product, circuit, suppliers) {
+  if (!isVisibleInCircuit(product, circuit)) return false;
+  const supplier = (suppliers || []).find(s => s.id === product?.supplierId);
+  if (!supplier) return true; // fournisseur inconnu/non chargé : ne bloque pas sur ce critère
+  return isVisibleInCircuit(supplier, circuit);
+}

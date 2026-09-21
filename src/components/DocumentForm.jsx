@@ -94,7 +94,7 @@ export function DocumentForm({type,store,activeSupplier,activeDepot,ai,onNav,cur
     const newProds=selectedRows.filter(r=>r.isNew&&r.productName?.trim());
     let newlyCreated=[];
     for(const np of newProds){
-      const id=await store.addProduct({name:np.productName.trim(),price:Number(np.unitPrice||0),unit:np.unit||"Boîte",supplierId:activeSupplier?.id||""});
+      const id=await store.addProduct({name:np.productName.trim(),price:Number(np.unitPrice||0),unit:np.unit||"Boîte",supplierId:activeSupplier?.id||"",circuits:["vente"]});
       newlyCreated.push({...np,productId:id});
     }
     const items=selectedRows.map(r=>{
@@ -102,7 +102,15 @@ export function DocumentForm({type,store,activeSupplier,activeDepot,ai,onNav,cur
       const knownProd=suppProds.find(p=>p.id===prodId);
       return{productId:prodId,qty:String(r.qty||""),unitPrice:r.unitPrice?String(r.unitPrice):knownProd?.price?String(knownProd.price):"",lot:r.lot||"",expiry:r.expiry||""};
     }).filter(it=>it.productId);
-    setForm(f=>({...f,reference:bonScanResult?.reference||f.reference,notes:"Extrait du document scanné",items:items.length>0?items:f.items}));
+    setForm(f=>{
+      const merged=[...f.items];
+      for(const ni of items){
+        const idx=merged.findIndex(x=>x.productId===ni.productId);
+        if(idx>=0) merged[idx]={...merged[idx],qty:String((Number(merged[idx].qty)||0)+(Number(ni.qty)||0))};
+        else merged.push(ni);
+      }
+      return {...f,reference:bonScanResult?.reference||f.reference,notes:"Extrait du document scanné",items: merged.length>0?merged:f.items};
+    });
     setScanMsg("✅ "+items.length+" article(s) importé(s)"+(newProds.length>0?" · "+newProds.length+" nouveau(x) produit(s) créé(s)":""));
     setTimeout(()=>setScanMsg(""),8000);
     setBonScanResult(null);
