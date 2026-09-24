@@ -446,7 +446,7 @@ export function ConsommationsPage({store,currentUser}){
           </div>
         ))}
       </div>
-      <PrintModal open={!!printSel} onClose={()=>setPrintSel(null)} title="Bon de Consommation">
+      <PrintModal open={!!printSel} onClose={()=>setPrintSel(null)} title="Bon de Consommation" signatories={["Le Cardiologue"]}>
         <ConsumptionPrint c={printSel}/>
       </PrintModal>
 

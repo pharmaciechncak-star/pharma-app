@@ -154,7 +154,7 @@ export function ControleTransfertPage({store,activeSupplier,currentUser}){
           </div>
         ))}
       </div>
-      <PrintModal open={!!printSel} onClose={()=>setPrintSel(null)} title="Bon de Transfert">
+      <PrintModal open={!!printSel} onClose={()=>setPrintSel(null)} title="Bon de Transfert" signatories={["Le Pharmacien","Le Gestionnaire de stock","Le Service bénéficiaire"]}>
         <TransferPrint t={printSel}/>
       </PrintModal>
       <Modal open={!!cancellingControl} onClose={()=>setCancellingControl(null)} title="🚫 Annuler cette réception ?">

@@ -9,9 +9,22 @@ import { Alert } from "../ui/FormControls";
 import { BarcodeScanner, ScanReviewModal } from "../ui/ScanReviewModal";
 import { Modal } from "../ui/Modal";
 import { scanDocumentWithAI } from "../../hooks/useAI";
+import { getComptaCircuits, availableCircuits } from "../../helpers/circuitsConfig";
+import { CircuitSelector } from "../ui/CircuitSelector";
 
-export function EntreesFonctPage({store,activeSupplier,currentUser}){
+export function EntreesComptaPage({store,activeSupplier,currentUser}){
+  const COMPTA_CIRCUITS = getComptaCircuits(store);
+  const available = availableCircuits(currentUser,"entrees");
+  const [circuit,setCircuit] = useState(available[0]||"fonctionnement");
+  const cfg = COMPTA_CIRCUITS[circuit];
+  const entreesData = circuit==="fonctionnement" ? (store.entreesFonct||[]) : (store.entreesNp||[]);
+  const addEntree = circuit==="fonctionnement" ? store.addEntreeFonct : store.addEntreeNp;
+  const updateEntree = circuit==="fonctionnement" ? store.updateEntreeFonct : store.updateEntreeNp;
+  const cancelEntree = circuit==="fonctionnement" ? store.cancelEntreeFonct : store.cancelEntreeNp;
+  const permSection = circuit==="fonctionnement" ? "entrees-fonct" : "entrees-np";
   const [show,setShow]=useState(false);
+  const [pvGenerating,setPvGenerating]=useState(false);
+  const [pvMsg,setPvMsg]=useState("");
   const [selected,setSelected]=useState(null);
   const [editing,setEditing]=useState(null);
   const [form,setForm]=useState({reference:"",supplierId:"",supplierName:"",date:new Date().toISOString().split("T")[0],items:[],notes:"",attachmentUrl:"",attachmentName:"",attachmentType:""});
@@ -35,11 +48,11 @@ export function EntreesFonctPage({store,activeSupplier,currentUser}){
   const searchRef=useRef(null);
   const lastQtyRef=useRef(null);
 
-  const suppProds=(activeSupplier?store.products.filter(p=>p.supplierId===activeSupplier.id):store.products.filter(p=>hasSupplierAccess(currentUser,p.supplierId))).filter(p=>productVisibleInCircuit(p,"fonctionnement",store.suppliers));
+  const suppProds=(activeSupplier?store.products.filter(p=>p.supplierId===activeSupplier.id):store.products.filter(p=>hasSupplierAccess(currentUser,p.supplierId))).filter(p=>productVisibleInCircuit(p,circuit,store.suppliers));
   const filtered=search.trim()
     ?suppProds.filter(p=>p.name.toLowerCase().includes(search.toLowerCase())||[p.barcode1,p.barcode2,p.barcode3].some(b=>b&&b.includes(search)))
     :suppProds;
-  const receptions=(store.entreesFonct||[]).filter(r=>activeSupplier?r.supplierId===activeSupplier.id:hasSupplierAccess(currentUser,r.supplierId))
+  const receptions=(entreesData||[]).filter(r=>activeSupplier?r.supplierId===activeSupplier.id:hasSupplierAccess(currentUser,r.supplierId))
     .filter(r=>{
       if (filters.dateFrom || filters.dateTo) {
         const d = r.createdAt?.seconds ? new Date(r.createdAt.seconds*1000) : null;
@@ -56,7 +69,7 @@ export function EntreesFonctPage({store,activeSupplier,currentUser}){
 
   const openNew=()=>{
     setEditing(null);
-    setForm({reference:"BON-ENT-FONCT-"+genId(),supplierId:activeSupplier?.id||"",supplierName:activeSupplier?.name||"",date:new Date().toISOString().split("T")[0],items:[],notes:"",attachmentUrl:"",attachmentName:"",attachmentType:""});
+    setForm({reference:`BON-ENT-${cfg.refPrefix}-`+genId(),supplierId:activeSupplier?.id||"",supplierName:activeSupplier?.name||"",date:new Date().toISOString().split("T")[0],items:[],notes:"",attachmentUrl:"",attachmentName:"",attachmentType:""});
     setAttachError("");
     setShow(true); setSelected(null);
   };
@@ -104,7 +117,7 @@ export function EntreesFonctPage({store,activeSupplier,currentUser}){
     const newProds = selectedRows.filter(r=>r.isNew && r.productName?.trim());
     let newlyCreated = [];
     for (const np of newProds) {
-      const id = await store.addProduct({name:np.productName.trim(), price:Number(np.unitPrice||0), unit:np.unit||"Boîte", supplierId:form.supplierId||activeSupplier?.id||"", circuits:["fonctionnement"]});
+      const id = await store.addProduct({name:np.productName.trim(), price:Number(np.unitPrice||0), unit:np.unit||"Boîte", supplierId:form.supplierId||activeSupplier?.id||"", circuits:[circuit]});
       newlyCreated.push({...np, productId:id});
     }
     const items = selectedRows.map(r=>{
@@ -161,10 +174,10 @@ export function EntreesFonctPage({store,activeSupplier,currentUser}){
     setSaving(true);
     try{
       if(editing){
-        await store.updateEntreeFonct(editing,{...form});
+        await updateEntree(editing,{...form});
         setMsg("✅ Bon d'entrée modifié !");
       } else {
-        await store.addEntreeFonct({...form});
+        await addEntree({...form});
         setMsg("✅ Bon d'entrée enregistré !");
       }
       setShow(false); setEditing(null);
@@ -188,7 +201,7 @@ export function EntreesFonctPage({store,activeSupplier,currentUser}){
     const total=r.items?.reduce((s,i)=>s+Number(i.qty||0)*Number(i.unitPrice||0),0)||0;
     const totalUnites=r.items?.reduce((s,i)=>s+Number(i.qty||0),0)||0;
     const html=
-      "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Bon d'entrée fonctionnement "+r.reference+"</title>"+
+      "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Bon d'entrée "+cfg.label+" "+r.reference+"</title>"+
       "<style>@page{size:A4;margin:1.5cm}*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:10px}"+
       ".ph{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #065f46;padding-bottom:8px;margin-bottom:6px}"+
       ".ent{flex:1;text-align:center;font-size:8.5px;line-height:1.8;color:#111;padding:0 8px}"+
@@ -223,7 +236,7 @@ export function EntreesFonctPage({store,activeSupplier,currentUser}){
           "<img src=\"" + chncakB64 + "\" style=\"width:65px;height:50px;object-fit:contain\"/>"+
         "</div>"+
       "</div>"+
-      "<div class=\"sub\">BON D'ENTRÉE (FONCTIONNEMENT) — PHARMACIE CHNCAK</div>"+
+      "<div class=\"sub\">BON D'ENTRÉE ("+cfg.label.toUpperCase()+") — PHARMACIE CHNCAK</div>"+
       "<div class=\"info\"><span>Réf : <strong>"+r.reference+"</strong></span><span>Fournisseur : <strong>"+r.supplierName+"</strong></span><span>Date : "+fmtDate(r.date)+"</span></div>"+
       "<table><thead><tr><th style=\"width:45%\">DÉSIGNATION</th><th>QTÉ</th><th>PRIX UNIT. (FCFA)</th><th>TOTAL (FCFA)</th></tr></thead><tbody>"+
       rows+"<tr class=\"tot\"><td colspan=\"3\" style=\"text-align:center\">TOTAL</td><td style=\"text-align:right\">"+total.toLocaleString("fr-FR")+"</td></tr></tbody></table>"+
@@ -258,7 +271,7 @@ export function EntreesFonctPage({store,activeSupplier,currentUser}){
     const total=r.items?.reduce((s,i)=>s+Number(i.qty||0)*Number(i.unitPrice||0),0)||0;
     return(
       <div style={{padding:0}}>
-        <PageHeader pageId="entrees-fonct" title="📦 Bon d'Entrée (Fonctionnement)" subtitle={r.reference}>
+        <PageHeader pageId={permSection} title={"📦 Bon d'Entrée — "+cfg.label} subtitle={r.reference}>
           <button onClick={()=>setSelected(null)} style={{...btn(),background:"rgba(255,255,255,0.15)",color:"white",border:"1px solid rgba(255,255,255,0.3)",fontSize:12}}>← Retour</button>
         </PageHeader>
         <div style={{padding:16}}>
@@ -308,10 +321,28 @@ export function EntreesFonctPage({store,activeSupplier,currentUser}){
             </div>
           )}
           {r.status==="annule"&&<div style={{background:"#fee2e2",color:"#b91c1c",borderRadius:8,padding:"8px 12px",fontSize:12,fontWeight:600,marginBottom:12}}>🚫 Ce bon d'entrée a été annulé{r.cancelledByName?" par "+r.cancelledByName:""}{r.cancelledAt?.seconds?" le "+new Date(r.cancelledAt.seconds*1000).toLocaleString("fr-FR"):""}.</div>}
+          {(() => {
+            const hasExistingPv = (store.procesVerbaux||[]).some(pv=>pv.entreeId===r.id);
+            const circuitSeuil = Number((store.pvSettings||[]).find(s=>s.id===circuit||s.circuit===circuit)?.seuil)||0;
+            const qualifiesForPv = circuitSeuil>0 && total>=circuitSeuil;
+            if (hasExistingPv || !qualifiesForPv || r.status==="annule") return null;
+            return (
+              <div style={{marginBottom:12}}>
+                {pvMsg&&<Alert type={pvMsg.startsWith("✅")?"success":"warn"}>{pvMsg}</Alert>}
+                <button disabled={pvGenerating} onClick={async()=>{
+                  setPvGenerating(true);
+                  try{ await store.createPvManually(circuit, r.id); setPvMsg("✅ PV généré — consultez-le dans Procès-Verbaux."); }
+                  catch(e){ setPvMsg("❌ "+e.message); }
+                  setPvGenerating(false);
+                  setTimeout(()=>setPvMsg(""),5000);
+                }} style={{...btn(),background:"#1e3a8a",color:"white",fontSize:12,padding:"8px 14px"}}>{pvGenerating?"⏳...":"🗂️ Générer le PV (ce bon atteint le seuil)"}</button>
+              </div>
+            );
+          })()}
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            {r.status!=="annule"&&can(currentUser,"entrees-fonct","w")&&<button onClick={()=>{setEditing(r.id);setForm({...r});setShow(true);setSelected(null);}} style={{...btn(),background:"#f0fdf4",color:"#059669",border:"1px solid #86efac",fontSize:12}}>✏️ Modifier</button>}
+            {r.status!=="annule"&&can(currentUser,permSection,"w")&&<button onClick={()=>{setEditing(r.id);setForm({...r});setShow(true);setSelected(null);}} style={{...btn(),background:"#f0fdf4",color:"#059669",border:"1px solid #86efac",fontSize:12}}>✏️ Modifier</button>}
             <button onClick={()=>printReception(r)} style={{...btn(),background:"#fef3c7",color:"#92400e",border:"1px solid #fcd34d",fontSize:12}}>🖨️ Imprimer</button>
-            {r.status!=="annule"&&can(currentUser,"entrees-fonct","w")&&<button onClick={()=>{setCancelError("");setCancelling(r);}} style={{...btn(),background:"#fee2e2",color:"#ef4444",border:"1px solid #fca5a5",fontSize:12}}>🚫 Annuler</button>}
+            {r.status!=="annule"&&can(currentUser,permSection,"w")&&<button onClick={()=>{setCancelError("");setCancelling(r);}} style={{...btn(),background:"#fee2e2",color:"#ef4444",border:"1px solid #fca5a5",fontSize:12}}>🚫 Annuler</button>}
           </div>
         </div>
         <Modal open={!!cancelling} onClose={()=>setCancelling(null)} title="🚫 Annuler ce bon d'entrée ?">
@@ -323,7 +354,7 @@ export function EntreesFonctPage({store,activeSupplier,currentUser}){
               {cancelError&&<Alert type="warn">{cancelError}</Alert>}
               <div style={{display:"flex",gap:8,marginTop:12}}>
                 <button onClick={async()=>{
-                  try{ await store.cancelEntreeFonct(cancelling.id); setCancelling(null); setSelected(null); }
+                  try{ await cancelEntree(cancelling.id); setCancelling(null); setSelected(null); }
                   catch(e){ setCancelError(e.message); }
                 }} style={{...btn(),background:"#ef4444",color:"white",flex:1,padding:10}}>🚫 Confirmer l'annulation</button>
                 <button onClick={()=>setCancelling(null)} style={{...btn(),background:"#f1f5f9",color:"#374151",padding:10}}>Retour</button>
@@ -337,16 +368,17 @@ export function EntreesFonctPage({store,activeSupplier,currentUser}){
 
   return(
     <div style={{padding:0}}>
-      <PageHeader pageId="entrees-fonct" title="📦 Bon d'Entrée (Fonctionnement)" subtitle={activeSupplier?.name||"Tous fournisseurs"}>
-        {can(currentUser,"entrees-fonct","w")&&<button onClick={openNew} style={{...btn(),background:"rgba(255,255,255,0.15)",color:"white",border:"1px solid rgba(255,255,255,0.3)",fontSize:12}}>+ Nouveau bon</button>}
+      <PageHeader pageId={permSection} title={"📦 Bon d'Entrée — "+cfg.label} subtitle={activeSupplier?.name||"Tous fournisseurs"}>
+        {can(currentUser,permSection,"w")&&<button onClick={openNew} style={{...btn(),background:"rgba(255,255,255,0.15)",color:"white",border:"1px solid rgba(255,255,255,0.3)",fontSize:12}}>+ Nouveau bon</button>}
       </PageHeader>
       <div style={{padding:16}}>
+        <CircuitSelector circuit={circuit} setCircuit={c=>{setCircuit(c);setShow(false);setSelected(null);setEditing(null);setSearch("");}} available={available} circuits={COMPTA_CIRCUITS}/>
         {msg&&<Alert type={msg.startsWith("✅")?"success":"warn"}>{msg}</Alert>}
 
         {/* Formulaire */}
         {show&&(
           <div style={{...card,marginBottom:14,border:"2px solid #059669"}}>
-            <div style={{fontWeight:700,fontSize:14,marginBottom:12,color:"#065f46"}}>📦 {editing?"Modifier":"Nouveau"} Bon d'Entrée (Fonctionnement)</div>
+            <div style={{fontWeight:700,fontSize:14,marginBottom:12,color:"#065f46"}}>📦 {editing?"Modifier":"Nouveau"} Bon d'Entrée ({cfg.label})</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
               <div><label style={label}>Référence</label><input style={input} value={form.reference} onChange={e=>setForm(f=>({...f,reference:e.target.value}))}/></div>
               <div><label style={label}>Date</label><input style={{...input}} type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}/></div>
@@ -471,7 +503,7 @@ export function EntreesFonctPage({store,activeSupplier,currentUser}){
                 {visibleSuppliers(currentUser,store.suppliers).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>}
-            <div style={{marginBottom:8}}><label style={label}>Référence</label><input style={input} value={filters.reference} onChange={e=>setFilters(f=>({...f,reference:e.target.value}))} placeholder="Ex: BON-ENT-FONCT-..."/></div>
+            <div style={{marginBottom:8}}><label style={label}>Référence</label><input style={input} value={filters.reference} onChange={e=>setFilters(f=>({...f,reference:e.target.value}))} placeholder={"Ex: BON-ENT-"+cfg.refPrefix+"-..."}/></div>
             <div style={{marginBottom:8}}><label style={label}>Créé par</label>
               <select style={input} value={filters.createdBy} onChange={e=>setFilters(f=>({...f,createdBy:e.target.value}))}>
                 <option value="">— Tous —</option>
@@ -487,7 +519,7 @@ export function EntreesFonctPage({store,activeSupplier,currentUser}){
             </div>
           </div>
         )}
-        {receptions.length===0&&!show&&<div style={{...card,textAlign:"center",padding:40,color:"#94a3b8"}}>{hasActiveFilters?"Aucun bon d'entrée (fonctionnement) ne correspond à ce filtre.":"Aucun bon d'entrée (fonctionnement)."}</div>}
+        {receptions.length===0&&!show&&<div style={{...card,textAlign:"center",padding:40,color:"#94a3b8"}}>{hasActiveFilters?"Aucun bon d'entrée ("+cfg.label+") ne correspond à ce filtre.":"Aucun bon d'entrée ("+cfg.label+")."}</div>}
         {receptions.map(r=>{
           const total=r.items?.reduce((s,i)=>s+Number(i.qty||0)*Number(i.unitPrice||0),0)||0;
           return(
@@ -520,7 +552,7 @@ export function EntreesFonctPage({store,activeSupplier,currentUser}){
             {cancelError&&<Alert type="warn">{cancelError}</Alert>}
             <div style={{display:"flex",gap:8,marginTop:12}}>
               <button onClick={async()=>{
-                try{ await store.cancelEntreeFonct(cancelling.id); setCancelling(null); setSelected(null); }
+                try{ await cancelEntree(cancelling.id); setCancelling(null); setSelected(null); }
                 catch(e){ setCancelError(e.message); }
               }} style={{...btn(),background:"#ef4444",color:"white",flex:1,padding:10}}>🚫 Confirmer l'annulation</button>
               <button onClick={()=>setCancelling(null)} style={{...btn(),background:"#f1f5f9",color:"#374151",padding:10}}>Retour</button>

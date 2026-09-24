@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { genId } from "../../constants";
+import { genId, fmtDate } from "../../constants";
 import { IMG_CARDIO_SRC, IMG_LABEL_SRC, IMG_CHNCAK_SRC } from "../../images";
 import { imageUrlToDataURL } from "../../helpers/fileUtils";
 import { PageHeader } from "../ui/PageHeader";
@@ -186,6 +186,7 @@ export function EntreesNpPage({store,activeSupplier,currentUser}){
       "<td style=\"text-align:right;font-weight:600\">"+Number((it.qty||0)*(it.unitPrice||0)).toLocaleString("fr-FR")+"</td></tr>"
     ).join("");
     const total=r.items?.reduce((s,i)=>s+Number(i.qty||0)*Number(i.unitPrice||0),0)||0;
+    const totalUnites=r.items?.reduce((s,i)=>s+Number(i.qty||0),0)||0;
     const html=
       "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Bon d'entrée non pharmaceutique "+r.reference+"</title>"+
       "<style>@page{size:A4;margin:1.5cm}*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:10px}"+
@@ -200,7 +201,13 @@ export function EntreesNpPage({store,activeSupplier,currentUser}){
       ".tot{background:#065f46;color:#fff;font-weight:bold}"+
       ".sig{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:30px}"+
       ".sb{text-align:center}.sl{font-weight:bold;font-size:9px;color:#065f46;text-decoration:underline;margin-bottom:60px;display:block}"+
-      ".su{height:4px}</style></head><body>"+
+      ".su{height:4px}"+
+      ".cert{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:24px}"+
+      ".certbox{border:1px solid #333;padding:10px;font-size:9px;line-height:1.9}"+
+      ".certtitle{font-weight:bold;text-decoration:underline;margin-bottom:8px;display:block}"+
+      ".certsig{font-weight:bold;text-decoration:underline;display:block;margin-top:10px}"+
+      ".certstamp{border:1px dashed #999;border-radius:4px;height:70px;margin-top:5px}"+
+      "</style></head><body>"+
       "<div class=\"ph\">"+
         "<div style=\"flex-shrink:0;width:85px\"><img src=\"" + cardioB64 + "\" style=\"width:80px;height:100px;object-fit:contain\"/></div>"+
         "<div class=\"ent\">"+
@@ -217,13 +224,26 @@ export function EntreesNpPage({store,activeSupplier,currentUser}){
         "</div>"+
       "</div>"+
       "<div class=\"sub\">BON D'ENTRÉE (NON PHARMACEUTIQUE) — CHNCAK</div>"+
-      "<div class=\"info\"><span>Réf : <strong>"+r.reference+"</strong></span><span>Fournisseur : <strong>"+r.supplierName+"</strong></span><span>Date : "+r.date+"</span></div>"+
+      "<div class=\"info\"><span>Réf : <strong>"+r.reference+"</strong></span><span>Fournisseur : <strong>"+r.supplierName+"</strong></span><span>Date : "+fmtDate(r.date)+"</span></div>"+
       "<table><thead><tr><th style=\"width:45%\">DÉSIGNATION</th><th>QTÉ</th><th>PRIX UNIT. (FCFA)</th><th>TOTAL (FCFA)</th></tr></thead><tbody>"+
       rows+"<tr class=\"tot\"><td colspan=\"3\" style=\"text-align:center\">TOTAL</td><td style=\"text-align:right\">"+total.toLocaleString("fr-FR")+"</td></tr></tbody></table>"+
       (r.notes?"<div style=\"margin-top:8px;font-size:9px;color:#444;font-style:italic\">Observations : "+r.notes+"</div>":"")+
-      "<div class=\"sig\">"+
-      "<div class=\"sb\"><div class=\"sl\">Le Fournisseur</div><div class=\"su\"></div></div>"+
-      "<div class=\"sb\"><div class=\"sl\">Le Comptable Non Pharmaceutique CHNCAK</div><div class=\"su\"></div></div>"+
+      "<div class=\"cert\">"+
+      "<div class=\"certbox\"><span class=\"certtitle\">CERTIFICATION</span>"+
+      "Arrête le présent bon à <strong>"+totalUnites.toLocaleString("fr-FR")+"</strong> Unités<br/>"+
+      "représentant une valeur de <strong>"+total.toLocaleString("fr-FR")+"</strong> francs<br/><br/>"+
+      "dont je certifie la prise en charge<br/>"+
+      "A Touba, le "+fmtDate(r.date)+"<br/>"+
+      "<span class=\"certsig\">L'Ordonnateur des Matières</span>"+
+      "<div class=\"certstamp\"></div>"+
+      "</div>"+
+      "<div class=\"certbox\"><span class=\"certtitle\">AUGMENTATION DES PRISES EN CHARGE</span>"+
+      "le comptable des matières soussigné, déclare ce jour augmenter ses prises en charge de <strong>"+totalUnites.toLocaleString("fr-FR")+"</strong> unités,<br/>"+
+      "représentant une valeur de <strong>"+total.toLocaleString("fr-FR")+"</strong> Francs<br/><br/>"+
+      "A Touba, le "+fmtDate(r.date)+"<br/>"+
+      "<span class=\"certsig\">Le Comptable des Matières</span>"+
+      "<div class=\"certstamp\"></div>"+
+      "</div>"+
       "</div>"+
       "</body></html>";
     const blob=new Blob([html],{type:"text/html;charset=utf-8"});
@@ -249,7 +269,7 @@ export function EntreesNpPage({store,activeSupplier,currentUser}){
             <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8,fontSize:12}}>
               <div><b>Réf :</b> {r.reference}</div>
               <div><b>Fournisseur :</b> {r.supplierName}</div>
-              <div><b>Date :</b> {r.date}</div>
+              <div><b>Date :</b> {fmtDate(r.date)}</div>
               <div><b>Par :</b> {r.receivedByName}</div>
             </div>
           </div>
@@ -478,7 +498,7 @@ export function EntreesNpPage({store,activeSupplier,currentUser}){
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                 <div>
                   <div style={{fontWeight:700,fontSize:13,color:"#065f46"}}>📦 {r.reference}</div>
-                  <div style={{fontSize:11,color:"#64748b"}}>{r.supplierName} · {r.date}</div>
+                  <div style={{fontSize:11,color:"#64748b"}}>{r.supplierName} · {fmtDate(r.date)}</div>
                   <div style={{fontSize:11,color:"#94a3b8"}}>{r.items?.length||0} produit(s) · Par {r.receivedByName}</div>
                 </div>
                 <div style={{textAlign:"right"}}>

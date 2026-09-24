@@ -148,7 +148,7 @@ export function ControleRetourPage({store,activeSupplier,currentUser}){
           </div>
         ))}
       </div>
-      <PrintModal open={!!printSel} onClose={()=>setPrintSel(null)} title="Bon de Retour Service">
+      <PrintModal open={!!printSel} onClose={()=>setPrintSel(null)} title="Bon de Retour Service" signatories={["Le Service","Le Gestionnaire de stock"]}>
         <SvcReturnPrint r={printSel}/>
       </PrintModal>
       <Modal open={!!cancellingControl} onClose={()=>setCancellingControl(null)} title="🚫 Annuler ce contrôle ?">

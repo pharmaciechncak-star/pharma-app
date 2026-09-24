@@ -518,7 +518,7 @@ export function InventoryPage({store,activeSupplier,currentUser}){
             🖨️ Imprimer liste d'inventaire
           </button>
 
-          <PrintModal open={printList} onClose={()=>setPrintList(false)} title="Liste d'Inventaire">
+          <PrintModal open={printList} onClose={()=>setPrintList(false)} title="Liste d'Inventaire" signatories={["Compté par","Vérifié par"]}>
             <div style={{marginBottom:12}}>
               <label style={{fontSize:13,fontWeight:600,color:"#374151",display:"flex",alignItems:"center",gap:6,cursor:"pointer"}}>
                 <input type="checkbox" checked={showOldStock} onChange={e=>setShowOldStock(e.target.checked)}/>

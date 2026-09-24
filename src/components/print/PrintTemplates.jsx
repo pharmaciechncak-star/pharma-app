@@ -1,11 +1,56 @@
-import { useRef } from "react";
-import { LOGO_B64 } from "../../images";
+import { useRef, useState, cloneElement } from "react";
+import { LOGO_B64, IMG_CARDIO_SRC, IMG_LABEL_SRC, IMG_CHNCAK_SRC } from "../../images";
 import { Barcode } from "../ui/Barcode";
 import { computeAge } from "../../helpers/age";
+import { fmtDate } from "../../constants";
+import { numberToWords } from "../../helpers/exportUtils";
 
-export function PrintModal({ open, onClose, title, children }) {
+// En-tête officiel — République du Sénégal / Ministère / CHNCAK, avec les
+// trois logos — partagé par tous les documents imprimables pour rester
+// cohérent avec celui déjà utilisé sur les Bons d'Entrée.
+function OfficialHeader() {
+  const eln = { display:"inline-block", borderBottom:"1px solid #999", paddingBottom:1 };
+  return (
+    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", borderBottom:"2px solid #065f46", paddingBottom:8, marginBottom:10 }}>
+      <div style={{ flexShrink:0, width:70 }}>
+        <img src={IMG_CARDIO_SRC} alt="" style={{width:65,height:80,objectFit:"contain"}}/>
+      </div>
+      <div style={{ flex:1, textAlign:"center", fontSize:9.5, lineHeight:1.8, color:"#111", padding:"0 8px" }}>
+        <div style={{ fontSize:12, fontWeight:800 }}>République du Sénégal</div>
+        <div><span style={eln}>Un peuple - un but - une foi</span></div>
+        <div><span style={eln}>Ministère de la Santé et de l'Hygiène Publique</span></div>
+        <div><span style={eln}>Direction Générale des Établissements de Santé</span></div>
+        <div><span style={eln}>Direction des Établissements Publics de Santé</span></div>
+        <div style={{ fontWeight:800 }}><span style={eln}>Centre Hospitalier National Cheikh Ahmadoul Khadim</span></div>
+      </div>
+      <div style={{ flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", gap:6, width:130 }}>
+        <img src={IMG_LABEL_SRC} alt="" style={{width:55,height:55,objectFit:"contain"}}/>
+        <img src={IMG_CHNCAK_SRC} alt="" style={{width:55,height:42,objectFit:"contain"}}/>
+      </div>
+    </div>
+  );
+}
+
+// Espace signature — le nom/titre du signataire d'abord, puis une zone
+// encadrée EN DESSOUS, assez grande pour recevoir une signature et un cachet.
+function SignatureBox({ label, name }) {
+  return (
+    <div style={{ textAlign:"center" }}>
+      <div style={{ fontWeight:700, fontSize:11, color:"#065f46", textDecoration:"underline", marginBottom:6 }}>{label}</div>
+      {name&&<div style={{ fontSize:11, fontWeight:600, color:"#1e293b", marginBottom:6 }}>{name}</div>}
+      <div style={{ border:"1px dashed #94a3b8", borderRadius:4, height:70 }}></div>
+    </div>
+  );
+}
+
+export function PrintModal({ open, onClose, title, children, signatories }) {
   const contentRef = useRef(null);
+  const [names, setNames] = useState({});
   if (!open) return null;
+
+  const printableChildren = signatories && signatories.length>0
+    ? cloneElement(children, { signatoryNames: names })
+    : children;
 
   const handlePrint = () => {
     const content = contentRef.current;
@@ -53,9 +98,24 @@ th{background:#f8fafc;font-weight:700;font-size:11px;color:#64748b;border-bottom
             </button>
           </div>
         </div>
+        {signatories && signatories.length>0 && (
+          <div style={{ padding:"14px 20px", borderBottom:"1px solid #e2e8f0", background:"#fffbeb" }}>
+            <div style={{ fontSize:12, fontWeight:700, color:"#92400e", marginBottom:8 }}>✍️ Noms des signataires <span style={{fontWeight:400}}>(optionnel — apparaîtront sur le document imprimé)</span></div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+              {signatories.map(role=>(
+                <div key={role}>
+                  <div style={{ fontSize:10, color:"#78350f", marginBottom:2 }}>{role}</div>
+                  <input value={names[role]||""} onChange={e=>setNames(n=>({...n,[role]:e.target.value}))}
+                    placeholder="Nom du signataire"
+                    style={{ width:"100%", padding:"6px 8px", border:"1px solid #fde68a", borderRadius:6, fontSize:12, boxSizing:"border-box" }}/>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {/* Contenu visible + ref pour impression */}
         <div ref={contentRef} style={{ padding:"28px 32px", fontFamily:"Arial, sans-serif", fontSize:13, color:"#1e293b", lineHeight:1.5 }}>
-          {children}
+          {printableChildren}
         </div>
       </div>
     </div>
@@ -68,27 +128,15 @@ export function InvoicePrint({ inv }) {
   const tdStyle = { padding:"9px 12px", borderBottom:"1px solid #f1f5f9" };
   return (
     <div>
-      {/* En-tête */}
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:24, paddingBottom:16, borderBottom:"2px solid #e2e8f0" }}>
-        <div>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <img src={LOGO_B64} alt="CHNCAK" style={{width:60,height:60,borderRadius:"50%",objectFit:"cover"}}/>
-            <div>
-              <div style={{fontSize:15,fontWeight:800,color:"#0891b2",lineHeight:1.2}}>CHNCAK</div>
-              <div style={{fontSize:10,color:"#64748b",lineHeight:1.4}}>Centre Hospitalier National<br/>Cheikh Ahmadoul Khadim</div>
-              <div style={{fontSize:9,color:"#94a3b8"}}>PharmaStock — Gestion Pharmaceutique</div>
-            </div>
-          </div>
-        </div>
-        <div style={{ textAlign:"right" }}>
-          <div style={{ fontSize:20, fontWeight:800, color:"#1e293b" }}>FACTURE</div>
-          <div style={{ fontFamily:"monospace", fontSize:12, color:"#64748b" }}>{inv.reference}</div>
-          <div style={{
-              background: inv.status==="envoyée"?"#dcfce7": inv.status==="payée"?"#ede9fe":"#fef3c7",
-              color:      inv.status==="envoyée"?"#059669": inv.status==="payée"?"#7c3aed":"#d97706",
-              display:"inline-block", padding:"2px 10px", borderRadius:99, fontSize:11, fontWeight:700, marginTop:4
-            }}>{inv.status||"en attente"}</div>
-        </div>
+      <OfficialHeader/>
+      <div style={{ background:"#065f46", color:"white", padding:6, fontSize:13, fontWeight:800, textAlign:"center", letterSpacing:1, marginBottom:10 }}>FACTURE</div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+        <div style={{ fontFamily:"monospace", fontSize:12, color:"#64748b" }}>{inv.reference}</div>
+        <div style={{
+            background: inv.status==="envoyée"?"#dcfce7": inv.status==="payée"?"#ede9fe":"#fef3c7",
+            color:      inv.status==="envoyée"?"#059669": inv.status==="payée"?"#7c3aed":"#d97706",
+            display:"inline-block", padding:"2px 10px", borderRadius:99, fontSize:11, fontWeight:700
+          }}>{inv.status||"en attente"}</div>
       </div>
       {/* Méta */}
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:20 }}>
@@ -126,29 +174,16 @@ export function InvoicePrint({ inv }) {
   );
 }
 
-export function BonPrint({ bon, suppName, depotName, products }) {
+export function BonPrint({ bon, suppName, depotName, products, signatoryNames }) {
   if (!bon) return null;
   const isEntry = bon.type === "entry";
   const thStyle = { padding:"9px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:"#64748b", borderBottom:"2px solid #e2e8f0", background:"#f8fafc" };
   const tdStyle = { padding:"9px 12px", borderBottom:"1px solid #f1f5f9" };
   return (
     <div>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:24, paddingBottom:16, borderBottom:"2px solid #e2e8f0" }}>
-        <div>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <img src={LOGO_B64} alt="CHNCAK" style={{width:55,height:55,borderRadius:"50%",objectFit:"cover"}}/>
-            <div>
-              <div style={{fontSize:14,fontWeight:800,color:"#0891b2"}}>CHNCAK</div>
-              <div style={{fontSize:9,color:"#64748b"}}>Centre Hospitalier National Cheikh Ahmadoul Khadim</div>
-              <div style={{fontSize:9,color:"#94a3b8"}}>PharmaStock</div>
-            </div>
-          </div>
-        </div>
-        <div style={{ textAlign:"right" }}>
-          <div style={{ fontSize:18, fontWeight:800 }}>{isEntry ? "BON D'ENTRÉE" : "BON DE RETOUR"}</div>
-          <div style={{ fontFamily:"monospace", fontSize:12, color:"#64748b" }}>{bon.reference}</div>
-        </div>
-      </div>
+      <OfficialHeader/>
+      <div style={{ background:"#065f46", color:"white", padding:6, fontSize:13, fontWeight:800, textAlign:"center", letterSpacing:1, marginBottom:10 }}>{isEntry ? "BON D'ENTRÉE" : "BON DE RETOUR"}</div>
+      <div style={{ fontFamily:"monospace", fontSize:12, color:"#64748b", textAlign:"right", marginBottom:10 }}>{bon.reference}</div>
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:20 }}>
         {[["Fournisseur", suppName], ["Dépôt", depotName], ["Date", bon.date ? new Date(bon.date).toLocaleDateString("fr-FR") : "—"], ["Saisi par", bon.createdByName||"—"], ["Observations", bon.notes || "—"]].map(([l,v]) => (
           <div key={l} style={{ background:"#f8fafc", borderRadius:8, padding:12 }}>
@@ -170,39 +205,30 @@ export function BonPrint({ bon, suppName, depotName, products }) {
                 <td style={tdStyle}>{it.qty}</td>
                 <td style={tdStyle}>{Number(it.unitPrice || 0).toLocaleString("fr-FR")} FCFA</td>
                 <td style={{ ...tdStyle, fontFamily:"monospace" }}>{it.lot || "—"}</td>
-                <td style={tdStyle}>{it.expiry || "—"}</td>
+                <td style={tdStyle}>{fmtDate(it.expiry) || "—"}</td>
               </tr>
             );
           })}
         </tbody>
       </table>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:20, marginTop:30 }}>
+        <SignatureBox label={isEntry?"Le Fournisseur":"Le Service"} name={signatoryNames?.[isEntry?"Le Fournisseur":"Le Service"]}/>
+        <SignatureBox label="Le Comptable Matière CHNCAK" name={signatoryNames?.["Le Comptable Matière CHNCAK"]}/>
+      </div>
     </div>
   );
 }
 
-export function ConsumptionPrint({ c }) {
+export function ConsumptionPrint({ c, signatoryNames }) {
   if (!c) return null;
   const thStyle = { padding:"9px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:"#64748b", borderBottom:"2px solid #e2e8f0", background:"#f8fafc" };
   const tdStyle = { padding:"9px 12px", borderBottom:"1px solid #f1f5f9" };
   const dateStr = c.createdAt?.seconds ? new Date(c.createdAt.seconds*1000).toLocaleString("fr-FR") : "—";
   return (
     <div>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:24, paddingBottom:16, borderBottom:"2px solid #e2e8f0" }}>
-        <div>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <img src={LOGO_B64} alt="CHNCAK" style={{width:55,height:55,borderRadius:"50%",objectFit:"cover"}}/>
-            <div>
-              <div style={{fontSize:14,fontWeight:800,color:"#0891b2"}}>CHNCAK</div>
-              <div style={{fontSize:9,color:"#64748b"}}>Centre Hospitalier National Cheikh Ahmadoul Khadim</div>
-              <div style={{fontSize:9,color:"#94a3b8"}}>PharmaStock</div>
-            </div>
-          </div>
-        </div>
-        <div style={{ textAlign:"right" }}>
-          <div style={{ fontSize:18, fontWeight:800 }}>BON DE CONSOMMATION</div>
-          <div style={{ fontFamily:"monospace", fontSize:12, color:"#64748b" }}>{c.id}</div>
-        </div>
-      </div>
+      <OfficialHeader/>
+      <div style={{ background:"#065f46", color:"white", padding:6, fontSize:13, fontWeight:800, textAlign:"center", letterSpacing:1, marginBottom:10 }}>BON DE CONSOMMATION</div>
+      <div style={{ fontFamily:"monospace", fontSize:12, color:"#64748b", textAlign:"right", marginBottom:10 }}>{c.id}</div>
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:20 }}>
         {[["Service", c.serviceName||"—"], ["Patient", c.patientName||"—"], ["Patient ID (voir cubix)", c.patientId||"—"], ["Âge", c.patientBirthDate?computeAge(c.patientBirthDate)+" ans":(c.patientAge||"—")], ["Date", dateStr], ["Saisi par", c.consumedByName||"—"], ["Observations", c.note||"—"]].map(([l,v]) => (
           <div key={l} style={{ background:"#f8fafc", borderRadius:8, padding:12 }}>
@@ -227,15 +253,14 @@ export function ConsumptionPrint({ c }) {
           ))}
         </tbody>
       </table>
-      <div style={{ textAlign:"right", marginTop:40, paddingRight:20 }}>
-        <div style={{ display:"inline-block", fontWeight:700, fontSize:12, borderBottom:"1px solid #1e293b", paddingBottom:2 }}>Le Cardiologue</div>
-        <div style={{ height:60 }}></div>
+      <div style={{ width:"45%", marginLeft:"auto", marginTop:30 }}>
+        <SignatureBox label="Le Cardiologue" name={signatoryNames?.["Le Cardiologue"]}/>
       </div>
     </div>
   );
 }
 
-export function TransferPrint({ t }) {
+export function TransferPrint({ t, signatoryNames }) {
   if (!t) return null;
   const thStyle = { padding:"9px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:"#64748b", borderBottom:"2px solid #e2e8f0", background:"#f8fafc" };
   const tdStyle = { padding:"9px 12px", borderBottom:"1px solid #f1f5f9" };
@@ -243,16 +268,9 @@ export function TransferPrint({ t }) {
   const statusLabel = t.status==="confirme" ? "✅ Conforme" : t.status==="non_conforme" ? "⚠️ Non conforme" : "⏳ En attente de confirmation";
   return (
     <div>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:24, paddingBottom:16, borderBottom:"2px solid #e2e8f0" }}>
-        <div>
-          <div style={{fontSize:14,fontWeight:800,color:"#0891b2"}}>CHNCAK — PharmaStock</div>
-          <div style={{fontSize:9,color:"#64748b"}}>Centre Hospitalier National Cheikh Ahmadoul Khadim</div>
-        </div>
-        <div style={{ textAlign:"right" }}>
-          <div style={{ fontSize:18, fontWeight:800 }}>BON DE TRANSFERT</div>
-          <div style={{ fontFamily:"monospace", fontSize:12, color:"#64748b" }}>{t.id}</div>
-        </div>
-      </div>
+      <OfficialHeader/>
+      <div style={{ background:"#065f46", color:"white", padding:6, fontSize:13, fontWeight:800, textAlign:"center", letterSpacing:1, marginBottom:10 }}>BON DE TRANSFERT</div>
+      <div style={{ fontFamily:"monospace", fontSize:12, color:"#64748b", textAlign:"right", marginBottom:10 }}>{t.id}</div>
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:20 }}>
         {[["Destination", t.serviceName||"—"], ["Statut", statusLabel], ["Date", dateStr], ["Envoyé par", t.transferredByName||"—"], ["Confirmé par", t.confirmedByName||"—"], ["Observations", t.notes||"—"]].map(([l,v]) => (
           <div key={l} style={{ background:"#f8fafc", borderRadius:8, padding:12 }}>
@@ -269,7 +287,7 @@ export function TransferPrint({ t }) {
           {(t.items || []).map((it, i) => (
             <tr key={i}>
               <td style={{ ...tdStyle, fontWeight:600 }}>{it.productName || "—"}</td>
-              <td style={tdStyle}>{it.expiry || "—"}</td>
+              <td style={tdStyle}>{fmtDate(it.expiry) || "—"}</td>
               <td style={tdStyle}>{it.qtyOriginal!=null ? it.qtyOriginal : it.qty}</td>
               <td style={tdStyle}>{it.qtyConfirmed!=null ? it.qtyConfirmed : "—"}</td>
               <td style={{ ...tdStyle, color: it.ecart<0 ? "#b91c1c" : it.ecart>0 ? "#0e7490" : "inherit", fontWeight: it.ecart!==0 ? 700 : 400 }}>{it.ecart ? (it.ecart>0?"+":"")+it.ecart : "—"}</td>
@@ -277,19 +295,14 @@ export function TransferPrint({ t }) {
           ))}
         </tbody>
       </table>
-      <div style={{ display:"flex", justifyContent:"space-between", marginTop:50, paddingTop:10 }}>
-        {["Le Pharmacien","Le Gestionnaire de stock","Le Service bénéficiaire"].map(sig => (
-          <div key={sig} style={{ textAlign:"center", width:"30%" }}>
-            <div style={{ fontWeight:700, fontSize:11, borderBottom:"1px solid #1e293b", paddingBottom:2, marginBottom:2 }}>{sig}</div>
-            <div style={{ height:55 }}></div>
-          </div>
-        ))}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:14, marginTop:30 }}>
+        {["Le Pharmacien","Le Gestionnaire de stock","Le Service bénéficiaire"].map(sig => <SignatureBox key={sig} label={sig} name={signatoryNames?.[sig]}/>)}
       </div>
     </div>
   );
 }
 
-export function SvcReturnPrint({ r }) {
+export function SvcReturnPrint({ r, signatoryNames }) {
   if (!r) return null;
   const thStyle = { padding:"9px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:"#64748b", borderBottom:"2px solid #e2e8f0", background:"#f8fafc" };
   const tdStyle = { padding:"9px 12px", borderBottom:"1px solid #f1f5f9" };
@@ -297,16 +310,9 @@ export function SvcReturnPrint({ r }) {
   const statusLabel = r.status==="confirme" ? "✅ Conforme" : r.status==="non_conforme" ? "⚠️ Non conforme" : "⏳ En attente de contrôle";
   return (
     <div>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:24, paddingBottom:16, borderBottom:"2px solid #e2e8f0" }}>
-        <div>
-          <div style={{fontSize:14,fontWeight:800,color:"#0891b2"}}>CHNCAK — PharmaStock</div>
-          <div style={{fontSize:9,color:"#64748b"}}>Centre Hospitalier National Cheikh Ahmadoul Khadim</div>
-        </div>
-        <div style={{ textAlign:"right" }}>
-          <div style={{ fontSize:18, fontWeight:800 }}>BON DE RETOUR SERVICE</div>
-          <div style={{ fontFamily:"monospace", fontSize:12, color:"#64748b" }}>{r.id}</div>
-        </div>
-      </div>
+      <OfficialHeader/>
+      <div style={{ background:"#065f46", color:"white", padding:6, fontSize:13, fontWeight:800, textAlign:"center", letterSpacing:1, marginBottom:10 }}>BON DE RETOUR SERVICE</div>
+      <div style={{ fontFamily:"monospace", fontSize:12, color:"#64748b", textAlign:"right", marginBottom:10 }}>{r.id}</div>
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:20 }}>
         {[["Service", r.serviceName||"—"], ["Statut", statusLabel], ["Date", dateStr], ["Retourné par", r.returnedByName||"—"], ["Contrôlé par", r.confirmedByName||"—"], ["Observations", r.notes||"—"]].map(([l,v]) => (
           <div key={l} style={{ background:"#f8fafc", borderRadius:8, padding:12 }}>
@@ -323,7 +329,7 @@ export function SvcReturnPrint({ r }) {
           {(r.items || []).map((it, i) => (
             <tr key={i}>
               <td style={{ ...tdStyle, fontWeight:600 }}>{it.productName || "—"}</td>
-              <td style={tdStyle}>{it.expiry || "—"}</td>
+              <td style={tdStyle}>{fmtDate(it.expiry) || "—"}</td>
               <td style={tdStyle}>{it.qtyOriginal!=null ? it.qtyOriginal : it.qty}</td>
               <td style={tdStyle}>{it.qtyConfirmed!=null ? it.qtyConfirmed : "—"}</td>
               <td style={{ ...tdStyle, color: it.ecart<0 ? "#b91c1c" : it.ecart>0 ? "#0e7490" : "inherit", fontWeight: it.ecart!==0 ? 700 : 400 }}>{it.ecart ? (it.ecart>0?"+":"")+it.ecart : "—"}</td>
@@ -331,25 +337,24 @@ export function SvcReturnPrint({ r }) {
           ))}
         </tbody>
       </table>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:20, marginTop:30 }}>
+        <SignatureBox label="Le Service" name={signatoryNames?.["Le Service"]}/>
+        <SignatureBox label="Le Gestionnaire de stock" name={signatoryNames?.["Le Gestionnaire de stock"]}/>
+      </div>
     </div>
   );
 }
 
-export function InventoryChecklistPrint({ products, scopeLabel, currentQtyLabel }) {
+export function InventoryChecklistPrint({ products, scopeLabel, currentQtyLabel, signatoryNames }) {
   const thStyle = { padding:"9px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:"#64748b", borderBottom:"2px solid #e2e8f0", background:"#f8fafc" };
   const tdStyle = { padding:"9px 12px", borderBottom:"1px solid #f1f5f9" };
   return (
     <div>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:24, paddingBottom:16, borderBottom:"2px solid #e2e8f0" }}>
-        <div>
-          <div style={{fontSize:14,fontWeight:800,color:"#0891b2"}}>CHNCAK — PharmaStock</div>
-          <div style={{fontSize:9,color:"#64748b"}}>Centre Hospitalier National Cheikh Ahmadoul Khadim</div>
-        </div>
-        <div style={{ textAlign:"right" }}>
-          <div style={{ fontSize:18, fontWeight:800 }}>LISTE D'INVENTAIRE — STOCK (2)</div>
-          <div style={{ fontSize:12, color:"#64748b" }}>{scopeLabel}</div>
-          <div style={{ fontSize:11, color:"#94a3b8" }}>{new Date().toLocaleDateString("fr-FR")}</div>
-        </div>
+      <OfficialHeader/>
+      <div style={{ background:"#065f46", color:"white", padding:6, fontSize:13, fontWeight:800, textAlign:"center", letterSpacing:1, marginBottom:6 }}>LISTE D'INVENTAIRE — STOCK (2)</div>
+      <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#64748b", marginBottom:12 }}>
+        <span>{scopeLabel}</span>
+        <span>{new Date().toLocaleDateString("fr-FR")}</span>
       </div>
       <table style={{ width:"100%", borderCollapse:"collapse", marginBottom:16 }}>
         <thead>
@@ -366,14 +371,9 @@ export function InventoryChecklistPrint({ products, scopeLabel, currentQtyLabel 
           ))}
         </tbody>
       </table>
-      <div style={{ display:"flex", justifyContent:"space-between", marginTop:50, paddingTop:10 }}>
-        {["Compté par","Vérifié par"].map(sig => (
-          <div key={sig} style={{ textAlign:"center", width:"45%" }}>
-            <div style={{ fontWeight:700, fontSize:11, borderBottom:"1px solid #1e293b", paddingBottom:2, marginBottom:2 }}>{sig}</div>
-            <div style={{ fontSize:9, color:"#94a3b8" }}>Nom et signature</div>
-            <div style={{ height:50 }}></div>
-          </div>
-        ))}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:20, marginTop:30 }}>
+        <SignatureBox label="Compté par" name={signatoryNames?.["Compté par"]}/>
+        <SignatureBox label="Vérifié par" name={signatoryNames?.["Vérifié par"]}/>
       </div>
     </div>
   );
@@ -385,16 +385,11 @@ export function Stock2InventoryHistoryPrint({ lines, scopeLabel }) {
   const statusLabel = s => s==="confirme" ? "✅ Confirmé" : s==="rejete" ? "✕ Rejeté" : "⏳ En attente";
   return (
     <div>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:24, paddingBottom:16, borderBottom:"2px solid #e2e8f0" }}>
-        <div>
-          <div style={{fontSize:14,fontWeight:800,color:"#0891b2"}}>CHNCAK — PharmaStock</div>
-          <div style={{fontSize:9,color:"#64748b"}}>Centre Hospitalier National Cheikh Ahmadoul Khadim</div>
-        </div>
-        <div style={{ textAlign:"right" }}>
-          <div style={{ fontSize:18, fontWeight:800 }}>HISTORIQUE D'INVENTAIRE — STOCK (2)</div>
-          <div style={{ fontSize:12, color:"#64748b" }}>{scopeLabel}</div>
-          <div style={{ fontSize:11, color:"#94a3b8" }}>{new Date().toLocaleDateString("fr-FR")}</div>
-        </div>
+      <OfficialHeader/>
+      <div style={{ background:"#065f46", color:"white", padding:6, fontSize:13, fontWeight:800, textAlign:"center", letterSpacing:1, marginBottom:6 }}>HISTORIQUE D'INVENTAIRE — STOCK (2)</div>
+      <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#64748b", marginBottom:12 }}>
+        <span>{scopeLabel}</span>
+        <span>{new Date().toLocaleDateString("fr-FR")}</span>
       </div>
       <table style={{ width:"100%", borderCollapse:"collapse", marginBottom:16 }}>
         <thead>
@@ -418,7 +413,7 @@ export function Stock2InventoryHistoryPrint({ lines, scopeLabel }) {
   );
 }
 
-export function SortieFonctPrint({ s, products }) {
+export function SortieComptaPrint({ s, products, signatoryNames, circuitLabel }) {
   if (!s) return null;
   const thStyle = { padding:"9px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:"#64748b", borderBottom:"2px solid #e2e8f0", background:"#f8fafc" };
   const tdStyle = { padding:"9px 12px", borderBottom:"1px solid #f1f5f9" };
@@ -433,16 +428,9 @@ export function SortieFonctPrint({ s, products }) {
   const fmt = n => n.toLocaleString("fr-FR", { minimumFractionDigits: n%1!==0?2:0, maximumFractionDigits:2 });
   return (
     <div>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:24, paddingBottom:16, borderBottom:"2px solid #e2e8f0" }}>
-        <div>
-          <div style={{fontSize:14,fontWeight:800,color:"#9a3412"}}>CHNCAK — Comptabilité Matières</div>
-          <div style={{fontSize:9,color:"#64748b"}}>Centre Hospitalier National Cheikh Ahmadoul Khadim</div>
-        </div>
-        <div style={{ textAlign:"right" }}>
-          <div style={{ fontSize:18, fontWeight:800 }}>BON DE SORTIE — FONCTIONNEMENT</div>
-          <div style={{ fontSize:11, color:"#94a3b8" }}>{dateStr}</div>
-        </div>
-      </div>
+      <OfficialHeader/>
+      <div style={{ background:"#065f46", color:"white", padding:6, fontSize:13, fontWeight:800, textAlign:"center", letterSpacing:1, marginBottom:6 }}>BON DE SORTIE{circuitLabel?(" — "+circuitLabel.toUpperCase()):""}</div>
+      <div style={{ fontSize:11, color:"#94a3b8", textAlign:"right", marginBottom:8 }}>{dateStr}</div>
       <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#374151", marginBottom:16 }}>
         <span>Réf : <b>{s.reference||"—"}</b></span>
         <span>Destination : <b>{s.serviceName||"—"}</b></span>
@@ -457,7 +445,7 @@ export function SortieFonctPrint({ s, products }) {
           {(s.items || []).map((it, i) => (
             <tr key={i}>
               <td style={{ ...tdStyle, fontWeight:600 }}>{it.productName || "—"}</td>
-              <td style={tdStyle}>{it.expiry || "—"}</td>
+              <td style={tdStyle}>{fmtDate(it.expiry) || "—"}</td>
               <td style={tdStyle}>{it.qty}</td>
             </tr>
           ))}
@@ -473,8 +461,10 @@ export function SortieFonctPrint({ s, products }) {
                 Arrête le présent bon à <b>{fmt(totalUnites)}</b> Unités<br/>
                 représentant une valeur de <b>{fmt(totalMontant)}</b> francs<br/><br/>
                 dont je certifie la prise en charge<br/>
-                A Dakar &nbsp; le {dateForCert}<br/><br/>
-                <u><b>L'Ordonnateur des Matières</b></u>
+                A Touba &nbsp; le {dateForCert}<br/><br/>
+                <u><b>L'Ordonnateur des Matières</b></u><br/>
+                {signatoryNames?.["L'Ordonnateur des Matières"]&&<b>{signatoryNames["L'Ordonnateur des Matières"]}</b>}
+                <div style={{border:"1px dashed #94a3b8",borderRadius:4,height:70,marginTop:6}}></div>
               </div>
             </td>
             <td style={{border:"1px solid #94a3b8",padding:10,verticalAlign:"top",width:"33%"}}>
@@ -482,18 +472,22 @@ export function SortieFonctPrint({ s, products }) {
               <div style={{fontSize:10,lineHeight:1.9}}>
                 le comptable des matières soussigné, déclare ce jour diminuer ses prises en charge de <b>{fmt(totalUnites)}</b> unités,<br/>
                 représentant une valeur de <b>{fmt(totalMontant)}</b> Francs<br/>
-                A Dakar &nbsp; le {dateForCert}<br/><br/>
-                <u><b>Le Comptable des matières</b></u>
+                A Touba &nbsp; le {dateForCert}<br/><br/>
+                <u><b>Le Comptable des matières</b></u><br/>
+                {signatoryNames?.["Le Comptable des matières"]&&<b>{signatoryNames["Le Comptable des matières"]}</b>}
+                <div style={{border:"1px dashed #94a3b8",borderRadius:4,height:70,marginTop:6}}></div>
               </div>
             </td>
             <td style={{border:"1px solid #94a3b8",padding:10,verticalAlign:"top",width:"34%"}}>
               <div style={{fontWeight:700,fontSize:11,textDecoration:"underline",marginBottom:10}}>RECEPISSE</div>
               <div style={{fontSize:10,lineHeight:1.9}}>
-                Je soussigné ______________________<br/>
+                Je soussigné {signatoryNames?.["Le réceptionnaire"]||"______________________"}<br/>
                 {s.serviceName||"—"}<br/>
                 reconnait avoir reçu les matières portées au présent bon<br/>
-                à Dakar &nbsp; le {dateForCert}<br/><br/>
-                <u><b>Le réceptionnaire</b></u>
+                à Touba &nbsp; le {dateForCert}<br/><br/>
+                <u><b>Le réceptionnaire</b></u><br/>
+                {signatoryNames?.["Le réceptionnaire"]&&<b>{signatoryNames["Le réceptionnaire"]}</b>}
+                <div style={{border:"1px dashed #94a3b8",borderRadius:4,height:70,marginTop:6}}></div>
               </div>
             </td>
           </tr>
@@ -513,14 +507,11 @@ export function GrandLivrePrint({ product, rows, periodFrom, periodTo }) {
   const tdStyle = { padding:"6px 8px", fontSize:9.5, border:"1px solid #ddd" };
   return (
     <div>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16, paddingBottom:12, borderBottom:"2px solid #78350f" }}>
-        <div>
-          <div style={{fontSize:13,fontWeight:800,color:"#9a3412"}}>CHNCAK — Comptabilité Matières</div>
-          <div style={{fontSize:9,color:"#64748b"}}>Centre Hospitalier National Cheikh Ahmadoul Khadim</div>
-          <div style={{fontSize:9,color:"#64748b",marginTop:4}}>Période du <b>{periodFrom||"—"}</b> au <b>{periodTo||"—"}</b></div>
-        </div>
+      <OfficialHeader/>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
+        <div style={{fontSize:9,color:"#64748b"}}>Période du <b>{fmtDate(periodFrom)||"—"}</b> au <b>{fmtDate(periodTo)||"—"}</b></div>
         <div style={{ textAlign:"right" }}>
-          <div style={{ fontSize:17, fontWeight:800 }}>GRAND LIVRE DES COMPTES</div>
+          <div style={{ fontSize:15, fontWeight:800 }}>GRAND LIVRE DES COMPTES</div>
           <div style={{ fontSize:9, color:"#94a3b8" }}>Modèle N°7 — Art. 18a</div>
         </div>
       </div>
@@ -547,7 +538,7 @@ export function GrandLivrePrint({ product, rows, periodFrom, periodTo }) {
         <tbody>
           {(rows||[]).map((r,i)=>(
             <tr key={i} style={{background:i%2===0?"white":"#fef9f3"}}>
-              <td style={tdStyle}>{r.date}</td>
+              <td style={tdStyle}>{fmtDate(r.date)}</td>
               <td style={tdStyle}>{r.bon}</td>
               <td style={tdStyle}>{r.origine}</td>
               <td style={{...tdStyle,textAlign:"center",color:"#059669",fontWeight:700}}>{r.entree||""}</td>
@@ -571,10 +562,9 @@ export function FicheStockPrint({ product, rows, periodFrom, periodTo }) {
   const tdStyle = { padding:"6px 8px", fontSize:9.5, border:"1px solid #ddd", textAlign:"center" };
   return (
     <div>
-      <div style={{marginBottom:16,paddingBottom:12,borderBottom:"2px solid #1e293b"}}>
-        <div style={{fontSize:13,fontWeight:800,color:"#1e293b"}}>CHNCAK — Comptabilité Matières</div>
-        <div style={{fontSize:9,color:"#64748b",marginBottom:8}}>Centre Hospitalier National Cheikh Ahmadoul Khadim</div>
-        <div style={{fontSize:16,fontWeight:800}}>FICHE DE STOCK DU <span style={{fontWeight:400}}>{periodFrom||"—"}</span> au <span style={{fontWeight:400}}>{periodTo||"—"}</span></div>
+      <OfficialHeader/>
+      <div style={{marginBottom:12}}>
+        <div style={{fontSize:15,fontWeight:800}}>FICHE DE STOCK DU <span style={{fontWeight:400}}>{fmtDate(periodFrom)||"—"}</span> au <span style={{fontWeight:400}}>{fmtDate(periodTo)||"—"}</span></div>
       </div>
       <div style={{fontSize:10.5,marginBottom:12,lineHeight:1.9}}>
         <div>COMPTE N° : <b>{product?.compteNumero||"—"}</b> &nbsp;&nbsp; NATURE DE L'UNITÉ : <b>{product?.unit||"—"}</b></div>
@@ -600,7 +590,7 @@ export function FicheStockPrint({ product, rows, periodFrom, periodTo }) {
         <tbody>
           {(rows||[]).map((r,i)=>(
             <tr key={i} style={{background:i%2===0?"white":"#f8fafc"}}>
-              <td style={tdStyle}>{r.date}</td>
+              <td style={tdStyle}>{fmtDate(r.date)}</td>
               <td style={tdStyle}>{r.entreeBon||""}</td>
               <td style={{...tdStyle,color:"#059669",fontWeight:700}}>{r.entreeQty||""}</td>
               <td style={{...tdStyle,textAlign:"left"}}>{r.destinataire||""}</td>
@@ -621,7 +611,7 @@ export function FicheStockPrint({ product, rows, periodFrom, periodTo }) {
 // remis à UN service sur une période (reconstruite à partir des Bons de
 // Sortie), avec le bloc de certification en trois parties (Ordonnateur des
 // Matières / Comptable des Matières / Réceptionnaire) propre à ce document.
-export function ConsommationMatieresPrint({ serviceName, rows, periodFrom, periodTo }) {
+export function ConsommationMatieresPrint({ serviceName, rows, periodFrom, periodTo, signatoryNames }) {
   const thStyle = { padding:"8px 10px", textAlign:"center", fontSize:10.5, fontWeight:700, border:"1px solid #94a3b8", background:"#f1f5f9" };
   const tdStyle = { padding:"7px 10px", fontSize:10.5, border:"1px solid #ddd" };
   const totalUnites = (rows||[]).reduce((s,r)=>s+Number(r.qty||0),0);
@@ -629,12 +619,11 @@ export function ConsommationMatieresPrint({ serviceName, rows, periodFrom, perio
   const fmt = n => n.toLocaleString("fr-FR", { minimumFractionDigits: n%1!==0?2:0, maximumFractionDigits:2 });
   return (
     <div>
-      <div style={{marginBottom:6,fontSize:12,fontWeight:700,textDecoration:"underline"}}>Ministère de la Santé et de l'Hygiène Publique</div>
-      <div style={{fontSize:9,color:"#64748b",marginBottom:20}}>CHNCAK — Centre Hospitalier National Cheikh Ahmadoul Khadim</div>
-      <div style={{textAlign:"center",fontSize:15,fontWeight:800,textDecoration:"underline",marginBottom:24}}>Consommation Matières par service</div>
+      <OfficialHeader/>
+      <div style={{textAlign:"center",fontSize:14,fontWeight:800,textDecoration:"underline",marginBottom:20}}>Consommation Matières par service</div>
       <div style={{fontSize:11,marginBottom:20,lineHeight:2}}>
         <div><u><b>Service :</b></u> &nbsp;{serviceName||"—"}</div>
-        <div><u><b>Période du :</b></u> &nbsp;{periodFrom||"—"} &nbsp;&nbsp;<u><b>au :</b></u> &nbsp;{periodTo||"—"}</div>
+        <div><u><b>Période du :</b></u> &nbsp;{fmtDate(periodFrom)||"—"} &nbsp;&nbsp;<u><b>au :</b></u> &nbsp;{fmtDate(periodTo)||"—"}</div>
       </div>
       <table style={{ width:"100%", borderCollapse:"collapse", marginBottom:20 }}>
         <thead>
@@ -669,8 +658,10 @@ export function ConsommationMatieresPrint({ serviceName, rows, periodFrom, perio
                 Arrête le présent bon à <b>{fmt(totalUnites)}</b> Unités<br/>
                 représentant une valeur de <b>{fmt(totalMontant)}</b> francs<br/><br/>
                 dont je certifie la prise en charge<br/>
-                A Dakar &nbsp; le {periodTo||"—"}<br/><br/>
-                <u><b>L'Ordonnateur des Matières</b></u>
+                A Touba &nbsp; le {fmtDate(periodTo)||"—"}<br/><br/>
+                <u><b>L'Ordonnateur des Matières</b></u><br/>
+                {signatoryNames?.["L'Ordonnateur des Matières"]&&<b>{signatoryNames["L'Ordonnateur des Matières"]}</b>}
+                <div style={{border:"1px dashed #94a3b8",borderRadius:4,height:70,marginTop:6}}></div>
               </div>
             </td>
             <td style={{border:"1px solid #94a3b8",padding:10,verticalAlign:"top",width:"33%"}}>
@@ -678,21 +669,172 @@ export function ConsommationMatieresPrint({ serviceName, rows, periodFrom, perio
               <div style={{fontSize:10,lineHeight:1.9}}>
                 le comptable des matières soussigné, déclare ce jour diminuer ses prises en charge de <b>{fmt(totalUnites)}</b> unités,<br/>
                 représentant une valeur de <b>{fmt(totalMontant)}</b> Francs<br/>
-                A Dakar &nbsp; le {periodTo||"—"}<br/><br/>
-                <u><b>Le Comptable des matières</b></u>
+                A Touba &nbsp; le {fmtDate(periodTo)||"—"}<br/><br/>
+                <u><b>Le Comptable des matières</b></u><br/>
+                {signatoryNames?.["Le Comptable des matières"]&&<b>{signatoryNames["Le Comptable des matières"]}</b>}
+                <div style={{border:"1px dashed #94a3b8",borderRadius:4,height:70,marginTop:6}}></div>
               </div>
             </td>
             <td style={{border:"1px solid #94a3b8",padding:10,verticalAlign:"top",width:"34%"}}>
               <div style={{fontWeight:700,fontSize:11,textDecoration:"underline",marginBottom:10}}>RECEPISSE</div>
               <div style={{fontSize:10,lineHeight:1.9}}>
-                Je soussigné ______________________<br/>
+                Je soussigné {signatoryNames?.["Le réceptionnaire"]||"______________________"}<br/>
                 {serviceName||"—"}<br/>
                 reconnait avoir reçu les matières portées au présent bon<br/>
-                à Dakar &nbsp; le {periodTo||"—"}<br/><br/>
-                <u><b>Le réceptionnaire</b></u>
+                à Touba &nbsp; le {fmtDate(periodTo)||"—"}<br/><br/>
+                <u><b>Le réceptionnaire</b></u><br/>
+                {signatoryNames?.["Le réceptionnaire"]&&<b>{signatoryNames["Le réceptionnaire"]}</b>}
+                <div style={{border:"1px dashed #94a3b8",borderRadius:4,height:70,marginTop:6}}></div>
               </div>
             </td>
           </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// Balance Périodique — une ligne par produit (tout le catalogue du périmètre,
+// pas un seul produit comme le Grand Livre), avec solde de début et de fin de
+// période, mouvements et valorisation. Total général en bas.
+export function BalancePeriodiquePrint({ rows, periodFrom, periodTo, scopeLabel }) {
+  const thStyle = { padding:"6px 7px", textAlign:"center", fontSize:9, fontWeight:700, color:"white", background:"#1e3a8a", border:"1px solid #1e3a8a" };
+  const tdStyle = { padding:"5px 7px", fontSize:9, border:"1px solid #ddd" };
+  const totalGeneral = (rows||[]).reduce((s,r)=>s+r.montant,0);
+  return (
+    <div>
+      <OfficialHeader/>
+      {scopeLabel&&<div style={{fontSize:9,color:"#64748b",marginBottom:8}}>{scopeLabel}</div>}
+      <div style={{textAlign:"center",fontSize:14,fontWeight:800,marginBottom:16}}>
+        BALANCE PÉRIODIQUE DU <span style={{fontWeight:400}}>{fmtDate(periodFrom)||"—"}</span> AU <span style={{fontWeight:400}}>{fmtDate(periodTo)||"—"}</span>
+      </div>
+      <table style={{ width:"100%", borderCollapse:"collapse", marginBottom:16 }}>
+        <thead>
+          <tr>
+            <th style={{...thStyle,width:"11%"}}>Nomenclature</th>
+            <th style={{...thStyle,width:"23%",textAlign:"left"}}>Désignation</th>
+            <th style={{...thStyle,width:"11%"}}>Existant Début Période</th>
+            <th style={{...thStyle,width:"9%"}}>Entrée Période</th>
+            <th style={{...thStyle,width:"9%"}}>Total Entrée</th>
+            <th style={{...thStyle,width:"9%"}}>Sortie Période</th>
+            <th style={{...thStyle,width:"9%"}}>Existant Fin Période</th>
+            <th style={{...thStyle,width:"9%"}}>Prix Unitaire</th>
+            <th style={{...thStyle,width:"10%"}}>Montant Existant</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(rows||[]).map((r,i)=>(
+            <tr key={i} style={{background:i%2===0?"white":"#f8fafc"}}>
+              <td style={tdStyle}>{r.compteNumero||"—"}</td>
+              <td style={{...tdStyle,textAlign:"left",fontWeight:600}}>{r.productName}</td>
+              <td style={{...tdStyle,textAlign:"center"}}>{r.existantDebut}</td>
+              <td style={{...tdStyle,textAlign:"center",color:"#059669"}}>{r.entreePeriode}</td>
+              <td style={{...tdStyle,textAlign:"center"}}>{r.totalEntree}</td>
+              <td style={{...tdStyle,textAlign:"center",color:"#dc2626"}}>{r.sortiePeriode}</td>
+              <td style={{...tdStyle,textAlign:"center",fontWeight:700}}>{r.existantFin}</td>
+              <td style={{...tdStyle,textAlign:"right"}}>{r.pu.toLocaleString("fr-FR")}</td>
+              <td style={{...tdStyle,textAlign:"right",fontWeight:700}}>{r.montant.toLocaleString("fr-FR")}</td>
+            </tr>
+          ))}
+          {(!rows||rows.length===0)&&<tr><td colSpan={9} style={{...tdStyle,textAlign:"center",color:"#94a3b8"}}>Aucun produit.</td></tr>}
+        </tbody>
+      </table>
+      <div style={{display:"flex",justifyContent:"flex-end"}}>
+        <table style={{borderCollapse:"collapse"}}>
+          <tbody>
+            <tr>
+              <td style={{border:"2px solid #1e293b",padding:"8px 16px",fontWeight:800,fontSize:12}}>TOTAL</td>
+              <td style={{border:"2px solid #1e293b",padding:"8px 16px",fontWeight:800,fontSize:14,textAlign:"right"}}>{totalGeneral.toLocaleString("fr-FR")}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// Procès-Verbal de Réception — généré automatiquement quand un Bon d'Entrée
+// (Fonctionnement/Non-Pharmaceutique) atteint le seuil configuré. La
+// commission est injectée déjà résolue (nom habituel ou intérimaire) par
+// l'appelant — ce composant ne gère pas lui-même la bascule intérimaire.
+export function PvPrint({ pv, resolvedCommission, circuitLabel }) {
+  if (!pv) return null;
+  const thStyle = { padding:"6px 7px", textAlign:"center", fontSize:9.5, fontWeight:700, color:"white", background:"#1e3a8a", border:"1px solid #1e3a8a" };
+  const tdStyle = { padding:"6px 7px", fontSize:9.5, border:"1px solid #ddd" };
+  const dateStr = pv.dateReception ? fmtDate(pv.dateReception) : (pv.createdAt?.seconds ? fmtDate(new Date(pv.createdAt.seconds*1000).toISOString().slice(0,10)) : "—");
+  return (
+    <div>
+      <OfficialHeader/>
+      <div style={{ textAlign:"center", marginBottom:16 }}>
+        {circuitLabel&&<div style={{ fontSize:10, color:"#64748b", marginBottom:4, textTransform:"uppercase", letterSpacing:1 }}>{circuitLabel}</div>}
+        <div style={{ fontSize:17, fontWeight:800 }}>PROCÈS-VERBAL</div>
+        <div style={{ fontSize:15, fontWeight:800 }}>DE RÉCEPTION N° {pv.numero}</div>
+      </div>
+      <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, marginBottom:16 }}>
+        <span>Date de Réception : <b>{dateStr}</b></span>
+        <span>Nom du fournisseur : <b>{pv.supplierName||"—"}</b></span>
+      </div>
+      {pv.entreeRef&&<div style={{ fontSize:10, color:"#64748b", marginBottom:6 }}>Référence du Bon d'Entrée : {pv.entreeRef}</div>}
+      {(pv.bcNumero||pv.blNumero||pv.factureNumero)&&(
+        <div style={{ fontSize:10, color:"#374151", marginBottom:14, lineHeight:1.8 }}>
+          <div style={{fontWeight:700,marginBottom:2}}>Énumération des pièces justificatives jointes :</div>
+          {pv.bcNumero&&<div>BC N° {pv.bcNumero}</div>}
+          {pv.blNumero&&<div>BL N° {pv.blNumero}</div>}
+          {pv.factureNumero&&<div>Facture N° {pv.factureNumero}</div>}
+        </div>
+      )}
+
+      <table style={{ width:"100%", borderCollapse:"collapse", marginBottom:12 }}>
+        <thead>
+          <tr>
+            <th style={{...thStyle,width:"32%",textAlign:"left"}}>Désignation</th>
+            <th style={{...thStyle,width:"10%"}}>Unité</th>
+            <th style={{...thStyle,width:"12%"}}>Cdt</th>
+            <th style={{...thStyle,width:"15%"}}>Prix Unitaire</th>
+            <th style={{...thStyle,width:"16%"}}>Montant</th>
+            <th style={{...thStyle,width:"15%"}}>Observation</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(pv.items||[]).map((it,i)=>(
+            <tr key={i} style={{background:i%2===0?"white":"#f8fafc"}}>
+              <td style={{...tdStyle,textAlign:"left",fontWeight:600}}>{it.productName}</td>
+              <td style={{...tdStyle,textAlign:"center"}}>{it.qty}</td>
+              <td style={{...tdStyle,textAlign:"center"}}>{it.conditionnement||"—"}</td>
+              <td style={{...tdStyle,textAlign:"right"}}>{Number(it.unitPrice||0).toLocaleString("fr-FR")}</td>
+              <td style={{...tdStyle,textAlign:"right",fontWeight:700}}>{(Number(it.qty||0)*Number(it.unitPrice||0)).toLocaleString("fr-FR")}</td>
+              <td style={tdStyle}></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div style={{ border:"1px solid #1e293b", borderRadius:6, padding:12, fontSize:11, lineHeight:1.9, marginBottom:20 }}>
+        Arrêté le présent P.V. à <b>{Number(pv.totalUnites||0).toLocaleString("fr-FR")}</b> Unités que nous certifions avoir réceptionnées pour un montant de :<br/>
+        <b>{numberToWords(pv.totalMontant||0)} francs CFA</b> ({Number(pv.totalMontant||0).toLocaleString("fr-FR")} FCFA)
+      </div>
+
+      <div style={{ fontSize:12, fontWeight:700, marginBottom:10 }}>Noms, Qualités et Signatures des Membres de la Commission :</div>
+      <table style={{ width:"100%", borderCollapse:"collapse" }}>
+        <thead>
+          <tr>
+            <th style={{...thStyle,width:"8%"}}>N°</th>
+            <th style={{...thStyle,width:"37%",textAlign:"left"}}>Noms</th>
+            <th style={{...thStyle,width:"25%",textAlign:"left"}}>Qualité</th>
+            <th style={{...thStyle,width:"30%"}}>Signature</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(resolvedCommission||[]).map((m,i)=>(
+            <tr key={i}>
+              <td style={{...tdStyle,textAlign:"center",fontWeight:700}}>{i+1}</td>
+              <td style={{...tdStyle,textAlign:"left"}}>
+                <b>{m.displayName}</b>{m.isInterim&&<span style={{color:"#b45309",fontWeight:600}}> (intérimaire)</span>}
+              </td>
+              <td style={{...tdStyle,textAlign:"left"}}>{m.fonctionName||"—"}</td>
+              <td style={{...tdStyle,height:50}}></td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>

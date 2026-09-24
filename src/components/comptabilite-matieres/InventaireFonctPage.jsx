@@ -181,7 +181,7 @@ export function InventaireFonctPage({store,activeSupplier,currentUser}){
         )}
       </div>
 
-      <PrintModal open={showPrint} onClose={()=>setShowPrint(false)} title="Liste d'inventaire">
+      <PrintModal open={showPrint} onClose={()=>setShowPrint(false)} title="Liste d'inventaire" signatories={["Compté par","Vérifié par"]}>
         <InventoryChecklistPrint
           products={products.map(p=>({name:p.name, computed:getComputed(p.id)}))}
           scopeLabel={scopeLabel}

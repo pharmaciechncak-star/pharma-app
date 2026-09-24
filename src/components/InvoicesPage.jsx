@@ -208,8 +208,8 @@ export function InvoicesPage({store,activeSupplier,onNav,currentUser}){
       ".montant{font-style:italic;font-size:9px;color:#444;margin:4px 0 24px;padding:5px 8px;border-left:3px solid #1A3A5C;background:#f8fafc}" +
       ".sg{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:16px}" +
       ".sb{text-align:center;padding:0 10px}" +
-      ".sn{font-weight:bold;font-size:9px;color:#1A3A5C;text-decoration:underline;margin-bottom:60px;display:block}" +
-      ".ss{height:4px}" +
+      ".sn{font-weight:bold;font-size:9px;color:#1A3A5C;text-decoration:underline;margin-bottom:6px;display:block}" +
+      ".ss{height:60px;border:1px dashed #999;border-radius:4px}" +
       ".full{grid-column:1/-1;max-width:50%;margin:0 auto}";
 
     const html =
@@ -362,16 +362,19 @@ export function InvoicesPage({store,activeSupplier,onNav,currentUser}){
             ].map(([l,r],i)=>(
               <div key={i} style={{display:"contents"}}>
                 <div style={{textAlign:"center",padding:"0 8px"}}>
-                  <div style={{fontWeight:700,fontSize:9,color:"#1A3A5C",textDecoration:"underline",marginBottom:60}}>{l}</div>
+                  <div style={{fontWeight:700,fontSize:9,color:"#1A3A5C",textDecoration:"underline",marginBottom:6}}>{l}</div>
+                  <div style={{border:"1px dashed #999",borderRadius:4,height:60}}></div>
                 </div>
                 <div style={{textAlign:"center",padding:"0 8px"}}>
-                  <div style={{fontWeight:700,fontSize:9,color:"#1A3A5C",textDecoration:"underline",marginBottom:60}}>{r}</div>
+                  <div style={{fontWeight:700,fontSize:9,color:"#1A3A5C",textDecoration:"underline",marginBottom:6}}>{r}</div>
+                  <div style={{border:"1px dashed #999",borderRadius:4,height:60}}></div>
                 </div>
               </div>
             ))}
           </div>
           <div style={{textAlign:"center",maxWidth:"50%",margin:"0 auto",marginBottom:16}}>
-            <div style={{fontWeight:700,fontSize:9,color:"#1A3A5C",textDecoration:"underline",marginBottom:60}}>La Directrice CHNCAK</div>
+            <div style={{fontWeight:700,fontSize:9,color:"#1A3A5C",textDecoration:"underline",marginBottom:6}}>La Directrice CHNCAK</div>
+            <div style={{border:"1px dashed #999",borderRadius:4,height:60}}></div>
           </div>
 
           {/* Statut + Boutons */}

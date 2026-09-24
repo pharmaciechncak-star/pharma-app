@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { fmtDate } from "../../constants";
 import { PageHeader } from "../ui/PageHeader";
 import { can, visibleServices, hasServiceAccess, hasSupplierAccess, productAllowedForService } from "../../permissions";
 import { btn, card, label, input } from "../../helpers/styles";
@@ -270,7 +271,7 @@ export function TransfertsPage({store,activeSupplier,currentUser}){
             {(t.items||[]).some(it=>it.expiry)&&(
               <button onClick={e=>{e.stopPropagation();setEditingExpiry(t);setExpiryDrafts(Object.fromEntries((t.items||[]).map(it=>[it.productId,it.expiry||""])));}}
                 style={{...btn(),background:"#f8fafc",color:"#64748b",border:"1px solid #e2e8f0",fontSize:10,marginTop:6,padding:"3px 8px"}}>
-                📅 Péremption la plus proche : {(t.items||[]).filter(it=>it.expiry).sort((a,b)=>a.expiry<b.expiry?-1:1)[0]?.expiry} ✏️
+                📅 Péremption la plus proche : {fmtDate((t.items||[]).filter(it=>it.expiry).sort((a,b)=>a.expiry<b.expiry?-1:1)[0]?.expiry)} ✏️
               </button>
             )}
             {t.status==="non_conforme"&&<div style={{fontSize:11,color:"#b91c1c",marginTop:6,fontWeight:600}}>⚠️ Écart signalé par le service — rien n'a été crédité à son stock. Corrigez les quantités anormales puis renvoyez.</div>}
@@ -284,7 +285,7 @@ export function TransfertsPage({store,activeSupplier,currentUser}){
           </div>
         ))}
       </div>
-      <PrintModal open={!!printSel} onClose={()=>setPrintSel(null)} title="Bon de Transfert">
+      <PrintModal open={!!printSel} onClose={()=>setPrintSel(null)} title="Bon de Transfert" signatories={["Le Pharmacien","Le Gestionnaire de stock","Le Service bénéficiaire"]}>
         <TransferPrint t={printSel}/>
       </PrintModal>
       <Modal open={!!cancelling} onClose={()=>setCancelling(null)} title="🚫 Annuler ce transfert ?">

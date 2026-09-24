@@ -39,6 +39,7 @@ export function Sidebar({open,onClose,page,onNav,user,unread,activeSupplier,onCh
       { id:"consommations",   label:"Consommations",  icon:"💉", perm:"consommations" },
       { id:"retours-service", label:"Retours Service",  icon:"↩️", perm:"retours-service" },
       { id:"seuil",           label:"Seuil",            icon:"🎚️", perm:"seuil" },
+      { id:"demandes",        label:"Demandes",         icon:"📝", perm:"demandes" },
     ]},
     // Vue d'ensemble commune à tout le monde (pharmacie ET services).
     { id:"suivi", label:"Suivi",   icon:"📈", items:[
@@ -47,23 +48,18 @@ export function Sidebar({open,onClose,page,onNav,user,unread,activeSupplier,onCh
       { id:"statistiques",    label:"Statistiques",    icon:"📈", perm:"statistiques" },
     ]},
     { id:"comptabilite-matieres", label:"Comptabilité Matières", icon:"🧾", items:[
-      { id:"entrees-fonct", label:"Bon d'Entrée", icon:"📥", perm:"entrees-fonct" },
-      { id:"sorties-fonct", label:"Bon de Sortie", icon:"📤", perm:"sorties-fonct" },
-      { id:"stock-fonct",   label:"Stock Fonctionnement", icon:"📊", perm:"stock-fonct" },
-      { id:"inventaire-fonct", label:"Inventaire", icon:"🗒️", perm:"inventaire-fonct" },
-      { id:"statistiques-fonct", label:"Statistiques", icon:"📚", perm:"statistiques-fonct" },
-    ]},
-    { id:"comptabilite-non-pharma", label:"Comptabilité Non-Pharma.", icon:"🧰", items:[
-      { id:"entrees-np", label:"Bon d'Entrée", icon:"📥", perm:"entrees-np" },
-      { id:"sorties-np", label:"Bon de Sortie", icon:"📤", perm:"sorties-np" },
-      { id:"stock-np",   label:"Stock", icon:"📊", perm:"stock-np" },
-      { id:"inventaire-np", label:"Inventaire", icon:"🗒️", perm:"inventaire-np" },
-      { id:"statistiques-np", label:"Statistiques", icon:"📚", perm:"statistiques-np" },
+      { id:"entrees-compta", label:"Bon d'Entrée", icon:"📥", anyPerm:["entrees-fonct","entrees-np"] },
+      { id:"sorties-compta", label:"Bon de Sortie", icon:"📤", anyPerm:["sorties-fonct","sorties-np"] },
+      { id:"stock-compta",   label:"Stock", icon:"📊", anyPerm:["stock-fonct","stock-np"] },
+      { id:"inventaire-compta", label:"Inventaire", icon:"🗒️", anyPerm:["inventaire-fonct","inventaire-np"] },
+      { id:"statistiques-compta", label:"Statistiques", icon:"📚", anyPerm:["statistiques-fonct","statistiques-np"] },
+      { id:"pv", label:"Procès-Verbaux", icon:"🗂️", anyPerm:["entrees-fonct","entrees-np"] },
     ]},
     { id:"admin", label:"Administration", icon:"⚙️", items:[
       { id:"utilisateurs", label:"Utilisateurs",      icon:"👥", perm:"utilisateurs" },
       { id:"activites",    label:"Journal d'activité",icon:"📜", adminOnly:true },
       { id:"assistant_ia", label:"Assistant IA",      icon:"🤖", perm:"assistant_ia" },
+      { id:"parametres-pv", label:"Paramètres",    icon:"⚙️", perm:"parametres-pv" },
     ]},
   ];
 
@@ -72,6 +68,7 @@ export function Sidebar({open,onClose,page,onNav,user,unread,activeSupplier,onCh
     ...g,
     items: g.items.filter(it=>{
       if(it.adminOnly) return role==="admin" || user?.isSuperuser;
+      if(it.anyPerm) return it.anyPerm.some(p=>can(user, p, "r"));
       if(!it.perm) return true;
       return can(user, it.perm, "r");
     })

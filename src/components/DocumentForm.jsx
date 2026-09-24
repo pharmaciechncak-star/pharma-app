@@ -317,7 +317,8 @@ export function DocumentForm({type,store,activeSupplier,activeDepot,ai,onNav,cur
 
       {/* Modale impression bon */}
       {printBon && (
-        <PrintModal open={!!printBon} onClose={()=>setPrintBon(null)} title={"Bon " + (printBon?.reference||"")}>
+        <PrintModal open={!!printBon} onClose={()=>setPrintBon(null)} title={"Bon " + (printBon?.reference||"")}
+          signatories={[isEntry?"Le Fournisseur":"Le Service","Le Comptable Matière CHNCAK"]}>
           <BonPrint
             bon={printBon}
             suppName={store.suppliers.find(s=>s.id===printBon.supplierId)?.name||activeSupplier?.name||"—"}

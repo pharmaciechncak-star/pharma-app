@@ -11,7 +11,13 @@ export function liveCol(collName, setter, ...constraints) {
   return onSnapshot(q, snap =>
     setter(snap.docs.map(d => ({
       id: d.id, ...d.data(),
-      date: d.data().createdAt?.toDate?.()?.toISOString() || d.data().date || new Date().toISOString()
+      // Priorité au champ "date" PROPRE au document (ex: la date choisie sur
+      // un Bon d'Entrée, "2026-09-21") — ne jamais l'écraser par un
+      // horodatage complet dérivé de createdAt ("2026-09-21T09:28:26.491Z"),
+      // qui casse à la fois son affichage et toute comparaison avec un filtre
+      // de période au format YYYY-MM-DD. Le repli sur createdAt ne sert que
+      // pour les collections qui n'ont pas leur propre champ "date".
+      date: d.data().date || d.data().createdAt?.toDate?.()?.toISOString() || new Date().toISOString()
     }))),
     // Sans ce second callback, une erreur de permission Firestore remonte
     // comme "Uncaught Error in snapshot listener" générique dans la console,
@@ -194,6 +200,10 @@ export function useStore(userId, userName, page) {
   const [productTypesFonct, setProductTypesFonct] = useState([]);
   const [circuitsRegistry, setCircuitsRegistry] = useState([]);
   const [demandes, setDemandes] = useState([]);
+  const [pvFonctions, setPvFonctions] = useState([]);
+  const [pvResponsables, setPvResponsables] = useState([]);
+  const [pvSettings, setPvSettings] = useState([]);
+  const [procesVerbaux, setProcesVerbaux] = useState([]);
   const [entreesNp, setEntreesNp] = useState([]);
   const [sortiesNp, setSortiesNp] = useState([]);
   const [stock2InventoriesNp, setStock2InventoriesNp] = useState([]);
@@ -231,6 +241,10 @@ export function useStore(userId, userName, page) {
       safeLiveCol("productTypesFonct", setProductTypesFonct, orderBy("name","asc")),
       safeLiveCol("circuitsRegistry", setCircuitsRegistry, orderBy("createdAt","asc")),
       safeLiveCol("demandes", setDemandes, orderBy("createdAt","desc")),
+      safeLiveCol("pvFonctions", setPvFonctions, orderBy("name","asc")),
+      safeLiveCol("pvResponsables", setPvResponsables, orderBy("order","asc")),
+      safeLiveCol("pvSettings", setPvSettings),
+      safeLiveCol("procesVerbaux", setProcesVerbaux, orderBy("createdAt","desc")),
       safeLiveCol("entreesNp", setEntreesNp, orderBy("createdAt","desc")),
       safeLiveCol("sortiesNp", setSortiesNp, orderBy("createdAt","desc")),
       safeLiveCol("stock2InventoriesNp", setStock2InventoriesNp, orderBy("createdAt","desc")),
@@ -305,10 +319,97 @@ export function useStore(userId, userName, page) {
     return () => unsub();
   }, [userId, page]);
 
+  // ── PV de réception (Procès-Verbaux) — création automatique ──
+  // Appelé après la création d'un Bon d'Entrée (Fonctionnement/Non-Pharma) :
+  // si le montant total atteint le seuil configuré pour ce circuit, génère
+  // automatiquement le PV correspondant, avec un numéro séquentiel propre au
+  // circuit et à l'année, et une COPIE (pas une référence) de la commission
+  // fixe actuelle — pour que le PV garde la composition telle qu'elle était
+  // au moment de la réception, même si la commission change plus tard.
+  async function createPvIfNeeded(circuit, entreeId, entreeData) {
+    // Garde anti-doublon : un PV existe-t-il déjà pour ce bon d'entrée ? (les
+    // deux chemins — automatique à la création, et manuel via le bouton —
+    // passent par cette même vérification.)
+    if ((procesVerbaux||[]).some(pv=>pv.entreeId===entreeId)) return;
+    const settings = (pvSettings||[]).find(s=>s.id===circuit || s.circuit===circuit);
+    const seuil = Number(settings?.seuil)||0;
+    if (!seuil) return; // pas de seuil configuré pour ce circuit -> pas de PV automatique
+    const totalMontant = (entreeData.items||[]).reduce((s,it)=>s+(Number(it.qty)||0)*(Number(it.unitPrice)||0),0);
+    if (totalMontant < seuil) return;
+    await buildAndSavePv(circuit, entreeId, entreeData, settings, "PV de réception généré automatiquement");
+  }
+
+  // Génération manuelle — pour régulariser un Bon d'Entrée déjà créé qui
+  // aurait dû recevoir un PV (seuil réglé après coup, par exemple). Mêmes
+  // règles que l'automatique : seuil obligatoire, montant atteint, et
+  // jamais de doublon si un PV existe déjà pour ce bon.
+  async function createPvManually(circuit, entreeId) {
+    if ((procesVerbaux||[]).some(pv=>pv.entreeId===entreeId)) throw new Error("Un PV existe déjà pour ce bon d'entrée.");
+    const entreeData = circuit==="fonctionnement"
+      ? (entreesFonct||[]).find(e=>e.id===entreeId)
+      : (entreesNp||[]).find(e=>e.id===entreeId);
+    if (!entreeData) throw new Error("Bon d'entrée introuvable.");
+    const settings = (pvSettings||[]).find(s=>s.id===circuit || s.circuit===circuit);
+    const seuil = Number(settings?.seuil)||0;
+    if (!seuil) throw new Error("Aucun seuil n'est configuré pour ce circuit (voir Paramètres).");
+    const totalMontant = (entreeData.items||[]).reduce((s,it)=>s+(Number(it.qty)||0)*(Number(it.unitPrice)||0),0);
+    if (totalMontant < seuil) throw new Error(`Ce bon (${totalMontant.toLocaleString("fr-FR")} FCFA) n'atteint pas le seuil configuré (${seuil.toLocaleString("fr-FR")} FCFA).`);
+    await buildAndSavePv(circuit, entreeId, entreeData, settings, "PV de réception généré manuellement");
+  }
+
+  async function buildAndSavePv(circuit, entreeId, entreeData, settings, activityLabel) {
+    const totalMontant = (entreeData.items||[]).reduce((s,it)=>s+(Number(it.qty)||0)*(Number(it.unitPrice)||0),0);
+    const totalUnites = (entreeData.items||[]).reduce((s,it)=>s+(Number(it.qty)||0),0);
+    const year = new Date().getFullYear();
+    const counterId = circuit+"_"+year;
+    const counterRef = doc(db,"pvCounters",counterId);
+    const counterSnap = await getDoc(counterRef);
+    const nextSeq = (counterSnap.exists()?Number(counterSnap.data().seq||0):0) + 1;
+    await setDoc(counterRef, { circuit, year, seq:nextSeq }, { merge:true });
+    const prefix = settings?.prefix || (circuit==="fonctionnement"?"PH":"NP");
+    const numero = `${prefix}/${nextSeq}/${year}`;
+    const itemsWithCdt = (entreeData.items||[]).map(it => {
+      const prod = (products||[]).find(p=>p.id===it.productId);
+      return { ...it, conditionnement: prod?.conditionnement||"" };
+    });
+    const commission = (pvResponsables||[]).filter(r=>r.circuit===circuit).map(r=>({
+      fonctionName:r.fonctionName||"", personName:r.personName||"", interimName:r.interimName||"",
+    }));
+    await addDoc(collection(db,"procesVerbaux"), {
+      circuit, numero, entreeId, entreeRef:entreeData.reference||"", supplierName:entreeData.supplierName||"", supplierId:entreeData.supplierId||"",
+      dateReception:entreeData.date||"", items:itemsWithCdt, totalMontant, totalUnites,
+      commission, status:"attente", bcNumero:"", blNumero:"", factureNumero:"",
+      createdBy:userId, createdByName:userName, createdAt:serverTimestamp(),
+    });
+    await addDoc(collection(db,"activities"), {
+      action:"create", entity:"pv", entityId:numero,
+      details:`${activityLabel} : ${numero} (${totalMontant.toLocaleString("fr-FR")} FCFA)`,
+      userId, userName, createdAt:serverTimestamp(),
+    });
+  }
+
+  // Renseigne les pièces justificatives (N° BC/BL/Facture) et fige le choix
+  // des intérimaires AVANT impression — le PV reste "en attente" tant qu'il
+  // n'est pas explicitement validé (après signature physique).
+  async function preparePvForPrint(pvId, { bcNumero, blNumero, factureNumero, commission }) {
+    const data = { bcNumero:bcNumero||"", blNumero:blNumero||"", factureNumero:factureNumero||"" };
+    if (commission) data.commission = commission;
+    await updateDoc(doc(db,"procesVerbaux",pvId), data);
+  }
+  async function validatePv(pvId) {
+    const snap = await getDoc(doc(db,"procesVerbaux",pvId));
+    if (!snap.exists()) throw new Error("PV introuvable");
+    const pv = snap.data();
+    if (pv.status === "valide") throw new Error("Ce PV est déjà validé.");
+    await updateDoc(doc(db,"procesVerbaux",pvId), { status:"valide", validatedBy:userId, validatedByName:userName, validatedAt:serverTimestamp() });
+    await addDoc(collection(db,"activities"), { action:"update", entity:"pv", entityId:pv.numero||pvId, details:`PV validé : ${pv.numero}`, userId, userName, createdAt:serverTimestamp() });
+  }
+
   return {
+    preparePvForPrint, validatePv, createPvManually,
     suppliers, depots, products, users,
     entries, returns, inventories, invoices, messages, activities,
-    services, transfers, consumptions, svcReturns, receptions, svcStock, batches, carouselSlides, stock2Inventories, entreesFonct, sortiesFonct, stock2InventoriesFonct, productTypesFonct, circuitsRegistry, demandes, entreesNp, sortiesNp, stock2InventoriesNp,
+    services, transfers, consumptions, svcReturns, receptions, svcStock, batches, carouselSlides, stock2Inventories, entreesFonct, sortiesFonct, stock2InventoriesFonct, productTypesFonct, circuitsRegistry, demandes, entreesNp, sortiesNp, stock2InventoriesNp, pvFonctions, pvResponsables, pvSettings, procesVerbaux,
     stock, loading,
 
     addSupplier:    s    => addDoc(collection(db,"suppliers"), { ...s, createdBy:userId, createdByName:userName, createdAt: serverTimestamp() }), // retourne Promise<DocumentReference>
@@ -1173,6 +1274,7 @@ export function useStore(userId, userName, page) {
         details:`Bon d'entrée (fonctionnement) : ${r.reference} — ${r.supplierName||""} (${r.items?.length||0} produit(s))`,
         userId, userName, createdAt:serverTimestamp(),
       });
+      await createPvIfNeeded("fonctionnement", ref.id, r);
       return ref;
     },
 
@@ -1333,6 +1435,7 @@ export function useStore(userId, userName, page) {
         details:`Bon d'entrée (non pharmaceutique) : ${r.reference} — ${r.supplierName||""} (${r.items?.length||0} produit(s))`,
         userId, userName, createdAt:serverTimestamp(),
       });
+      await createPvIfNeeded("non_pharmaceutique", ref.id, r);
       return ref;
     },
 
@@ -1524,6 +1627,62 @@ export function useStore(userId, userName, page) {
         userId, userName, createdAt:serverTimestamp(),
       });
       return refs;
+    },
+
+    // ── Paramètres PV (Procès-Verbaux de réception) ──
+    // Fonctions : liste partagée de titres (ex: "Comptable Matière Principal").
+    addPvFonction: async (name) => {
+      const n = (name||"").trim();
+      if (!n) throw new Error("Le nom de la fonction est obligatoire.");
+      const ref = await addDoc(collection(db,"pvFonctions"), { name:n, createdBy:userId, createdByName:userName, createdAt:serverTimestamp() });
+      return ref.id;
+    },
+    renamePvFonction: async (id, name) => {
+      const n = (name||"").trim();
+      if (!n) throw new Error("Le nom de la fonction est obligatoire.");
+      await updateDoc(doc(db,"pvFonctions",id), { name:n });
+    },
+    deletePvFonction: async (id) => { await deleteDoc(doc(db,"pvFonctions",id)); },
+
+    // Responsables : la commission FIXE d'un circuit (personne + fonction +
+    // intérimaire éventuel), dans l'ordre d'affichage/signature souhaité.
+    addPvResponsable: async (circuit, fonctionName, personName, interimName) => {
+      if (!personName?.trim()) throw new Error("Le nom du responsable est obligatoire.");
+      const order = (pvResponsables||[]).filter(r=>r.circuit===circuit).length;
+      const ref = await addDoc(collection(db,"pvResponsables"), {
+        circuit, fonctionName:fonctionName||"", personName:personName.trim(), interimName:interimName||"",
+        order, createdBy:userId, createdByName:userName, createdAt:serverTimestamp(),
+      });
+      return ref.id;
+    },
+    updatePvResponsable: async (id, data) => {
+      await updateDoc(doc(db,"pvResponsables",id), {
+        fonctionName: data.fonctionName||"", personName:(data.personName||"").trim(), interimName:data.interimName||"",
+      });
+    },
+    deletePvResponsable: async (id) => { await deleteDoc(doc(db,"pvResponsables",id)); },
+    // Échange l'ordre d'affichage de deux responsables du même circuit — sert
+    // aux flèches ↑/↓ dans Paramètres. L'ordre déterminé ici est celui du
+    // tableau imprimé sur le PV (1, 2, 3...).
+    movePvResponsable: async (circuit, id, direction) => {
+      const list = (pvResponsables||[]).filter(r=>r.circuit===circuit).sort((a,b)=>(a.order||0)-(b.order||0));
+      const idx = list.findIndex(r=>r.id===id);
+      const swapIdx = direction==="up" ? idx-1 : idx+1;
+      if (idx===-1 || swapIdx<0 || swapIdx>=list.length) return;
+      const a = list[idx], b = list[swapIdx];
+      await updateDoc(doc(db,"pvResponsables",a.id), { order: b.order??swapIdx });
+      await updateDoc(doc(db,"pvResponsables",b.id), { order: a.order??idx });
+    },
+
+    // Réglages par circuit (seuil de déclenchement, préfixe du numéro de PV)
+    // — un seul document par circuit, identifié par sa clé de circuit.
+    setPvSettings: async (circuit, { seuil, prefix, label, icon }) => {
+      const data = { circuit, updatedBy:userId, updatedByName:userName, updatedAt:serverTimestamp() };
+      if (seuil !== undefined) data.seuil = Number(seuil)||0;
+      if (prefix !== undefined) data.prefix = (prefix||"").trim();
+      if (label !== undefined) data.label = (label||"").trim();
+      if (icon !== undefined) data.icon = (icon||"").trim();
+      await setDoc(doc(db,"pvSettings",circuit), data, { merge:true });
     },
 
     // ── Inventaire Stock (2) ──

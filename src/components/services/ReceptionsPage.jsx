@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { genId } from "../../constants";
+import { genId, fmtDate } from "../../constants";
 import { IMG_CARDIO_SRC, IMG_LABEL_SRC, IMG_CHNCAK_SRC } from "../../images";
 import { imageUrlToDataURL } from "../../helpers/fileUtils";
 import { PageHeader } from "../ui/PageHeader";
@@ -199,8 +199,8 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
       "td{padding:5px 8px;border:1px solid #ddd}"+
       ".tot{background:#065f46;color:#fff;font-weight:bold}"+
       ".sig{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:30px}"+
-      ".sb{text-align:center}.sl{font-weight:bold;font-size:9px;color:#065f46;text-decoration:underline;margin-bottom:60px;display:block}"+
-      ".su{height:4px}</style></head><body>"+
+      ".sb{text-align:center}.sl{font-weight:bold;font-size:9px;color:#065f46;text-decoration:underline;margin-bottom:6px;display:block}"+
+      ".su{height:65px;border:1px dashed #999;border-radius:4px}</style></head><body>"+
       "<div class=\"ph\">"+
         "<div style=\"flex-shrink:0;width:85px\"><img src=\"" + cardioB64 + "\" style=\"width:80px;height:100px;object-fit:contain\"/></div>"+
         "<div class=\"ent\">"+
@@ -217,7 +217,7 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
         "</div>"+
       "</div>"+
       "<div class=\"sub\">BON DE RÉCEPTION — PHARMACIE CHNCAK</div>"+
-      "<div class=\"info\"><span>Réf : <strong>"+r.reference+"</strong></span><span>Fournisseur : <strong>"+r.supplierName+"</strong></span><span>Date : "+r.date+"</span></div>"+
+      "<div class=\"info\"><span>Réf : <strong>"+r.reference+"</strong></span><span>Fournisseur : <strong>"+r.supplierName+"</strong></span><span>Date : "+fmtDate(r.date)+"</span></div>"+
       "<table><thead><tr><th style=\"width:45%\">DÉSIGNATION</th><th>QTÉ</th><th>PRIX UNIT. (FCFA)</th><th>TOTAL (FCFA)</th></tr></thead><tbody>"+
       rows+"<tr class=\"tot\"><td colspan=\"3\" style=\"text-align:center\">TOTAL</td><td style=\"text-align:right\">"+total.toLocaleString("fr-FR")+"</td></tr></tbody></table>"+
       (r.notes?"<div style=\"margin-top:8px;font-size:9px;color:#444;font-style:italic\">Observations : "+r.notes+"</div>":"")+
@@ -249,7 +249,7 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
             <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8,fontSize:12}}>
               <div><b>Réf :</b> {r.reference}</div>
               <div><b>Fournisseur :</b> {r.supplierName}</div>
-              <div><b>Date :</b> {r.date}</div>
+              <div><b>Date :</b> {fmtDate(r.date)}</div>
               <div><b>Par :</b> {r.receivedByName}</div>
             </div>
           </div>
@@ -478,7 +478,7 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                 <div>
                   <div style={{fontWeight:700,fontSize:13,color:"#065f46"}}>📦 {r.reference}</div>
-                  <div style={{fontSize:11,color:"#64748b"}}>{r.supplierName} · {r.date}</div>
+                  <div style={{fontSize:11,color:"#64748b"}}>{r.supplierName} · {fmtDate(r.date)}</div>
                   <div style={{fontSize:11,color:"#94a3b8"}}>{r.items?.length||0} produit(s) · Par {r.receivedByName}</div>
                 </div>
                 <div style={{textAlign:"right"}}>

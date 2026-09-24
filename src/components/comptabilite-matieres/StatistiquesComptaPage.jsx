@@ -5,14 +5,23 @@ import { card, label, input, btn } from "../../helpers/styles";
 import { productVisibleInCircuit, hasSupplierAccess, visibleServices } from "../../permissions";
 import { PrintModal, GrandLivrePrint, FicheStockPrint, ConsommationMatieresPrint, BalancePeriodiquePrint } from "../print/PrintTemplates";
 import { Modal } from "../ui/Modal";
+import { getComptaCircuits, availableCircuits } from "../../helpers/circuitsConfig";
+import { CircuitSelector } from "../ui/CircuitSelector";
 
-// Rapports comptables standards (comptabilité matières publique) pour le
-// circuit fonctionnement : Grand Livre des Comptes (valorisé, P.U./Montant)
-// et Fiche de Stock (quantités, suivi Entrée/Sortie). Les deux suivent, pour
-// un produit donné, tous ses mouvements avec un solde ("Existant"/"Stock")
-// couru — reconstruits à partir des Bons d'Entrée et de Sortie déjà en place,
-// jamais une donnée séparée à ressaisir.
-export function StatistiquesFonctPage({store,activeSupplier,currentUser}){
+// Rapports comptables standards (comptabilité matières publique) — communs
+// à Fonctionnement et Non-Pharmaceutique : Grand Livre des Comptes (valorisé,
+// P.U./Montant) et Fiche de Stock (quantités, suivi Entrée/Sortie). Les deux
+// suivent, pour un produit donné, tous ses mouvements avec un solde
+// ("Existant"/"Stock") couru — reconstruits à partir des Bons d'Entrée et de
+// Sortie déjà en place, jamais une donnée séparée à ressaisir.
+export function StatistiquesComptaPage({store,activeSupplier,currentUser}){
+  const COMPTA_CIRCUITS = getComptaCircuits(store);
+  const available = availableCircuits(currentUser,"statistiques");
+  const [circuit,setCircuit] = useState(available[0]||"fonctionnement");
+  const cfg = COMPTA_CIRCUITS[circuit];
+  const entreesData = circuit==="fonctionnement" ? (store.entreesFonct||[]) : (store.entreesNp||[]);
+  const sortiesData = circuit==="fonctionnement" ? (store.sortiesFonct||[]) : (store.sortiesNp||[]);
+  const permSection = circuit==="fonctionnement" ? "statistiques-fonct" : "statistiques-np";
   const [productId,setProductId] = useState("");
   const [search,setSearch] = useState("");
   const [showResults,setShowResults] = useState(false);
@@ -30,7 +39,7 @@ export function StatistiquesFonctPage({store,activeSupplier,currentUser}){
   // Périodique (TOUS les produits) et au sélecteur ci-dessous ; la recherche
   // texte ne doit filtrer QUE le sélecteur, jamais la Balance Périodique.
   const products = store.products
-    .filter(p=>productVisibleInCircuit(p,"fonctionnement",store.suppliers))
+    .filter(p=>productVisibleInCircuit(p,circuit,store.suppliers))
     .filter(p=>!filterType||p.typeFonct===filterType)
     .filter(p=>activeSupplier?p.supplierId===activeSupplier.id:hasSupplierAccess(currentUser,p.supplierId));
   // Résultats affichés dans le menu déroulant de recherche (clic pour choisir).
@@ -45,7 +54,7 @@ export function StatistiquesFonctPage({store,activeSupplier,currentUser}){
   // choisir un produit précis.
   const globalTotals = () => {
     let totalEntrees = 0, totalSorties = 0;
-    (store.entreesFonct||[]).forEach(e=>{
+    (entreesData||[]).forEach(e=>{
       if (e.status==="annule") return;
       if (activeSupplier && e.supplierId!==activeSupplier.id) return;
       const d = e.date || (e.createdAt?.seconds?new Date(e.createdAt.seconds*1000).toISOString().slice(0,10):"");
@@ -56,7 +65,7 @@ export function StatistiquesFonctPage({store,activeSupplier,currentUser}){
         totalEntrees += (Number(it.qty)||0) * (Number(p?.price)||0);
       });
     });
-    (store.sortiesFonct||[]).forEach(s=>{
+    (sortiesData||[]).forEach(s=>{
       if (s.status==="annule") return;
       if (activeSupplier && s.supplierId!==activeSupplier.id) return;
       const d = s.createdAt?.seconds?new Date(s.createdAt.seconds*1000).toISOString().slice(0,10):"";
@@ -78,7 +87,7 @@ export function StatistiquesFonctPage({store,activeSupplier,currentUser}){
   const balancePeriodiqueRows = () => {
     const agg = {}; // productId -> { avant: {e,s}, periode: {e,s} }
     const touch = pid => { if(!agg[pid]) agg[pid] = { avantE:0, avantS:0, periodeE:0, periodeS:0 }; return agg[pid]; };
-    (store.entreesFonct||[]).forEach(e=>{
+    (entreesData||[]).forEach(e=>{
       if (e.status==="annule") return;
       if (activeSupplier && e.supplierId!==activeSupplier.id) return;
       const d = e.date || (e.createdAt?.seconds?new Date(e.createdAt.seconds*1000).toISOString().slice(0,10):"");
@@ -88,7 +97,7 @@ export function StatistiquesFonctPage({store,activeSupplier,currentUser}){
         else if (!periodTo || d<=periodTo) a.periodeE += Number(it.qty)||0;
       });
     });
-    (store.sortiesFonct||[]).forEach(s=>{
+    (sortiesData||[]).forEach(s=>{
       if (s.status==="annule") return;
       if (activeSupplier && s.supplierId!==activeSupplier.id) return;
       const d = s.createdAt?.seconds?new Date(s.createdAt.seconds*1000).toISOString().slice(0,10):"";
@@ -119,14 +128,14 @@ export function StatistiquesFonctPage({store,activeSupplier,currentUser}){
   const buildMovements = () => {
     if (!product) return [];
     const moves = [];
-    (store.entreesFonct||[]).forEach(e=>{
+    (entreesData||[]).forEach(e=>{
       if (e.status==="annule") return;
       const it = (e.items||[]).find(i=>i.productId===productId);
       if (!it) return;
       const d = e.date || (e.createdAt?.seconds?new Date(e.createdAt.seconds*1000).toISOString().slice(0,10):"");
       moves.push({ type:"entree", date:d, ts:e.createdAt?.seconds||0, bon:e.reference, qty:Number(it.qty)||0, tiers:e.supplierName||"—" });
     });
-    (store.sortiesFonct||[]).forEach(s=>{
+    (sortiesData||[]).forEach(s=>{
       if (s.status==="annule") return;
       const it = (s.items||[]).find(i=>i.productId===productId);
       if (!it) return;
@@ -147,13 +156,13 @@ export function StatistiquesFonctPage({store,activeSupplier,currentUser}){
     if (!product || !periodFrom) return 0;
     let bal = 0;
     const all = [];
-    (store.entreesFonct||[]).forEach(e=>{
+    (entreesData||[]).forEach(e=>{
       if (e.status==="annule") return;
       const it=(e.items||[]).find(i=>i.productId===productId); if(!it) return;
       const d = e.date || (e.createdAt?.seconds?new Date(e.createdAt.seconds*1000).toISOString().slice(0,10):"");
       all.push({d, qty:Number(it.qty)||0, sign:1});
     });
-    (store.sortiesFonct||[]).forEach(s=>{
+    (sortiesData||[]).forEach(s=>{
       if (s.status==="annule") return;
       const it=(s.items||[]).find(i=>i.productId===productId); if(!it) return;
       const d = s.createdAt?.seconds?new Date(s.createdAt.seconds*1000).toISOString().slice(0,10):"";
@@ -198,7 +207,7 @@ export function StatistiquesFonctPage({store,activeSupplier,currentUser}){
   const consommationMatieresRows = () => {
     if (!serviceId) return [];
     const byProduct = {};
-    (store.sortiesFonct||[]).forEach(s=>{
+    (sortiesData||[]).forEach(s=>{
       if (s.status==="annule" || s.serviceId!==serviceId) return;
       const d = s.createdAt?.seconds?new Date(s.createdAt.seconds*1000).toISOString().slice(0,10):"";
       if (periodFrom && d<periodFrom) return;
@@ -218,8 +227,9 @@ export function StatistiquesFonctPage({store,activeSupplier,currentUser}){
 
   return (
     <div style={{padding:0}}>
-      <PageHeader pageId="statistiques-fonct" title="📚 Statistiques" subtitle="Grand Livre des Comptes & Fiche de Stock — circuit fonctionnement"/>
+      <PageHeader pageId={permSection} title={"📚 Statistiques — "+cfg.label} subtitle="Grand Livre des Comptes & Fiche de Stock"/>
       <div style={{padding:16}}>
+        <CircuitSelector circuit={circuit} setCircuit={c=>{setCircuit(c);setProductId("");setSearch("");setServiceId("");}} available={available} circuits={COMPTA_CIRCUITS}/>
         <div style={{...card,marginBottom:12}}>
           {(store.productTypesFonct||[]).length>0&&(
             <div style={{marginBottom:10}}>

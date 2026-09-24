@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { fmtDate } from "../../constants";
 import { PageHeader } from "../ui/PageHeader";
 import { can, visibleServices, hasServiceAccess, productAllowedForService } from "../../permissions";
 import { PrintModal, SvcReturnPrint } from "../print/PrintTemplates";
@@ -247,7 +248,7 @@ export function RetoursServicePage({store,currentUser}){
             {(r.items||[]).some(it=>it.expiry)&&(
               <button onClick={e=>{e.stopPropagation();setEditingExpiry(r);setExpiryDrafts(Object.fromEntries((r.items||[]).map(it=>[it.productId,it.expiry||""])));}}
                 style={{...btn(),background:"#f8fafc",color:"#64748b",border:"1px solid #e2e8f0",fontSize:10,marginTop:6,padding:"3px 8px"}}>
-                📅 Péremption la plus proche : {(r.items||[]).filter(it=>it.expiry).sort((a,b)=>a.expiry<b.expiry?-1:1)[0]?.expiry} ✏️
+                📅 Péremption la plus proche : {fmtDate((r.items||[]).filter(it=>it.expiry).sort((a,b)=>a.expiry<b.expiry?-1:1)[0]?.expiry)} ✏️
               </button>
             )}
             {r.status==="non_conforme"&&<div style={{fontSize:11,color:"#b91c1c",marginTop:6,fontWeight:600}}>⚠️ Écart signalé par la pharmacie — rien n'a été crédité à son stock. Corrigez les quantités anormales puis renvoyez.</div>}
@@ -261,7 +262,7 @@ export function RetoursServicePage({store,currentUser}){
           </div>
         ))}
       </div>
-      <PrintModal open={!!printSel} onClose={()=>setPrintSel(null)} title="Bon de Retour Service">
+      <PrintModal open={!!printSel} onClose={()=>setPrintSel(null)} title="Bon de Retour Service" signatories={["Le Service","Le Gestionnaire de stock"]}>
         <SvcReturnPrint r={printSel}/>
       </PrintModal>
       <Modal open={!!cancelling} onClose={()=>setCancelling(null)} title="🚫 Annuler ce retour ?">
