@@ -17,6 +17,7 @@ export function StockComptaPage({store,currentUser}){
   const cfg = COMPTA_CIRCUITS[circuit];
   const entreesData = circuit==="fonctionnement" ? store.entreesFonct : store.entreesNp;
   const sortiesData = circuit==="fonctionnement" ? store.sortiesFonct : store.sortiesNp;
+  const retoursData = circuit==="fonctionnement" ? store.retoursFonct : store.retoursNp;
   const getPharmacyStock2 = circuit==="fonctionnement" ? getFonctPharmacyStock2 : getNpPharmacyStock2;
   const getServiceStock2 = circuit==="fonctionnement" ? getFonctServiceStock2 : getNpServiceStock2;
   const permSection = circuit==="fonctionnement" ? "stock-fonct" : "stock-np";
@@ -89,6 +90,7 @@ export function StockComptaPage({store,currentUser}){
                   {isPharmacieView?<>
                     <th style={{background:"#065f46",color:"white",padding:"7px 10px",textAlign:"center",border:"1px solid #065f46"}}>Entré</th>
                     <th style={{background:"#7f1d1d",color:"white",padding:"7px 10px",textAlign:"center",border:"1px solid #7f1d1d"}}>Sorti</th>
+                    <th style={{background:"#7c2d12",color:"white",padding:"7px 10px",textAlign:"center",border:"1px solid #7c2d12"}}>Retourné</th>
                   </>:<>
                     <th style={{background:"#065f46",color:"white",padding:"7px 10px",textAlign:"center",border:"1px solid #065f46"}}>Reçu</th>
                   </>}
@@ -97,11 +99,12 @@ export function StockComptaPage({store,currentUser}){
               </thead>
               <tbody>
                 {filteredProds.map((p,i)=>{
-                  let stockVal,col1,col2;
+                  let stockVal,col1,col2,col3;
                   if(isPharmacieView){
                     const entre = sumItemsQty(entreesData, p.id);
                     const sorti = sumItemsQty(sortiesData, p.id);
-                    stockVal=getPharmacyStock2(store,p.id); col1=entre; col2=sorti;
+                    const retour = sumItemsQty(retoursData, p.id);
+                    stockVal=getPharmacyStock2(store,p.id); col1=entre; col2=sorti; col3=retour;
                   } else {
                     stockVal=getServiceStock2(store,p.id,filterService); col1=stockVal;
                   }
@@ -112,6 +115,7 @@ export function StockComptaPage({store,currentUser}){
                       <td style={{padding:"6px 10px",border:"1px solid #e2e8f0",textAlign:"center",fontSize:10,color:"#64748b"}}>{store.suppliers.find(s=>s.id===p.supplierId)?.name||"—"}</td>
                       <td style={{padding:"6px 10px",border:"1px solid #e2e8f0",textAlign:"center",color:"#059669",fontWeight:600}}>{col1}</td>
                       {isPharmacieView&&<td style={{padding:"6px 10px",border:"1px solid #e2e8f0",textAlign:"center",color:"#dc2626",fontWeight:600}}>{col2}</td>}
+                      {isPharmacieView&&<td style={{padding:"6px 10px",border:"1px solid #e2e8f0",textAlign:"center",color:"#9a3412",fontWeight:600}}>{col3}</td>}
                       <td style={{padding:"6px 10px",border:"1px solid #e2e8f0",textAlign:"center",fontWeight:800,
                         background:isAlert?"#fee2e2":"#f0fdf4",color:isAlert?"#dc2626":"#059669",fontSize:13}}>
                         {stockVal}

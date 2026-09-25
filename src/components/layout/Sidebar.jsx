@@ -12,17 +12,17 @@ export function Sidebar({open,onClose,page,onNav,user,unread,activeSupplier,onCh
   const toggleGroup = g => setCollapsed(c=>({...c,[g]:!c[g]}));
 
   const GROUPS = [
-    { id:"pharmacie", label:"Pharmacie",  icon:"💊", items:[
+    { id:"pharmacie", label:"Dépôt Vente",  icon:"💊", items:[
       { id:"dashboard",  label:"Tableau de bord", icon:"📊" },
       { id:"entrees",    label:"Bons d'Entrée",   icon:"📥", perm:"entrees" },
       { id:"retours",    label:"Bons de Retour",  icon:"↩️", perm:"retours" },
+      { id:"sorties-depot", label:"Bon de Sortie", icon:"📤", perm:"sorties-depot" },
       { id:"inventaire", label:"Inventaire",      icon:"🗂️", perm:"inventaire" },
       { id:"factures",   label:"Situations",        icon:"🧾", perm:"factures" },
       { id:"hist-inv",   label:"Hist. Inventaires",icon:"📋", perm:"hist-inv" },
       { id:"hist-fact",  label:"Hist. Situations",  icon:"📁", perm:"hist-fact" },
       { id:"messagerie", label:"Messagerie",      icon:"✉️", perm:"messagerie" },
       { id:"produits",     label:"Produits",     icon:"💊", perm:"produits" },
-      { id:"fournisseurs", label:"Fournisseurs", icon:"🏢", perm:"fournisseurs" },
       { id:"depots",       label:"Dépôts",       icon:"🏭", perm:"depots" },
     ]},
     // Rubriques à cheval entre la pharmacie et les services — Stock (2) :
@@ -34,7 +34,6 @@ export function Sidebar({open,onClose,page,onNav,user,unread,activeSupplier,onCh
     ]},
     // Rubriques propres aux services hospitaliers.
     { id:"services", label:"Services",   icon:"🏥", items:[
-      { id:"services",        label:"Services",       icon:"🏥", perm:"services" },
       { id:"controle-transfert", label:"Contrôle Transfert", icon:"🔍", perm:"controle-transfert" },
       { id:"consommations",   label:"Consommations",  icon:"💉", perm:"consommations" },
       { id:"retours-service", label:"Retours Service",  icon:"↩️", perm:"retours-service" },
@@ -49,6 +48,7 @@ export function Sidebar({open,onClose,page,onNav,user,unread,activeSupplier,onCh
     ]},
     { id:"comptabilite-matieres", label:"Comptabilité Matières", icon:"🧾", items:[
       { id:"entrees-compta", label:"Bon d'Entrée", icon:"📥", anyPerm:["entrees-fonct","entrees-np"] },
+      { id:"retours-compta", label:"Bon de Retour", icon:"↩️", anyPerm:["retours-fonct","retours-np"] },
       { id:"sorties-compta", label:"Bon de Sortie", icon:"📤", anyPerm:["sorties-fonct","sorties-np"] },
       { id:"stock-compta",   label:"Stock", icon:"📊", anyPerm:["stock-fonct","stock-np"] },
       { id:"inventaire-compta", label:"Inventaire", icon:"🗒️", anyPerm:["inventaire-fonct","inventaire-np"] },
@@ -57,6 +57,8 @@ export function Sidebar({open,onClose,page,onNav,user,unread,activeSupplier,onCh
     ]},
     { id:"admin", label:"Administration", icon:"⚙️", items:[
       { id:"utilisateurs", label:"Utilisateurs",      icon:"👥", perm:"utilisateurs" },
+      { id:"fournisseurs", label:"Fournisseurs",      icon:"🏢", perm:"fournisseurs" },
+      { id:"services",     label:"Services",          icon:"🏥", perm:"services" },
       { id:"activites",    label:"Journal d'activité",icon:"📜", adminOnly:true },
       { id:"assistant_ia", label:"Assistant IA",      icon:"🤖", perm:"assistant_ia" },
       { id:"parametres-pv", label:"Paramètres",    icon:"⚙️", perm:"parametres-pv" },
@@ -112,8 +114,8 @@ export function Sidebar({open,onClose,page,onNav,user,unread,activeSupplier,onCh
         {/* Menu groupé */}
         <nav style={{flex:1,overflowY:"auto",padding:"4px 0"}}>
           {visibleGroups.map(g=>{
-            const isOpen = collapsed[g.id]===false ? false : (collapsed[g.id]===true ? true : true); // ouvert par défaut
             const hasActive = g.items.some(i=>i.id===page);
+            const isOpen = collapsed[g.id]===false ? false : (collapsed[g.id]===true ? true : hasActive); // réduit par défaut, sauf le groupe de la page active
             return(
               <div key={g.id}>
                 {/* En-tête groupe */}

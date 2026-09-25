@@ -196,6 +196,7 @@ export function useStore(userId, userName, page) {
   const [carouselSlides, setCarouselSlides] = useState(null); // null = pas encore chargé
   const [stock2Inventories, setStock2Inventories] = useState([]);
   const [entreesFonct, setEntreesFonct] = useState([]);
+  const [retoursFonct, setRetoursFonct] = useState([]);
   const [stock2InventoriesFonct, setStock2InventoriesFonct] = useState([]);
   const [productTypesFonct, setProductTypesFonct] = useState([]);
   const [circuitsRegistry, setCircuitsRegistry] = useState([]);
@@ -205,11 +206,13 @@ export function useStore(userId, userName, page) {
   const [pvSettings, setPvSettings] = useState([]);
   const [procesVerbaux, setProcesVerbaux] = useState([]);
   const [entreesNp, setEntreesNp] = useState([]);
+  const [retoursNp, setRetoursNp] = useState([]);
   const [sortiesNp, setSortiesNp] = useState([]);
   const [stock2InventoriesNp, setStock2InventoriesNp] = useState([]);
   const [sortiesFonct, setSortiesFonct] = useState([]);
   const [svcStock,     setSvcStock]     = useState({}); // { "serviceId_productId": qty }
   const [stock,        setStock]        = useState({});
+  const [sortiesDepot, setSortiesDepot] = useState([]);
   const [loading,      setLoading]      = useState(true);
 
   useEffect(() => {
@@ -237,15 +240,18 @@ export function useStore(userId, userName, page) {
       safeLiveCol("receptions",   setReceptions,  orderBy("createdAt","desc")),
       safeLiveCol("stock2Inventories", setStock2Inventories, orderBy("createdAt","desc")),
       safeLiveCol("entreesFonct", setEntreesFonct, orderBy("createdAt","desc")),
+      safeLiveCol("retoursFonct", setRetoursFonct, orderBy("createdAt","desc")),
       safeLiveCol("stock2InventoriesFonct", setStock2InventoriesFonct, orderBy("createdAt","desc")),
       safeLiveCol("productTypesFonct", setProductTypesFonct, orderBy("name","asc")),
       safeLiveCol("circuitsRegistry", setCircuitsRegistry, orderBy("createdAt","asc")),
       safeLiveCol("demandes", setDemandes, orderBy("createdAt","desc")),
+      safeLiveCol("sortiesDepot", setSortiesDepot, orderBy("createdAt","desc")),
       safeLiveCol("pvFonctions", setPvFonctions, orderBy("name","asc")),
       safeLiveCol("pvResponsables", setPvResponsables, orderBy("order","asc")),
       safeLiveCol("pvSettings", setPvSettings),
       safeLiveCol("procesVerbaux", setProcesVerbaux, orderBy("createdAt","desc")),
       safeLiveCol("entreesNp", setEntreesNp, orderBy("createdAt","desc")),
+      safeLiveCol("retoursNp", setRetoursNp, orderBy("createdAt","desc")),
       safeLiveCol("sortiesNp", setSortiesNp, orderBy("createdAt","desc")),
       safeLiveCol("stock2InventoriesNp", setStock2InventoriesNp, orderBy("createdAt","desc")),
       safeLiveCol("sortiesFonct", setSortiesFonct, orderBy("createdAt","desc")),
@@ -409,8 +415,8 @@ export function useStore(userId, userName, page) {
     preparePvForPrint, validatePv, createPvManually,
     suppliers, depots, products, users,
     entries, returns, inventories, invoices, messages, activities,
-    services, transfers, consumptions, svcReturns, receptions, svcStock, batches, carouselSlides, stock2Inventories, entreesFonct, sortiesFonct, stock2InventoriesFonct, productTypesFonct, circuitsRegistry, demandes, entreesNp, sortiesNp, stock2InventoriesNp, pvFonctions, pvResponsables, pvSettings, procesVerbaux,
-    stock, loading,
+    services, transfers, consumptions, svcReturns, receptions, svcStock, batches, carouselSlides, stock2Inventories, entreesFonct, retoursFonct, sortiesFonct, stock2InventoriesFonct, productTypesFonct, circuitsRegistry, demandes, entreesNp, retoursNp, sortiesNp, stock2InventoriesNp, pvFonctions, pvResponsables, pvSettings, procesVerbaux,
+    stock, sortiesDepot, loading,
 
     addSupplier:    s    => addDoc(collection(db,"suppliers"), { ...s, createdBy:userId, createdByName:userName, createdAt: serverTimestamp() }), // retourne Promise<DocumentReference>
     updateSupplier: (id,s)=> updateDoc(doc(db,"suppliers",id), s),
@@ -434,6 +440,44 @@ export function useStore(userId, userName, page) {
       await adjustStockFB(r.items, -1);
       await addDoc(collection(db,"activities"), { action:"create", entity:"return", entityId:ref.id, details:`Bon de retour créé : ${r.reference} (${r.items?.length||0} article(s))`, userId, userName, createdAt:serverTimestamp() });
       return { id: ref.id, ...r, date: new Date().toISOString() };
+    },
+
+    // ── Bon de Sortie (Dépôt Vente) — sortie DIRECTE, sans contrôle ni
+    // confirmation d'un service (à la différence des Transferts) : pour
+    // perte, casse, usage interne ou tout autre motif ne nécessitant pas ce
+    // circuit de confirmation. Coexiste avec les Transferts, ne les remplace
+    // pas. Même modèle de stock que Bon d'Entrée/Retour (compteur direct
+    // stockQty), pas de lots FEFO.
+    addSortieDepot: async s => {
+      const ref = await addDoc(collection(db,"sortiesDepot"), {
+        ...s, status:"envoye", createdBy:userId, createdByName:userName, createdAt:serverTimestamp(),
+      });
+      await adjustStockFB(s.items, -1);
+      await addDoc(collection(db,"activities"), {
+        action:"create", entity:"sortieDepot", entityId:ref.id,
+        details:`Bon de sortie (dépôt vente) : ${s.reference} — motif : ${s.motif||"—"} (${s.items?.length||0} article(s))`,
+        userId, userName, createdAt:serverTimestamp(),
+      });
+      return ref;
+    },
+    cancelSortieDepot: async (sortieId) => {
+      const sSnap = await getDoc(doc(db,"sortiesDepot",sortieId));
+      if (!sSnap.exists()) throw new Error("Bon de sortie introuvable");
+      const s = sSnap.data();
+      if (s.status === "annule") throw new Error("Ce bon de sortie est déjà annulé.");
+      await adjustStockFB(s.items, +1);
+      await updateDoc(doc(db,"sortiesDepot",sortieId), { status:"annule", cancelledBy:userId, cancelledByName:userName, cancelledAt:serverTimestamp() });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"sortieDepot", entityId:sortieId, details:`Bon de sortie (dépôt vente) annulé : ${s.reference}`, userId, userName, createdAt:serverTimestamp() });
+    },
+    updateSortieDepot: async (sortieId, newData) => {
+      const sSnap = await getDoc(doc(db,"sortiesDepot",sortieId));
+      if (!sSnap.exists()) throw new Error("Bon de sortie introuvable");
+      const s = sSnap.data();
+      if (s.status === "annule") throw new Error("Ce bon de sortie est annulé — impossible de le modifier.");
+      await adjustStockFB(s.items, +1);
+      await adjustStockFB(newData.items, -1);
+      await updateDoc(doc(db,"sortiesDepot",sortieId), { ...newData, updatedAt:serverTimestamp() });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"sortieDepot", entityId:sortieId, details:`Bon de sortie (dépôt vente) modifié : ${newData.reference||""}`, userId, userName, createdAt:serverTimestamp() });
     },
 
     addInventory: async inv => {
@@ -1603,6 +1647,110 @@ export function useStore(userId, userName, page) {
         await updateDoc(doc(db,"batches",b.id), { expiry:newExpiry });
       }
       await addDoc(collection(db,"activities"), { action:"update", entity:"sortieNp", entityId:sortieId, details:`Date de péremption corrigée (${productId}) : ${newExpiry}`, userId, userName, createdAt:serverTimestamp() });
+    },
+
+    // ── Bon de Retour (Comptabilité Matières) — retour vers le fournisseur,
+    // l'inverse d'un Bon d'Entrée. Ne crée jamais de nouveau lot (les
+    // articles quittent définitivement le système) : consomme FEFO à la
+    // pharmacie, et garde le détail exact des lots touchés (consumedBatches)
+    // pour pouvoir restaurer précisément au moment d'annuler ou de modifier.
+    // La vérification "quantité disponible" reste côté interface, avant
+    // l'appel — même convention que pour les Bons de Sortie.
+    addRetourFonct: async r => {
+      const consumedBatches = [];
+      for (const it of (r.items||[])) {
+        if (!it.productId || !Number(it.qty)) continue;
+        const { consumed } = await consumeFEFO(it.productId, Number(it.qty), locFonctPharmacy());
+        consumedBatches.push(...consumed.map(c=>({ productId:it.productId, batchId:c.batchId, qty:c.qty })));
+      }
+      const ref = await addDoc(collection(db,"retoursFonct"), {
+        ...r, consumedBatches, returnedBy:userId, returnedByName:userName, status:"envoye", createdAt:serverTimestamp(),
+      });
+      await addDoc(collection(db,"activities"), {
+        action:"create", entity:"retourFonct", entityId:ref.id,
+        details:`Bon de retour (fonctionnement) vers ${r.supplierName||""} : ${r.items?.length||0} produit(s)`,
+        userId, userName, createdAt:serverTimestamp(),
+      });
+      return ref;
+    },
+    cancelRetourFonct: async (retourId) => {
+      const rSnap = await getDoc(doc(db,"retoursFonct",retourId));
+      if (!rSnap.exists()) throw new Error("Bon de retour introuvable");
+      const r = rSnap.data();
+      if (r.status === "annule") throw new Error("Ce bon de retour est déjà annulé.");
+      for (const c of (r.consumedBatches||[])) {
+        const bSnap = await getDoc(doc(db,"batches",c.batchId));
+        if (bSnap.exists()) await updateDoc(doc(db,"batches",c.batchId), { qtyRemaining: (bSnap.data().qtyRemaining||0) + c.qty });
+      }
+      await updateDoc(doc(db,"retoursFonct",retourId), { status:"annule", cancelledBy:userId, cancelledByName:userName, cancelledAt:serverTimestamp() });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"retourFonct", entityId:retourId, details:`Bon de retour (fonctionnement) annulé : vers ${r.supplierName||""}`, userId, userName, createdAt:serverTimestamp() });
+    },
+    updateRetourFonct: async (retourId, newData) => {
+      const rSnap = await getDoc(doc(db,"retoursFonct",retourId));
+      if (!rSnap.exists()) throw new Error("Bon de retour introuvable");
+      const r = rSnap.data();
+      if (r.status === "annule") throw new Error("Ce bon de retour est annulé — impossible de le modifier.");
+      for (const c of (r.consumedBatches||[])) {
+        const bSnap = await getDoc(doc(db,"batches",c.batchId));
+        if (bSnap.exists()) await updateDoc(doc(db,"batches",c.batchId), { qtyRemaining: (bSnap.data().qtyRemaining||0) + c.qty });
+      }
+      const consumedBatches = [];
+      for (const it of (newData.items||[])) {
+        if (!it.productId || !Number(it.qty)) continue;
+        const { consumed } = await consumeFEFO(it.productId, Number(it.qty), locFonctPharmacy());
+        consumedBatches.push(...consumed.map(c=>({ productId:it.productId, batchId:c.batchId, qty:c.qty })));
+      }
+      await updateDoc(doc(db,"retoursFonct",retourId), { ...newData, consumedBatches, updatedAt:serverTimestamp() });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"retourFonct", entityId:retourId, details:`Bon de retour (fonctionnement) modifié : ${newData.reference||""}`, userId, userName, createdAt:serverTimestamp() });
+    },
+
+    // ── Bon de Retour — circuit non pharmaceutique (même principe) ──
+    addRetourNp: async r => {
+      const consumedBatches = [];
+      for (const it of (r.items||[])) {
+        if (!it.productId || !Number(it.qty)) continue;
+        const { consumed } = await consumeFEFO(it.productId, Number(it.qty), locNpPharmacy());
+        consumedBatches.push(...consumed.map(c=>({ productId:it.productId, batchId:c.batchId, qty:c.qty })));
+      }
+      const ref = await addDoc(collection(db,"retoursNp"), {
+        ...r, consumedBatches, returnedBy:userId, returnedByName:userName, status:"envoye", createdAt:serverTimestamp(),
+      });
+      await addDoc(collection(db,"activities"), {
+        action:"create", entity:"retourNp", entityId:ref.id,
+        details:`Bon de retour (non pharmaceutique) vers ${r.supplierName||""} : ${r.items?.length||0} produit(s)`,
+        userId, userName, createdAt:serverTimestamp(),
+      });
+      return ref;
+    },
+    cancelRetourNp: async (retourId) => {
+      const rSnap = await getDoc(doc(db,"retoursNp",retourId));
+      if (!rSnap.exists()) throw new Error("Bon de retour introuvable");
+      const r = rSnap.data();
+      if (r.status === "annule") throw new Error("Ce bon de retour est déjà annulé.");
+      for (const c of (r.consumedBatches||[])) {
+        const bSnap = await getDoc(doc(db,"batches",c.batchId));
+        if (bSnap.exists()) await updateDoc(doc(db,"batches",c.batchId), { qtyRemaining: (bSnap.data().qtyRemaining||0) + c.qty });
+      }
+      await updateDoc(doc(db,"retoursNp",retourId), { status:"annule", cancelledBy:userId, cancelledByName:userName, cancelledAt:serverTimestamp() });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"retourNp", entityId:retourId, details:`Bon de retour (non pharmaceutique) annulé : vers ${r.supplierName||""}`, userId, userName, createdAt:serverTimestamp() });
+    },
+    updateRetourNp: async (retourId, newData) => {
+      const rSnap = await getDoc(doc(db,"retoursNp",retourId));
+      if (!rSnap.exists()) throw new Error("Bon de retour introuvable");
+      const r = rSnap.data();
+      if (r.status === "annule") throw new Error("Ce bon de retour est annulé — impossible de le modifier.");
+      for (const c of (r.consumedBatches||[])) {
+        const bSnap = await getDoc(doc(db,"batches",c.batchId));
+        if (bSnap.exists()) await updateDoc(doc(db,"batches",c.batchId), { qtyRemaining: (bSnap.data().qtyRemaining||0) + c.qty });
+      }
+      const consumedBatches = [];
+      for (const it of (newData.items||[])) {
+        if (!it.productId || !Number(it.qty)) continue;
+        const { consumed } = await consumeFEFO(it.productId, Number(it.qty), locNpPharmacy());
+        consumedBatches.push(...consumed.map(c=>({ productId:it.productId, batchId:c.batchId, qty:c.qty })));
+      }
+      await updateDoc(doc(db,"retoursNp",retourId), { ...newData, consumedBatches, updatedAt:serverTimestamp() });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"retourNp", entityId:retourId, details:`Bon de retour (non pharmaceutique) modifié : ${newData.reference||""}`, userId, userName, createdAt:serverTimestamp() });
     },
 
     createStock2InventoryNp: async (scope, lines) => {

@@ -8,6 +8,7 @@ import { LOGO_B64 } from "./images";
 import { LoginPage } from "./components/layout/LoginPage";
 import { Dashboard } from "./components/Dashboard";
 import { DocumentForm } from "./components/DocumentForm";
+import { SortieDepotPage } from "./components/SortieDepotPage";
 import { InventoryPage } from "./components/InventoryPage";
 import { InvoicesPage } from "./components/InvoicesPage";
 import { InventoryHistoryPage } from "./components/InventoryHistoryPage";
@@ -31,6 +32,7 @@ import { ReceptionsPage } from "./components/services/ReceptionsPage";
 import { StockServicePage } from "./components/services/StockServicePage";
 import { InventaireStock2Page } from "./components/services/InventaireStock2Page";
 import { EntreesComptaPage } from "./components/comptabilite-matieres/EntreesComptaPage";
+import { RetoursComptaPage } from "./components/comptabilite-matieres/RetoursComptaPage";
 import { SortiesComptaPage } from "./components/comptabilite-matieres/SortiesComptaPage";
 import { StockComptaPage } from "./components/comptabilite-matieres/StockComptaPage";
 import { InventaireComptaPage } from "./components/comptabilite-matieres/InventaireComptaPage";
@@ -150,6 +152,16 @@ export default function App(){
   };
 
   const nav = (p, extra={}) => {
+    // "Assistant IA" n'est pas une page — c'est un panneau ouvert par-dessus
+    // la page courante (comme depuis la barre du haut). Naviguer vers "p"
+    // directement laisserait "page" sur une valeur sans route, retombant sur
+    // le tableau de bord par défaut.
+    if (p === "assistant_ia") {
+      if(!can(user,"assistant_ia","r")){ alert("⛔ Accès à l'Assistant IA non autorisé. Contactez l'administrateur."); return; }
+      setAiOpen(true);
+      setMenuOpen(false);
+      return;
+    }
     setPage(p);
     setMenuOpen(false);
     setAiOpen(false);
@@ -192,6 +204,7 @@ export default function App(){
       case "dashboard":    return <Dashboard {...props}/>;
       case "entrees":      return <DocumentForm type="entry"  {...props} ai={ai}/>;
       case "retours":      return <DocumentForm type="return" {...props} ai={ai}/>;
+      case "sorties-depot": return can(user,"sorties-depot","r")?<SortieDepotPage store={store} activeSupplier={activeSupplier} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;
       case "inventaire":   return <InventoryPage store={store} activeSupplier={activeSupplier} currentUser={user}/>;
       case "factures":     return <InvoicesPage store={store} activeSupplier={activeSupplier} onNav={nav} currentUser={user}/>;
       case "hist-inv":
@@ -262,6 +275,7 @@ export default function App(){
       case "stock-service":   return can(user,"stock-service","r")?<StockServicePage store={store} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;
       case "inventaire-stock2": return can(user,"inventaire-stock2","r")?<InventaireStock2Page store={store} activeSupplier={activeSupplier} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;
       case "entrees-compta": return (can(user,"entrees-fonct","r")||can(user,"entrees-np","r"))?<EntreesComptaPage store={store} activeSupplier={activeSupplier} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;
+      case "retours-compta": return (can(user,"retours-fonct","r")||can(user,"retours-np","r"))?<RetoursComptaPage store={store} activeSupplier={activeSupplier} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;
       case "sorties-compta": return (can(user,"sorties-fonct","r")||can(user,"sorties-np","r"))?<SortiesComptaPage store={store} activeSupplier={activeSupplier} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;
       case "stock-compta": return (can(user,"stock-fonct","r")||can(user,"stock-np","r"))?<StockComptaPage store={store} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;
       case "inventaire-compta": return (can(user,"inventaire-fonct","r")||can(user,"inventaire-np","r"))?<InventaireComptaPage store={store} activeSupplier={activeSupplier} currentUser={user}/>:<div style={{padding:24}}><Alert type="error">Accès non autorisé.</Alert></div>;

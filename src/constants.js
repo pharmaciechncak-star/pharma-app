@@ -17,6 +17,10 @@ export const SECTIONS = [
   // Pharmacie
   { id:"entrees",         label:"Bons d'Entrée",          group:"pharmacie" },
   { id:"retours",         label:"Bons de Retour",          group:"pharmacie" },
+  // Sortie directe (perte, casse, usage interne...) — coexiste avec les
+  // Transferts (qui restent le circuit normal vers un service, avec
+  // contrôle/confirmation) ; celle-ci n'a ni l'un ni l'autre.
+  { id:"sorties-depot",   label:"Bon de Sortie (Dépôt)",   group:"pharmacie" },
   { id:"inventaire",      label:"Inventaire",              group:"pharmacie" },
   { id:"factures",        label:"Situations",                group:"pharmacie" },
   { id:"hist-inv",        label:"Historique Inventaires",  group:"pharmacie" },
@@ -37,6 +41,7 @@ export const SECTIONS = [
   // par le Comptable Matière. Mêmes mécaniques que Bon d'Entrée/Transferts,
   // mais des documents et un stock totalement séparés.
   { id:"entrees-fonct",   label:"Bon d'Entrée (Fonct.)",   group:"comptabilite-matieres" },
+  { id:"retours-fonct",   label:"Bon de Retour (Fonct.)",  group:"comptabilite-matieres" },
   { id:"sorties-fonct",   label:"Bon de Sortie (Fonct.)",  group:"comptabilite-matieres" },
   { id:"stock-fonct",     label:"Stock Fonctionnement",    group:"comptabilite-matieres" },
   { id:"inventaire-fonct", label:"Inventaire Fonctionnement", group:"comptabilite-matieres" },
@@ -44,6 +49,7 @@ export const SECTIONS = [
   // Circuit "non pharmaceutique" — fournisseurs différents, même démarche que
   // le circuit fonctionnement, géré par un comptable distinct.
   { id:"entrees-np",   label:"Bon d'Entrée (Non Pharma.)",   group:"comptabilite-non-pharma" },
+  { id:"retours-np",   label:"Bon de Retour (Non Pharma.)",  group:"comptabilite-non-pharma" },
   { id:"sorties-np",   label:"Bon de Sortie (Non Pharma.)",  group:"comptabilite-non-pharma" },
   { id:"stock-np",     label:"Stock Non Pharmaceutique",     group:"comptabilite-non-pharma" },
   { id:"inventaire-np", label:"Inventaire Non Pharmaceutique", group:"comptabilite-non-pharma" },
@@ -71,33 +77,34 @@ export const SECTIONS = [
 export const P0={r:0,w:0,d:0}, P1={r:1,w:0,d:0}, P2={r:1,w:1,d:0}, P3={r:1,w:1,d:1};
 
 export const DEFAULT_PERMS = {
-  admin:         { utilisateurs:P3, entrees:P3,retours:P3,inventaire:P3,factures:P3,"hist-inv":P3,"hist-fact":P3,messagerie:P3,produits:P3,fournisseurs:P3,depots:P3,activites:P3,assistant_ia:P2,services:P3,transferts:P3,"controle-transfert":P3,consommations:P3,"retours-service":P3,"controle-retour":P3,seuil:P3,receptions:P3,"stock-service":P1,"inventaire-stock2":P3,statistiques:P1,"entrees-fonct":P3,"sorties-fonct":P3,"stock-fonct":P3,"inventaire-fonct":P3,"statistiques-fonct":P3,"entrees-np":P3,"sorties-np":P3,"stock-np":P1,"inventaire-np":P3,"statistiques-np":P1,"demandes":P3,"parametres-pv":P3 },
-  admin_pharmacie:{ utilisateurs:P2, entrees:P3,retours:P3,inventaire:P3,factures:P3,"hist-inv":P3,"hist-fact":P3,messagerie:P3,produits:P3,fournisseurs:P3,depots:P3,activites:P0,assistant_ia:P1,services:P0,transferts:P2,"controle-transfert":P0,consommations:P1,"retours-service":P1,"controle-retour":P2,seuil:P0,receptions:P2,"stock-service":P2,"inventaire-stock2":P2,statistiques:P1,"entrees-fonct":P0,"sorties-fonct":P0,"stock-fonct":P0,"inventaire-fonct":P0,"statistiques-fonct":P0,"entrees-np":P0,"sorties-np":P0,"stock-np":P0,"inventaire-np":P0,"statistiques-np":P0,"demandes":P0,"parametres-pv":P0 },
-  gestionnaire:  { utilisateurs:P0, entrees:P2,retours:P2,inventaire:P2,factures:P2,"hist-inv":P1,"hist-fact":P1,messagerie:P2,produits:P2,fournisseurs:P2,depots:P2,activites:P0,assistant_ia:P1,services:P0,transferts:P2,"controle-transfert":P0,consommations:P1,"retours-service":P1,"controle-retour":P2,seuil:P0,receptions:P2,"stock-service":P1,"inventaire-stock2":P2,statistiques:P1,"entrees-fonct":P0,"sorties-fonct":P0,"stock-fonct":P0,"inventaire-fonct":P0,"statistiques-fonct":P0,"entrees-np":P0,"sorties-np":P0,"stock-np":P0,"inventaire-np":P0,"statistiques-np":P0,"demandes":P0,"parametres-pv":P0 },
-  pharmacien:    { utilisateurs:P0, entrees:P2,retours:P2,inventaire:P2,factures:P2,"hist-inv":P2,"hist-fact":P2,messagerie:P2,produits:P2,fournisseurs:P2,depots:P2,activites:P0,assistant_ia:P1,services:P0,transferts:P2,"controle-transfert":P0,consommations:P1,"retours-service":P1,"controle-retour":P2,seuil:P0,receptions:P2,"inventaire-stock2":P2,"stock-service":P1,statistiques:P1,"entrees-fonct":P0,"sorties-fonct":P0,"stock-fonct":P0,"inventaire-fonct":P0,"statistiques-fonct":P0,"entrees-np":P0,"sorties-np":P0,"stock-np":P0,"inventaire-np":P0,"statistiques-np":P0,"demandes":P0,"parametres-pv":P0 },
-  magasinier:    { utilisateurs:P0, entrees:P2,retours:P2,inventaire:P0,factures:P0,"hist-inv":P0,"hist-fact":P0,messagerie:P0,produits:P1,fournisseurs:P0,depots:P1,activites:P0,assistant_ia:P1,services:P0,transferts:P0,"controle-transfert":P0,consommations:P0,"retours-service":P0,"controle-retour":P1,seuil:P0,receptions:P0,"inventaire-stock2":P1,"stock-service":P1,statistiques:P1,"entrees-fonct":P0,"sorties-fonct":P0,"stock-fonct":P0,"inventaire-fonct":P0,"statistiques-fonct":P0,"entrees-np":P0,"sorties-np":P0,"stock-np":P0,"inventaire-np":P0,"statistiques-np":P0,"demandes":P0,"parametres-pv":P0 },
-  comptable:     { utilisateurs:P0, entrees:P1,retours:P1,inventaire:P2,factures:P2,"hist-inv":P1,"hist-fact":P1,messagerie:P2,produits:P1,fournisseurs:P1,depots:P1,activites:P0,assistant_ia:P1,services:P0,transferts:P1,"controle-transfert":P0,consommations:P1,"retours-service":P1,"controle-retour":P1,seuil:P0,receptions:P1,"inventaire-stock2":P2,"stock-service":P1,statistiques:P1,"entrees-fonct":P0,"sorties-fonct":P0,"stock-fonct":P0,"inventaire-fonct":P0,"statistiques-fonct":P0,"entrees-np":P0,"sorties-np":P0,"stock-np":P0,"inventaire-np":P0,"statistiques-np":P0,"demandes":P0,"parametres-pv":P0 },
-  admin_service: { utilisateurs:P2, entrees:P0,retours:P0,inventaire:P0,factures:P0,"hist-inv":P0,"hist-fact":P0,messagerie:P2,produits:P1,fournisseurs:P0,depots:P0,activites:P0,assistant_ia:P1,services:P0,transferts:P0,"controle-transfert":P3,consommations:P3,"retours-service":P2,"controle-retour":P0,seuil:P2,receptions:P1,"inventaire-stock2":P2,"stock-service":P1,statistiques:P1,"entrees-fonct":P0,"sorties-fonct":P0,"stock-fonct":P0,"inventaire-fonct":P0,"statistiques-fonct":P0,"entrees-np":P0,"sorties-np":P0,"stock-np":P0,"inventaire-np":P0,"statistiques-np":P0,"demandes":P2,"parametres-pv":P0 },
-  agent_service: { utilisateurs:P0, entrees:P0,retours:P0,inventaire:P0,factures:P0,"hist-inv":P0,"hist-fact":P0,messagerie:P2,produits:P1,fournisseurs:P0,depots:P0,activites:P0,assistant_ia:P1,services:P0,transferts:P0,"controle-transfert":P2,consommations:P2,"retours-service":P2,"controle-retour":P0,seuil:P2,receptions:P0,"inventaire-stock2":P2,"stock-service":P1,statistiques:P1,"entrees-fonct":P0,"sorties-fonct":P0,"stock-fonct":P0,"inventaire-fonct":P0,"statistiques-fonct":P0,"entrees-np":P0,"sorties-np":P0,"stock-np":P0,"inventaire-np":P0,"statistiques-np":P0,"demandes":P2,"parametres-pv":P0 },
+  admin:         { utilisateurs:P3, entrees:P3,"sorties-depot":P3,retours:P3,inventaire:P3,factures:P3,"hist-inv":P3,"hist-fact":P3,messagerie:P3,produits:P3,fournisseurs:P3,depots:P3,activites:P3,assistant_ia:P2,services:P3,transferts:P3,"controle-transfert":P3,consommations:P3,"retours-service":P3,"controle-retour":P3,seuil:P3,receptions:P3,"stock-service":P1,"inventaire-stock2":P3,statistiques:P1,"entrees-fonct":P3,"retours-fonct":P3,"sorties-fonct":P3,"stock-fonct":P3,"inventaire-fonct":P3,"statistiques-fonct":P3,"entrees-np":P3,"retours-np":P3,"sorties-np":P3,"stock-np":P1,"inventaire-np":P3,"statistiques-np":P1,"demandes":P3,"parametres-pv":P3 },
+  admin_pharmacie:{ utilisateurs:P2, entrees:P3,"sorties-depot":P3,retours:P3,inventaire:P3,factures:P3,"hist-inv":P3,"hist-fact":P3,messagerie:P3,produits:P3,fournisseurs:P3,depots:P3,activites:P0,assistant_ia:P1,services:P0,transferts:P2,"controle-transfert":P0,consommations:P1,"retours-service":P1,"controle-retour":P2,seuil:P0,receptions:P2,"stock-service":P2,"inventaire-stock2":P2,statistiques:P1,"entrees-fonct":P0,"retours-fonct":P0,"sorties-fonct":P0,"stock-fonct":P0,"inventaire-fonct":P0,"statistiques-fonct":P0,"entrees-np":P0,"retours-np":P0,"sorties-np":P0,"stock-np":P0,"inventaire-np":P0,"statistiques-np":P0,"demandes":P0,"parametres-pv":P0 },
+  gestionnaire:  { utilisateurs:P0, entrees:P2,"sorties-depot":P2,retours:P2,inventaire:P2,factures:P2,"hist-inv":P1,"hist-fact":P1,messagerie:P2,produits:P2,fournisseurs:P2,depots:P2,activites:P0,assistant_ia:P1,services:P0,transferts:P2,"controle-transfert":P0,consommations:P1,"retours-service":P1,"controle-retour":P2,seuil:P0,receptions:P2,"stock-service":P1,"inventaire-stock2":P2,statistiques:P1,"entrees-fonct":P0,"retours-fonct":P0,"sorties-fonct":P0,"stock-fonct":P0,"inventaire-fonct":P0,"statistiques-fonct":P0,"entrees-np":P0,"retours-np":P0,"sorties-np":P0,"stock-np":P0,"inventaire-np":P0,"statistiques-np":P0,"demandes":P0,"parametres-pv":P0 },
+  pharmacien:    { utilisateurs:P0, entrees:P2,"sorties-depot":P2,retours:P2,inventaire:P2,factures:P2,"hist-inv":P2,"hist-fact":P2,messagerie:P2,produits:P2,fournisseurs:P2,depots:P2,activites:P0,assistant_ia:P1,services:P0,transferts:P2,"controle-transfert":P0,consommations:P1,"retours-service":P1,"controle-retour":P2,seuil:P0,receptions:P2,"inventaire-stock2":P2,"stock-service":P1,statistiques:P1,"entrees-fonct":P0,"retours-fonct":P0,"sorties-fonct":P0,"stock-fonct":P0,"inventaire-fonct":P0,"statistiques-fonct":P0,"entrees-np":P0,"retours-np":P0,"sorties-np":P0,"stock-np":P0,"inventaire-np":P0,"statistiques-np":P0,"demandes":P0,"parametres-pv":P0 },
+  magasinier:    { utilisateurs:P0, entrees:P2,"sorties-depot":P2,retours:P2,inventaire:P0,factures:P0,"hist-inv":P0,"hist-fact":P0,messagerie:P0,produits:P1,fournisseurs:P0,depots:P1,activites:P0,assistant_ia:P1,services:P0,transferts:P0,"controle-transfert":P0,consommations:P0,"retours-service":P0,"controle-retour":P1,seuil:P0,receptions:P0,"inventaire-stock2":P1,"stock-service":P1,statistiques:P1,"entrees-fonct":P0,"retours-fonct":P0,"sorties-fonct":P0,"stock-fonct":P0,"inventaire-fonct":P0,"statistiques-fonct":P0,"entrees-np":P0,"retours-np":P0,"sorties-np":P0,"stock-np":P0,"inventaire-np":P0,"statistiques-np":P0,"demandes":P0,"parametres-pv":P0 },
+  comptable:     { utilisateurs:P0, entrees:P1,"sorties-depot":P1,retours:P1,inventaire:P2,factures:P2,"hist-inv":P1,"hist-fact":P1,messagerie:P2,produits:P1,fournisseurs:P1,depots:P1,activites:P0,assistant_ia:P1,services:P0,transferts:P1,"controle-transfert":P0,consommations:P1,"retours-service":P1,"controle-retour":P1,seuil:P0,receptions:P1,"inventaire-stock2":P2,"stock-service":P1,statistiques:P1,"entrees-fonct":P0,"retours-fonct":P0,"sorties-fonct":P0,"stock-fonct":P0,"inventaire-fonct":P0,"statistiques-fonct":P0,"entrees-np":P0,"retours-np":P0,"sorties-np":P0,"stock-np":P0,"inventaire-np":P0,"statistiques-np":P0,"demandes":P0,"parametres-pv":P0 },
+  admin_service: { utilisateurs:P2, entrees:P0,"sorties-depot":P0,retours:P0,inventaire:P0,factures:P0,"hist-inv":P0,"hist-fact":P0,messagerie:P2,produits:P1,fournisseurs:P0,depots:P0,activites:P0,assistant_ia:P1,services:P0,transferts:P0,"controle-transfert":P3,consommations:P3,"retours-service":P2,"controle-retour":P0,seuil:P2,receptions:P1,"inventaire-stock2":P2,"stock-service":P1,statistiques:P1,"entrees-fonct":P0,"retours-fonct":P0,"sorties-fonct":P0,"stock-fonct":P0,"inventaire-fonct":P0,"statistiques-fonct":P0,"entrees-np":P0,"retours-np":P0,"sorties-np":P0,"stock-np":P0,"inventaire-np":P0,"statistiques-np":P0,"demandes":P2,"parametres-pv":P0 },
+  agent_service: { utilisateurs:P0, entrees:P0,"sorties-depot":P0,retours:P0,inventaire:P0,factures:P0,"hist-inv":P0,"hist-fact":P0,messagerie:P2,produits:P1,fournisseurs:P0,depots:P0,activites:P0,assistant_ia:P1,services:P0,transferts:P0,"controle-transfert":P2,consommations:P2,"retours-service":P2,"controle-retour":P0,seuil:P2,receptions:P0,"inventaire-stock2":P2,"stock-service":P1,statistiques:P1,"entrees-fonct":P0,"retours-fonct":P0,"sorties-fonct":P0,"stock-fonct":P0,"inventaire-fonct":P0,"statistiques-fonct":P0,"entrees-np":P0,"retours-np":P0,"sorties-np":P0,"stock-np":P0,"inventaire-np":P0,"statistiques-np":P0,"demandes":P2,"parametres-pv":P0 },
   // Comptable Matière : gère le circuit "fonctionnement" (Bon d'Entrée/Bon de
   // Sortie/Stock distincts du circuit "vente"), avec accès en LECTURE seule
   // sur le circuit vente déjà existant (visibilité, pas d'intervention).
-  comptable_matiere: { utilisateurs:P0, entrees:P1,retours:P1,inventaire:P1,factures:P1,"hist-inv":P1,"hist-fact":P1,messagerie:P1,produits:P2,fournisseurs:P1,depots:P1,activites:P0,assistant_ia:P1,services:P0,transferts:P1,"controle-transfert":P0,consommations:P1,"retours-service":P1,"controle-retour":P0,seuil:P0,receptions:P1,"inventaire-stock2":P0,"stock-service":P1,statistiques:P1,"entrees-fonct":P2,"sorties-fonct":P2,"stock-fonct":P2,"inventaire-fonct":P2,"statistiques-fonct":P1,"entrees-np":P0,"sorties-np":P0,"stock-np":P0,"inventaire-np":P0,"statistiques-np":P0,"demandes":P0,"parametres-pv":P0 },
+  comptable_matiere: { utilisateurs:P0, entrees:P1,"sorties-depot":P1,retours:P1,inventaire:P1,factures:P1,"hist-inv":P1,"hist-fact":P1,messagerie:P1,produits:P2,fournisseurs:P1,depots:P1,activites:P0,assistant_ia:P1,services:P0,transferts:P1,"controle-transfert":P0,consommations:P1,"retours-service":P1,"controle-retour":P0,seuil:P0,receptions:P1,"inventaire-stock2":P0,"stock-service":P1,statistiques:P1,"entrees-fonct":P2,"retours-fonct":P2,"sorties-fonct":P2,"stock-fonct":P2,"inventaire-fonct":P2,"statistiques-fonct":P1,"entrees-np":P0,"retours-np":P0,"sorties-np":P0,"stock-np":P0,"inventaire-np":P0,"statistiques-np":P0,"demandes":P0,"parametres-pv":P0 },
   // Comptable Matière Principal : même périmètre, avec droits pleins sur le
   // circuit fonctionnement (y compris suppression) et accès à l'ensemble des
   // situations, comme demandé.
-  comptable_matiere_principal: { utilisateurs:P0, entrees:P1,retours:P1,inventaire:P1,factures:P1,"hist-inv":P1,"hist-fact":P1,messagerie:P1,produits:P2,fournisseurs:P1,depots:P1,activites:P0,assistant_ia:P1,services:P0,transferts:P1,"controle-transfert":P0,consommations:P1,"retours-service":P1,"controle-retour":P0,seuil:P0,receptions:P1,"inventaire-stock2":P1,"stock-service":P1,statistiques:P1,"entrees-fonct":P3,"sorties-fonct":P3,"stock-fonct":P3,"inventaire-fonct":P3,"statistiques-fonct":P1,"entrees-np":P0,"sorties-np":P0,"stock-np":P0,"inventaire-np":P0,"statistiques-np":P0,"demandes":P0,"parametres-pv":P2 },
+  comptable_matiere_principal: { utilisateurs:P0, entrees:P1,"sorties-depot":P1,retours:P1,inventaire:P1,factures:P1,"hist-inv":P1,"hist-fact":P1,messagerie:P1,produits:P2,fournisseurs:P1,depots:P1,activites:P0,assistant_ia:P1,services:P0,transferts:P1,"controle-transfert":P0,consommations:P1,"retours-service":P1,"controle-retour":P0,seuil:P0,receptions:P1,"inventaire-stock2":P1,"stock-service":P1,statistiques:P1,"entrees-fonct":P3,"retours-fonct":P3,"sorties-fonct":P3,"stock-fonct":P3,"inventaire-fonct":P3,"statistiques-fonct":P1,"entrees-np":P0,"retours-np":P0,"sorties-np":P0,"stock-np":P0,"inventaire-np":P0,"statistiques-np":P0,"demandes":P0,"parametres-pv":P2 },
   // Comptable Non Pharmaceutique : même principe que Comptable Matière, mais
   // pour le circuit non pharmaceutique (fournisseurs différents). Traite les
   // demandes des services pour SON circuit (contrairement au Comptable
   // Matière, dont les demandes passent par un logiciel externe).
-  comptable_non_pharma: { utilisateurs:P0, entrees:P0,retours:P0,inventaire:P0,factures:P0,"hist-inv":P0,"hist-fact":P0,messagerie:P1,produits:P2,fournisseurs:P1,depots:P1,activites:P0,assistant_ia:P1,services:P0,transferts:P0,"controle-transfert":P0,consommations:P0,"retours-service":P0,"controle-retour":P0,seuil:P0,receptions:P0,"inventaire-stock2":P0,"stock-service":P0,statistiques:P0,"entrees-fonct":P0,"sorties-fonct":P0,"stock-fonct":P0,"inventaire-fonct":P0,"statistiques-fonct":P0,"entrees-np":P2,"sorties-np":P2,"stock-np":P2,"inventaire-np":P2,"statistiques-np":P1,"demandes":P2,"parametres-pv":P0 },
-  comptable_non_pharma_principal: { utilisateurs:P0, entrees:P0,retours:P0,inventaire:P0,factures:P0,"hist-inv":P0,"hist-fact":P0,messagerie:P1,produits:P2,fournisseurs:P1,depots:P1,activites:P0,assistant_ia:P1,services:P0,transferts:P0,"controle-transfert":P0,consommations:P0,"retours-service":P0,"controle-retour":P0,seuil:P0,receptions:P0,"inventaire-stock2":P0,"stock-service":P0,statistiques:P0,"entrees-fonct":P0,"sorties-fonct":P0,"stock-fonct":P0,"inventaire-fonct":P0,"statistiques-fonct":P0,"entrees-np":P3,"sorties-np":P3,"stock-np":P3,"inventaire-np":P3,"statistiques-np":P1,"demandes":P3,"parametres-pv":P2 },
+  comptable_non_pharma: { utilisateurs:P0, entrees:P0,"sorties-depot":P0,retours:P0,inventaire:P0,factures:P0,"hist-inv":P0,"hist-fact":P0,messagerie:P1,produits:P2,fournisseurs:P1,depots:P1,activites:P0,assistant_ia:P1,services:P0,transferts:P0,"controle-transfert":P0,consommations:P0,"retours-service":P0,"controle-retour":P0,seuil:P0,receptions:P0,"inventaire-stock2":P0,"stock-service":P0,statistiques:P0,"entrees-fonct":P0,"retours-fonct":P0,"sorties-fonct":P0,"stock-fonct":P0,"inventaire-fonct":P0,"statistiques-fonct":P0,"entrees-np":P2,"retours-np":P2,"sorties-np":P2,"stock-np":P2,"inventaire-np":P2,"statistiques-np":P1,"demandes":P2,"parametres-pv":P0 },
+  comptable_non_pharma_principal: { utilisateurs:P0, entrees:P0,"sorties-depot":P0,retours:P0,inventaire:P0,factures:P0,"hist-inv":P0,"hist-fact":P0,messagerie:P1,produits:P2,fournisseurs:P1,depots:P1,activites:P0,assistant_ia:P1,services:P0,transferts:P0,"controle-transfert":P0,consommations:P0,"retours-service":P0,"controle-retour":P0,seuil:P0,receptions:P0,"inventaire-stock2":P0,"stock-service":P0,statistiques:P0,"entrees-fonct":P0,"retours-fonct":P0,"sorties-fonct":P0,"stock-fonct":P0,"inventaire-fonct":P0,"statistiques-fonct":P0,"entrees-np":P3,"retours-np":P3,"sorties-np":P3,"stock-np":P3,"inventaire-np":P3,"statistiques-np":P1,"demandes":P3,"parametres-pv":P2 },
 };
 
 export const PAGE_LABELS = {
   "dashboard":       "Tableau de bord",
   "entrees":         "Bons d'Entrée",
+  "sorties-depot":   "Bon de Sortie (Dépôt Vente)",
   "retours":         "Bons de Retour",
   "inventaire":      "Inventaire",
   "factures":        "Situations",
@@ -119,12 +126,14 @@ export const PAGE_LABELS = {
   "stock-service":   "Stock Services",
   "inventaire-stock2": "Inventaire Stock 2",
   "entrees-fonct":   "Bon d'Entrée (Fonctionnement)",
+  "retours-fonct":   "Bon de Retour (Fonctionnement)",
   "pv": "Procès-Verbaux de Réception",
   "sorties-fonct":   "Bon de Sortie (Fonctionnement)",
   "stock-fonct":     "Stock Fonctionnement",
   "inventaire-fonct": "Inventaire Fonctionnement",
   "statistiques-fonct": "Statistiques Fonctionnement",
   "entrees-np":   "Bon d'Entrée (Non Pharmaceutique)",
+  "retours-np":   "Bon de Retour (Non Pharmaceutique)",
   "sorties-np":   "Bon de Sortie (Non Pharmaceutique)",
   "stock-np":     "Stock Non Pharmaceutique",
   "inventaire-np": "Inventaire Non Pharmaceutique",
@@ -161,6 +170,7 @@ export const fmtFCFA = n => Number(n||0).toLocaleString("fr-FR") + " FCFA";
 export const PAGE_COLORS = {
   "dashboard":    { bg:"linear-gradient(135deg,#0f172a,#0c4a6e)", accent:"#38bdf8", icon:"📊" },
   "entrees":      { bg:"linear-gradient(135deg,#064e3b,#065f46)", accent:"#34d399", icon:"📥" },
+  "sorties-depot": { bg:"linear-gradient(135deg,#7f1d1d,#991b1b)", accent:"#fca5a5", icon:"📤" },
   "retours":      { bg:"linear-gradient(135deg,#78350f,#92400e)", accent:"#fbbf24", icon:"↩️" },
   "inventaire":   { bg:"linear-gradient(135deg,#312e81,#3730a3)", accent:"#a5b4fc", icon:"🗂️" },
   "factures":     { bg:"linear-gradient(135deg,#164e63,#155e75)", accent:"#67e8f9", icon:"📊" },
@@ -181,12 +191,14 @@ export const PAGE_COLORS = {
   "stock-service":   { bg:"linear-gradient(135deg,#1e3a5f,#1d4ed8)", accent:"#93c5fd", icon:"📊" },
   "inventaire-stock2": { bg:"linear-gradient(135deg,#3730a3,#4338ca)", accent:"#c4b5fd", icon:"🗒️" },
   "entrees-fonct":   { bg:"linear-gradient(135deg,#78350f,#92400e)", accent:"#fcd34d", icon:"📥" },
+  "retours-fonct":   { bg:"linear-gradient(135deg,#7f1d1d,#991b1b)", accent:"#fca5a5", icon:"↩️" },
   "pv": { bg:"linear-gradient(135deg,#1e3a8a,#1e40af)", accent:"#93c5fd", icon:"🗂️" },
   "sorties-fonct":   { bg:"linear-gradient(135deg,#7c2d12,#9a3412)", accent:"#fdba74", icon:"📤" },
   "stock-fonct":     { bg:"linear-gradient(135deg,#713f12,#854d0e)", accent:"#fde68a", icon:"📊" },
   "inventaire-fonct": { bg:"linear-gradient(135deg,#451a03,#5c2c06)", accent:"#fdba74", icon:"🗒️" },
   "statistiques-fonct": { bg:"linear-gradient(135deg,#57534e,#78716c)", accent:"#fde68a", icon:"📚" },
   "entrees-np":   { bg:"linear-gradient(135deg,#155e75,#0e7490)", accent:"#67e8f9", icon:"📥" },
+  "retours-np":   { bg:"linear-gradient(135deg,#7f1d1d,#991b1b)", accent:"#fca5a5", icon:"↩️" },
   "sorties-np":   { bg:"linear-gradient(135deg,#164e63,#0891b2)", accent:"#a5f3fc", icon:"📤" },
   "stock-np":     { bg:"linear-gradient(135deg,#134e4a,#0f766e)", accent:"#5eead4", icon:"📊" },
   "inventaire-np": { bg:"linear-gradient(135deg,#083344,#155e75)", accent:"#67e8f9", icon:"🗒️" },

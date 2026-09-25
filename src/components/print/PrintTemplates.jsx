@@ -43,7 +43,7 @@ function SignatureBox({ label, name }) {
   );
 }
 
-export function PrintModal({ open, onClose, title, children, signatories }) {
+export function PrintModal({ open, onClose, title, children, signatories, onExcel, onPdf }) {
   const contentRef = useRef(null);
   const [names, setNames] = useState({});
   if (!open) return null;
@@ -93,6 +93,12 @@ th{background:#f8fafc;font-weight:700;font-size:11px;color:#64748b;border-bottom
             <button onClick={handlePrint} style={{ background:"#0891b2", color:"white", border:"none", borderRadius:8, padding:"7px 16px", cursor:"pointer", fontWeight:600, fontSize:13 }}>
               🖨️ Imprimer
             </button>
+            {onExcel&&<button onClick={onExcel} style={{ background:"#dcfce7", color:"#166534", border:"none", borderRadius:8, padding:"7px 14px", cursor:"pointer", fontWeight:600, fontSize:13 }}>
+              ⬇️ Excel
+            </button>}
+            {onPdf&&<button onClick={onPdf} style={{ background:"#fef3c7", color:"#92400e", border:"none", borderRadius:8, padding:"7px 14px", cursor:"pointer", fontWeight:600, fontSize:13 }}>
+              📄 PDF
+            </button>}
             <button onClick={onClose} style={{ background:"#f1f5f9", color:"#374151", border:"none", borderRadius:8, padding:"7px 12px", cursor:"pointer", fontWeight:600 }}>
               ✕ Fermer
             </button>
@@ -835,6 +841,208 @@ export function PvPrint({ pv, resolvedCommission, circuitLabel }) {
               <td style={{...tdStyle,height:50}}></td>
             </tr>
           ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// Bon de Retour — Comptabilité Matières (Fonctionnement/Non-Pharmaceutique) :
+// retour vers le fournisseur, l'inverse d'un Bon d'Entrée (diminution des
+// prises en charge plutôt qu'augmentation).
+export function RetourComptaPrint({ r, products, signatoryNames, circuitLabel }) {
+  if (!r) return null;
+  const thStyle = { padding:"9px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:"#64748b", borderBottom:"2px solid #e2e8f0", background:"#f8fafc" };
+  const tdStyle = { padding:"9px 12px", borderBottom:"1px solid #f1f5f9" };
+  const statusLabel = r.status==="annule" ? "🚫 Annulé" : "✅ Envoyé";
+  const dateStr = r.date ? fmtDate(r.date) : (r.createdAt?.seconds ? fmtDate(new Date(r.createdAt.seconds*1000).toISOString().slice(0,10)) : "—");
+  const total = (r.items||[]).reduce((s,it)=>s+Number(it.qty||0)*Number(it.unitPrice||0),0);
+  const totalUnites = (r.items||[]).reduce((s,it)=>s+Number(it.qty||0),0);
+  return (
+    <div>
+      <OfficialHeader/>
+      <div style={{ background:"#7f1d1d", color:"white", padding:6, fontSize:13, fontWeight:800, textAlign:"center", letterSpacing:1, marginBottom:6 }}>BON DE RETOUR{circuitLabel?(" — "+circuitLabel.toUpperCase()):""}</div>
+      <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#374151", marginBottom:16 }}>
+        <span>Réf : <b>{r.reference||"—"}</b></span>
+        <span>Fournisseur : <b>{r.supplierName||"—"}</b></span>
+        <span>Date : <b>{dateStr}</b></span>
+        <span>Statut : <b>{statusLabel}</b></span>
+      </div>
+      <table style={{ width:"100%", borderCollapse:"collapse", marginBottom:16 }}>
+        <thead>
+          <tr>{["Produit","Quantité","Prix Unit.","Total"].map(h => <th key={h} style={thStyle}>{h}</th>)}</tr>
+        </thead>
+        <tbody>
+          {(r.items||[]).map((it,i)=>(
+            <tr key={i}>
+              <td style={{ ...tdStyle, fontWeight:600 }}>{it.productName || "—"}</td>
+              <td style={tdStyle}>{it.qty}</td>
+              <td style={tdStyle}>{Number(it.unitPrice||0).toLocaleString("fr-FR")} FCFA</td>
+              <td style={{ ...tdStyle, fontWeight:700 }}>{(Number(it.qty||0)*Number(it.unitPrice||0)).toLocaleString("fr-FR")} FCFA</td>
+            </tr>
+          ))}
+          <tr style={{background:"#7f1d1d"}}>
+            <td colSpan={3} style={{...tdStyle,color:"white",textAlign:"center",fontWeight:800,border:"none"}}>TOTAL — {totalUnites} unité(s)</td>
+            <td style={{...tdStyle,color:"white",fontWeight:800,border:"none"}}>{total.toLocaleString("fr-FR")} FCFA</td>
+          </tr>
+        </tbody>
+      </table>
+      {r.notes&&<div style={{ fontSize:10, color:"#64748b", fontStyle:"italic", marginBottom:16 }}>Observations : {r.notes}</div>}
+
+      <div style={{ border:"1px solid #333", padding:10, fontSize:10, lineHeight:1.9, marginBottom:20 }}>
+        Diminue les prises en charge de <b>{totalUnites}</b> unité(s), représentant une valeur de <b>{total.toLocaleString("fr-FR")} francs CFA</b>, retournée(s) au fournisseur ci-dessus.<br/>
+        A Touba, le {dateStr}
+      </div>
+
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:20 }}>
+        <SignatureBox label="L'Ordonnateur des Matières" name={signatoryNames?.["L'Ordonnateur des Matières"]}/>
+        <SignatureBox label="Le Comptable des Matières" name={signatoryNames?.["Le Comptable des Matières"]}/>
+      </div>
+    </div>
+  );
+}
+
+// Bon de Sortie (Dépôt Vente) — sortie directe, sans contrôle/confirmation
+// (perte, casse, usage interne...), coexiste avec les Transferts.
+export function SortieDepotPrint({ s, products, signatoryNames }) {
+  if (!s) return null;
+  const thStyle = { padding:"9px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:"#64748b", borderBottom:"2px solid #e2e8f0", background:"#f8fafc" };
+  const tdStyle = { padding:"9px 12px", borderBottom:"1px solid #f1f5f9" };
+  const statusLabel = s.status==="annule" ? "🚫 Annulé" : "✅ Sorti";
+  const total = (s.items||[]).reduce((sum,it)=>sum+Number(it.qty||0)*Number(it.unitPrice||0),0);
+  const motifLabels = { perte:"Perte", casse:"Casse", usage_interne:"Usage interne", autre:"Autre" };
+  return (
+    <div>
+      <OfficialHeader/>
+      <div style={{ background:"#7f1d1d", color:"white", padding:6, fontSize:13, fontWeight:800, textAlign:"center", letterSpacing:1, marginBottom:10 }}>BON DE SORTIE — DÉPÔT VENTE</div>
+      <div style={{ fontFamily:"monospace", fontSize:12, color:"#64748b", textAlign:"right", marginBottom:10 }}>{s.reference}</div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:20 }}>
+        {[["Motif", motifLabels[s.motif]||s.motif||"—"], ["Date", s.date ? new Date(s.date).toLocaleDateString("fr-FR") : "—"], ["Statut", statusLabel], ["Saisi par", s.createdByName||"—"], ["Observations", s.notes || "—"]].map(([l,v]) => (
+          <div key={l} style={{ background:"#f8fafc", borderRadius:8, padding:12 }}>
+            <div style={{ fontSize:10, fontWeight:700, color:"#64748b", textTransform:"uppercase", marginBottom:3 }}>{l}</div>
+            <div style={{ fontSize:13, fontWeight:600, color:"#1e293b" }}>{v}</div>
+          </div>
+        ))}
+      </div>
+      <table style={{ width:"100%", borderCollapse:"collapse", marginBottom:16 }}>
+        <thead>
+          <tr>{["Produit","Quantité","Prix Unit.","Total"].map(h => <th key={h} style={thStyle}>{h}</th>)}</tr>
+        </thead>
+        <tbody>
+          {(s.items || []).map((it, i) => {
+            const prod = products?.find(p => p.id === it.productId);
+            return (
+              <tr key={i}>
+                <td style={{ ...tdStyle, fontWeight:600 }}>{prod?.name || it.productName || "—"}</td>
+                <td style={tdStyle}>{it.qty}</td>
+                <td style={tdStyle}>{Number(it.unitPrice || 0).toLocaleString("fr-FR")} FCFA</td>
+                <td style={{ ...tdStyle, fontWeight:700 }}>{(Number(it.qty||0)*Number(it.unitPrice||0)).toLocaleString("fr-FR")} FCFA</td>
+              </tr>
+            );
+          })}
+          <tr style={{background:"#7f1d1d"}}>
+            <td colSpan={3} style={{...tdStyle,color:"white",textAlign:"center",fontWeight:800,border:"none"}}>TOTAL</td>
+            <td style={{...tdStyle,color:"white",fontWeight:800,border:"none"}}>{total.toLocaleString("fr-FR")} FCFA</td>
+          </tr>
+        </tbody>
+      </table>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:20, marginTop:30 }}>
+        <SignatureBox label="Le Responsable" name={signatoryNames?.["Le Responsable"]}/>
+        <SignatureBox label="Le Gestionnaire de stock" name={signatoryNames?.["Le Gestionnaire de stock"]}/>
+      </div>
+    </div>
+  );
+}
+
+// Livre-Journal des mouvements des matières affectant l'existant — une
+// ligne par mouvement (entrée OU sortie), tous produits confondus, dans
+// l'ordre chronologique, avec un report des soldes antérieurs en tête et un
+// total à reporter en pied (cumul report + page, comme le modèle officiel).
+export function LivreJournalPrint({ rows, report, periodFrom, periodTo }) {
+  const thStyle = { padding:"5px 6px", textAlign:"center", fontSize:8.5, fontWeight:700, background:"#f1f5f9", border:"1px solid #cbd5e1" };
+  const tdStyle = { padding:"4px 6px", fontSize:8.5, border:"1px solid #ddd" };
+  const totalQtyEntree = (rows||[]).filter(r=>r.type==="entree").reduce((s,r)=>s+r.qty,0) + (report?.qtyEntree||0);
+  const totalQtySortie = (rows||[]).filter(r=>r.type==="sortie").reduce((s,r)=>s+r.qty,0) + (report?.qtySortie||0);
+  const totalMontantEntree = (rows||[]).filter(r=>r.type==="entree").reduce((s,r)=>s+r.qty*r.pu,0) + (report?.montantEntree||0);
+  const totalMontantSortie = (rows||[]).filter(r=>r.type==="sortie").reduce((s,r)=>s+r.qty*r.pu,0) + (report?.montantSortie||0);
+  return (
+    <div>
+      <OfficialHeader/>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
+        <div style={{fontSize:9,color:"#64748b"}}>Période du <b>{fmtDate(periodFrom)||"—"}</b> au <b>{fmtDate(periodTo)||"—"}</b></div>
+        <div style={{ textAlign:"right" }}>
+          <div style={{ fontSize:13, fontWeight:800 }}>LE LIVRE-JOURNAL DES MOUVEMENTS DES MATIÈRES AFFECTANT L'EXISTANT</div>
+          <div style={{ fontSize:9, color:"#94a3b8" }}>Modèle N°2 — Art. 18a</div>
+        </div>
+      </div>
+      <table style={{ width:"100%", borderCollapse:"collapse" }}>
+        <thead>
+          <tr>
+            <th rowSpan={2} style={{...thStyle,width:"6%"}}>Date</th>
+            <th rowSpan={2} style={{...thStyle,width:"7%"}}>Nomenclature</th>
+            <th rowSpan={2} style={{...thStyle,width:"14%"}}>Désignation des matières</th>
+            <th colSpan={3} style={thStyle}>Entrées</th>
+            <th colSpan={3} style={thStyle}>Sorties</th>
+            <th rowSpan={2} style={{...thStyle,width:"6%"}}>P.U.</th>
+            <th colSpan={2} style={thStyle}>Montant</th>
+            <th rowSpan={2} style={{...thStyle,width:"12%"}}>Observations</th>
+          </tr>
+          <tr>
+            <th style={{...thStyle,width:"5%"}}>N° Bon</th>
+            <th style={{...thStyle,width:"5%"}}>Nbre</th>
+            <th style={{...thStyle,width:"5%"}}>Unité</th>
+            <th style={{...thStyle,width:"5%"}}>N° Bon</th>
+            <th style={{...thStyle,width:"5%"}}>Nbre</th>
+            <th style={{...thStyle,width:"5%"}}>Unité</th>
+            <th style={{...thStyle,width:"8%"}}>Entrées</th>
+            <th style={{...thStyle,width:"8%"}}>Sorties</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style={{background:"#fffbeb",fontStyle:"italic"}}>
+            <td colSpan={3} style={{...tdStyle,fontWeight:700}}>Reports</td>
+            <td style={tdStyle}></td>
+            <td style={{...tdStyle,textAlign:"center",fontWeight:700}}>{(report?.qtyEntree||0).toLocaleString("fr-FR")}</td>
+            <td style={tdStyle}></td>
+            <td style={tdStyle}></td>
+            <td style={{...tdStyle,textAlign:"center",fontWeight:700}}>{(report?.qtySortie||0).toLocaleString("fr-FR")}</td>
+            <td style={tdStyle}></td>
+            <td style={tdStyle}></td>
+            <td style={{...tdStyle,textAlign:"right",fontWeight:700}}>{(report?.montantEntree||0).toLocaleString("fr-FR")}</td>
+            <td style={{...tdStyle,textAlign:"right",fontWeight:700}}>{(report?.montantSortie||0).toLocaleString("fr-FR")}</td>
+            <td style={tdStyle}></td>
+          </tr>
+          {(rows||[]).map((r,i)=>(
+            <tr key={i} style={{background:i%2===0?"white":"#f8fafc"}}>
+              <td style={tdStyle}>{fmtDate(r.date)}</td>
+              <td style={tdStyle}>{r.compteNumero}</td>
+              <td style={{...tdStyle,fontWeight:600}}>{r.productName}</td>
+              <td style={tdStyle}>{r.type==="entree"?r.bon:""}</td>
+              <td style={{...tdStyle,textAlign:"center",color:"#059669",fontWeight:700}}>{r.type==="entree"?r.qty:""}</td>
+              <td style={tdStyle}>{r.type==="entree"?r.unite:""}</td>
+              <td style={tdStyle}>{r.type==="sortie"?r.bon:""}</td>
+              <td style={{...tdStyle,textAlign:"center",color:"#dc2626",fontWeight:700}}>{r.type==="sortie"?r.qty:""}</td>
+              <td style={tdStyle}>{r.type==="sortie"?r.unite:""}</td>
+              <td style={{...tdStyle,textAlign:"right"}}>{r.pu.toLocaleString("fr-FR")}</td>
+              <td style={{...tdStyle,textAlign:"right",fontWeight:700}}>{r.type==="entree"?(r.qty*r.pu).toLocaleString("fr-FR"):""}</td>
+              <td style={{...tdStyle,textAlign:"right",fontWeight:700}}>{r.type==="sortie"?(r.qty*r.pu).toLocaleString("fr-FR"):""}</td>
+              <td style={{...tdStyle,fontStyle:"italic",color:"#64748b"}}>{r.observations}</td>
+            </tr>
+          ))}
+          {(!rows||rows.length===0)&&<tr><td colSpan={13} style={{...tdStyle,textAlign:"center",color:"#94a3b8"}}>Aucun mouvement sur cette période.</td></tr>}
+          <tr style={{background:"#1e3a8a"}}>
+            <td colSpan={3} style={{...tdStyle,color:"white",fontWeight:800,border:"none"}}>Totaux à reporter</td>
+            <td style={{...tdStyle,color:"white",border:"none"}}></td>
+            <td style={{...tdStyle,color:"white",textAlign:"center",fontWeight:800,border:"none"}}>{totalQtyEntree.toLocaleString("fr-FR")}</td>
+            <td style={{...tdStyle,color:"white",border:"none"}}></td>
+            <td style={{...tdStyle,color:"white",border:"none"}}></td>
+            <td style={{...tdStyle,color:"white",textAlign:"center",fontWeight:800,border:"none"}}>{totalQtySortie.toLocaleString("fr-FR")}</td>
+            <td style={{...tdStyle,color:"white",border:"none"}}></td>
+            <td style={{...tdStyle,color:"white",border:"none"}}></td>
+            <td style={{...tdStyle,color:"white",textAlign:"right",fontWeight:800,border:"none"}}>{totalMontantEntree.toLocaleString("fr-FR")}</td>
+            <td style={{...tdStyle,color:"white",textAlign:"right",fontWeight:800,border:"none"}}>{totalMontantSortie.toLocaleString("fr-FR")}</td>
+            <td style={{...tdStyle,color:"white",border:"none"}}></td>
+          </tr>
         </tbody>
       </table>
     </div>

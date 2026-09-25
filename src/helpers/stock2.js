@@ -75,12 +75,14 @@ export function getServiceStock2(store, productId, serviceId) {
 // pharmacie se déduit simplement des entrées moins les sorties, et le stock
 // par service est la somme cumulée de ce qui lui a été remis.
 
-// Stock fonctionnement pharmacie = Σ entrées − Σ sorties + ajustements d'inventaire confirmés
+// Stock fonctionnement pharmacie = Σ entrées − Σ sorties − Σ retours (au
+// fournisseur) + ajustements d'inventaire confirmés
 export function getFonctPharmacyStock2(store, productId) {
   const entrees = sumItemsQty(store.entreesFonct, productId);
   const sorties = sumItemsQty(store.sortiesFonct, productId);
+  const retours = sumItemsQty(store.retoursFonct, productId);
   const ajust   = sumInventoryAdjustments(store.stock2InventoriesFonct, productId, "fonct-pharmacy");
-  return entrees - sorties + ajust;
+  return entrees - sorties - retours + ajust;
 }
 
 // Stock fonctionnement d'un service = Σ des sorties qui lui ont été remises +
@@ -99,8 +101,9 @@ export function getFonctServiceStock2(store, productId, serviceId) {
 export function getNpPharmacyStock2(store, productId) {
   const entrees = sumItemsQty(store.entreesNp, productId);
   const sorties = sumItemsQty(store.sortiesNp, productId);
+  const retours = sumItemsQty(store.retoursNp, productId);
   const ajust   = sumInventoryAdjustments(store.stock2InventoriesNp, productId, "np-pharmacy");
-  return entrees - sorties + ajust;
+  return entrees - sorties - retours + ajust;
 }
 
 export function getNpServiceStock2(store, productId, serviceId) {

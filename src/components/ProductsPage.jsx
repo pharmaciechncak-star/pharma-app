@@ -14,11 +14,15 @@ import { monthLabel } from "../constants";
 
 export function ProductsPage({store,activeSupplier,currentUser}){
   // Un gestionnaire/pharmacien (circuit vente) ne doit pas pouvoir marquer un
-  // produit "Fonctionnement" — c'est le domaine réservé au Comptable Matière,
-  // et inversement. L'admin principal seul peut toucher aux deux.
+  // produit "Fonctionnement" ou "Non-Pharmaceutique" — domaines réservés à
+  // leurs comptables respectifs, et inversement. L'admin principal seul peut
+  // toucher aux trois.
   const isFonctRole = currentUser?.role==="comptable_matiere"||currentUser?.role==="comptable_matiere_principal";
-  const canEditVenteCircuit = currentUser?.role==="admin" || !isFonctRole;
+  const isNpRole = currentUser?.role==="comptable_non_pharma"||currentUser?.role==="comptable_non_pharma_principal";
+  const canEditVenteCircuit = currentUser?.role==="admin" || (!isFonctRole && !isNpRole);
   const canEditFonctCircuit = currentUser?.role==="admin" || isFonctRole;
+  const canEditNpCircuit = currentUser?.role==="admin" || isNpRole;
+  const defaultCircuit = isFonctRole?"fonctionnement":isNpRole?"non_pharmaceutique":"vente";
   const [showAdd,setShowAdd]=useState(false);
   const [editing,setEditing]=useState(null);
   const [form,setForm]=useState({name:"",price:"",unit:"Boîte",supplierId:""});
@@ -34,6 +38,12 @@ export function ProductsPage({store,activeSupplier,currentUser}){
     ...(store.circuitsRegistry||[]).map(c=>({ key:c.key, label:(c.icon||"📁")+" "+c.label })),
   ];
   const [scanMsg,setScanMsg]=useState("");
+  const editableCircuits = [
+    canEditVenteCircuit && {key:"vente", label:"💊 Vente"},
+    canEditFonctCircuit && {key:"fonctionnement", label:CIRCUITS.fonctionnement.icon+" "+CIRCUITS.fonctionnement.label},
+    canEditNpCircuit && {key:"non_pharmaceutique", label:CIRCUITS.non_pharmaceutique.icon+" "+CIRCUITS.non_pharmaceutique.label},
+  ].filter(Boolean);
+  const [importCircuit,setImportCircuit]=useState(defaultCircuit);
   const [deletingProd,setDeletingProd]=useState(null);
   const scanProdRef=useRef(null);
 
@@ -56,7 +66,7 @@ export function ProductsPage({store,activeSupplier,currentUser}){
 
   const openAdd=()=>{
     setEditing(null);
-    setForm({name:"",price:"",unit:"",supplierId:activeSupplier?.id||"",barcode1:"",barcode2:"",barcode3:"",reorderThreshold:"",circuits:[isFonctRole?"fonctionnement":"vente"],compteNumero:"",typeFonct:"",conditionnement:""});
+    setForm({name:"",price:"",unit:"",supplierId:activeSupplier?.id||"",barcode1:"",barcode2:"",barcode3:"",reorderThreshold:"",circuits:[defaultCircuit],compteNumero:"",typeFonct:"",conditionnement:""});
     setShowAdd(true);
   };
   const openEdit=(p)=>{
@@ -74,7 +84,8 @@ export function ProductsPage({store,activeSupplier,currentUser}){
     // de gérer (case déjà désactivée visuellement, ceci est le filet).
     if (c==="vente" && !canEditVenteCircuit) return;
     if (c==="fonctionnement" && !canEditFonctCircuit) return;
-    if (c!=="vente" && c!=="fonctionnement" && currentUser?.role!=="admin") return; // circuits additionnels : admin uniquement
+    if (c==="non_pharmaceutique" && !canEditNpCircuit) return;
+    if (!["vente","fonctionnement","non_pharmaceutique"].includes(c) && currentUser?.role!=="admin") return; // circuits additionnels : admin uniquement
     setForm(f=>{
       const cur=f.circuits||["vente"];
       return {...f, circuits: cur.includes(c)?cur.filter(x=>x!==c):[...cur,c]};
@@ -133,7 +144,7 @@ export function ProductsPage({store,activeSupplier,currentUser}){
           price:      Number(row.unitPrice||0),
           unit:       row.unit || "Boîte",
           supplierId: activeSupplier?.id || "",
-          circuits:   [isFonctRole?"fonctionnement":"vente"],
+          circuits:   [importCircuit],
         });
         added++;
       } else {
@@ -162,6 +173,14 @@ export function ProductsPage({store,activeSupplier,currentUser}){
       </PageHeader>
 
       {!activeSupplier&&<Alert type="warn">Affichage de tous les produits. Sélectionnez un fournisseur pour filtrer.</Alert>}
+      {editableCircuits.length>1&&(
+        <div style={{...card,marginBottom:12,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <label style={{...label,marginBottom:0}}>Circuit pour les produits importés</label>
+          <select style={{...input,marginBottom:0,width:"auto",flex:"1 1 200px"}} value={importCircuit} onChange={e=>setImportCircuit(e.target.value)}>
+            {editableCircuits.map(c=><option key={c.key} value={c.key}>{c.label}</option>)}
+          </select>
+        </div>
+      )}
       {scanMsg&&<Alert type={scanMsg.startsWith("✅")?"success":scanMsg.startsWith("⚠️")||scanMsg.startsWith("ℹ️")?"warn":"error"}>{scanMsg}</Alert>}
 
       {/* Scanner code barre */}
@@ -289,7 +308,8 @@ export function ProductsPage({store,activeSupplier,currentUser}){
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             {[
               ["vente","💊 Vente",canEditVenteCircuit],
-              ["fonctionnement","📦 Fonctionnement",canEditFonctCircuit],
+              ["fonctionnement",CIRCUITS.fonctionnement.icon+" "+CIRCUITS.fonctionnement.label,canEditFonctCircuit],
+              ["non_pharmaceutique",CIRCUITS.non_pharmaceutique.icon+" "+CIRCUITS.non_pharmaceutique.label,canEditNpCircuit],
               // Circuits additionnels (préparation pour de futures comptabilités)
               // — éditables par l'admin principal uniquement pour l'instant.
               ...(store.circuitsRegistry||[]).map(c=>[c.key, c.icon+" "+c.label, currentUser?.role==="admin"]),

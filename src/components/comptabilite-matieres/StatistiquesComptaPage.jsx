@@ -3,10 +3,12 @@ import { fmtDate } from "../../constants";
 import { PageHeader } from "../ui/PageHeader";
 import { card, label, input, btn } from "../../helpers/styles";
 import { productVisibleInCircuit, hasSupplierAccess, visibleServices } from "../../permissions";
-import { PrintModal, GrandLivrePrint, FicheStockPrint, ConsommationMatieresPrint, BalancePeriodiquePrint } from "../print/PrintTemplates";
+import { PrintModal, GrandLivrePrint, FicheStockPrint, ConsommationMatieresPrint, BalancePeriodiquePrint, LivreJournalPrint } from "../print/PrintTemplates";
 import { Modal } from "../ui/Modal";
 import { getComptaCircuits, availableCircuits } from "../../helpers/circuitsConfig";
 import { CircuitSelector } from "../ui/CircuitSelector";
+import { downloadExcelTable } from "../../helpers/exportUtils";
+import { downloadPdfTable, fmtNumPdf } from "../../helpers/pdfUtils";
 
 // Rapports comptables standards (comptabilité matières publique) — communs
 // à Fonctionnement et Non-Pharmaceutique : Grand Livre des Comptes (valorisé,
@@ -33,6 +35,7 @@ export function StatistiquesComptaPage({store,activeSupplier,currentUser}){
   const [showConsoMatieres,setShowConsoMatieres] = useState(false);
   const [showTotaux,setShowTotaux] = useState(false);
   const [showBalance,setShowBalance] = useState(false);
+  const [showLivreJournal,setShowLivreJournal] = useState(false);
   const [filterType,setFilterType] = useState("");
 
   // Périmètre (fournisseur actif, type) — sert de base à la Balance
@@ -223,7 +226,135 @@ export function StatistiquesComptaPage({store,activeSupplier,currentUser}){
     return Object.values(byProduct).map(r=>({ ...r, montant:r.qty*r.pu }));
   };
 
+  // Livre-Journal des mouvements des matières affectant l'existant : une
+  // ligne par mouvement (entrée OU sortie) de CHAQUE produit, dans l'ordre
+  // chronologique, tous produits confondus — contrairement au Grand
+  // Livre/Fiche de Stock qui suivent un seul produit. La valorisation d'une
+  // sortie utilise le prix courant du produit (les sorties n'enregistrent
+  // pas de prix unitaire propre, contrairement aux entrées).
+  const livreJournalRows = () => {
+    const moves = [];
+    (entreesData||[]).forEach(e=>{
+      if (e.status==="annule") return;
+      if (activeSupplier && e.supplierId!==activeSupplier.id) return;
+      const d = e.date || (e.createdAt?.seconds?new Date(e.createdAt.seconds*1000).toISOString().slice(0,10):"");
+      (e.items||[]).forEach(it=>{
+        const p = store.products.find(x=>x.id===it.productId);
+        moves.push({
+          type:"entree", date:d, ts:e.createdAt?.seconds||0, bon:e.reference,
+          compteNumero:p?.compteNumero||"", productName:it.productName||p?.name||"",
+          qty:Number(it.qty)||0, unite:p?.unit||"", pu:Number(it.unitPrice)||Number(p?.price)||0,
+          observations: e.supplierName?("Facture "+e.supplierName):"",
+        });
+      });
+    });
+    (sortiesData||[]).forEach(s=>{
+      if (s.status==="annule") return;
+      if (activeSupplier && s.supplierId!==activeSupplier.id) return;
+      const d = s.createdAt?.seconds?new Date(s.createdAt.seconds*1000).toISOString().slice(0,10):"";
+      (s.items||[]).forEach(it=>{
+        const p = store.products.find(x=>x.id===it.productId);
+        moves.push({
+          type:"sortie", date:d, ts:s.createdAt?.seconds||0, bon:s.reference,
+          compteNumero:p?.compteNumero||"", productName:it.productName||p?.name||"",
+          qty:Number(it.qty)||0, unite:p?.unit||"", pu:Number(p?.price)||0,
+          observations: s.serviceName||"",
+        });
+      });
+    });
+    moves.sort((a,b)=>a.ts-b.ts);
+    return moves
+      .filter(m=>!periodFrom||m.date>=periodFrom)
+      .filter(m=>!periodTo||m.date<=periodTo);
+  };
+
+  // Report — cumul de tous les mouvements antérieurs à periodFrom (jamais un
+  // zéro artificiel en début de période), tous produits confondus.
+  const livreJournalReport = () => {
+    if (!periodFrom) return { qtyEntree:0, qtySortie:0, montantEntree:0, montantSortie:0 };
+    let qtyEntree=0, qtySortie=0, montantEntree=0, montantSortie=0;
+    (entreesData||[]).forEach(e=>{
+      if (e.status==="annule") return;
+      if (activeSupplier && e.supplierId!==activeSupplier.id) return;
+      const d = e.date || (e.createdAt?.seconds?new Date(e.createdAt.seconds*1000).toISOString().slice(0,10):"");
+      if (d>=periodFrom) return;
+      (e.items||[]).forEach(it=>{ qtyEntree+=Number(it.qty)||0; montantEntree+=(Number(it.qty)||0)*(Number(it.unitPrice)||0); });
+    });
+    (sortiesData||[]).forEach(s=>{
+      if (s.status==="annule") return;
+      if (activeSupplier && s.supplierId!==activeSupplier.id) return;
+      const d = s.createdAt?.seconds?new Date(s.createdAt.seconds*1000).toISOString().slice(0,10):"";
+      if (d>=periodFrom) return;
+      (s.items||[]).forEach(it=>{
+        const p = store.products.find(x=>x.id===it.productId);
+        qtySortie+=Number(it.qty)||0; montantSortie+=(Number(it.qty)||0)*(Number(p?.price)||0);
+      });
+    });
+    return { qtyEntree, qtySortie, montantEntree, montantSortie };
+  };
+
   const totals = globalTotals();
+
+  // ── Export Excel/PDF — un bouton par rapport, dans la barre d'action de
+  // l'aperçu, à côté d'Imprimer. Les deux téléchargent un vrai fichier
+  // directement, sans passer par la boîte de dialogue d'impression. Le nom
+  // de fichier inclut la période pour éviter les doublons. Pour le PDF, les
+  // nombres passent par fmtNumPdf (espace normal) plutôt que
+  // toLocaleString("fr-FR") (espace fine insécable, mal supportée par la
+  // police du PDF) — Excel, lui, garde des nombres bruts pour rester calculable.
+  const periodSuffix = (periodFrom||periodTo) ? "_"+(periodFrom||"debut")+"_"+(periodTo||"fin") : "";
+  const periodSubtitle = "Période : "+(fmtDate(periodFrom)||"—")+" au "+(fmtDate(periodTo)||"—");
+  const toPdfRows = (rows, numericIdx) => rows.map(r => r.map((c,i) => (numericIdx.includes(i) && c!=="") ? fmtNumPdf(c) : c));
+
+  const exportGrandLivre = (fmt) => {
+    const headers = ["Date","Bon","Origine / Destination","Entrées","Sorties","P.U.","Existant","Montant"];
+    const rows = grandLivreRows().map(r=>[fmtDate(r.date),r.bon,r.origine,r.entree||"",r.sortie||"",r.pu,r.existant,r.montant]);
+    const filename = "grand_livre_"+(product?.name||"produit")+periodSuffix;
+    if (fmt==="excel") downloadExcelTable({ filename, title:"GRAND LIVRE DES COMPTES", subtitle:(product?.name||"")+" — "+periodSubtitle, headers, rows });
+    else downloadPdfTable({ filename, title:"GRAND LIVRE DES COMPTES", subtitle:(product?.name||"")+" — "+periodSubtitle, headers, rows: toPdfRows(rows,[3,4,5,6,7]) });
+  };
+  const exportFicheStock = (fmt) => {
+    const headers = ["Date","Bon entrée","Qté entrée","Destinataire","Bon sortie","Qté sortie","Stock"];
+    const rows = ficheStockRows().map(r=>[fmtDate(r.date),r.entreeBon||"",r.entreeQty||"",r.destinataire||"",r.sortieBon||"",r.sortieQty||"",r.stock]);
+    const filename = "fiche_stock_"+(product?.name||"produit")+periodSuffix;
+    if (fmt==="excel") downloadExcelTable({ filename, title:"FICHE DE STOCK", subtitle:(product?.name||"")+" — "+periodSubtitle, headers, rows });
+    else downloadPdfTable({ filename, title:"FICHE DE STOCK", subtitle:(product?.name||"")+" — "+periodSubtitle, headers, rows: toPdfRows(rows,[2,5,6]) });
+  };
+  const exportConsommation = (fmt) => {
+    const headers = ["Produit","Compte","Quantité","P.U.","Montant"];
+    const cRows = consommationMatieresRows();
+    const rows = cRows.map(r=>[r.productName,r.compteNumero,r.qty,r.pu,r.montant]);
+    const totalNum = cRows.reduce((s,r)=>s+r.montant,0);
+    const svcName = store.services?.find(s=>s.id===serviceId)?.name||"service";
+    const filename = "consommation_matieres_"+svcName+periodSuffix;
+    const totalRowExcel = ["TOTAL","","","",totalNum];
+    if (fmt==="excel") downloadExcelTable({ filename, title:"CONSOMMATION MATIÈRES", subtitle:svcName+" — "+periodSubtitle, headers, rows, totalRow:totalRowExcel });
+    else downloadPdfTable({ filename, title:"CONSOMMATION MATIÈRES", subtitle:svcName+" — "+periodSubtitle, headers,
+      rows: toPdfRows(rows,[2,3,4]), totalRow:["TOTAL","","","",fmtNumPdf(totalNum)] });
+  };
+  const exportBalance = (fmt) => {
+    const headers = ["Compte","Désignation","Existant Début","Entrée Période","Total Entrée","Sortie Période","Existant Fin","P.U.","Montant Existant"];
+    const bRows = balancePeriodiqueRows();
+    const rows = bRows.map(r=>[r.compteNumero,r.productName,r.existantDebut,r.entreePeriode,r.totalEntree,r.sortiePeriode,r.existantFin,r.pu,r.montant]);
+    const totalNum = bRows.reduce((s,r)=>s+r.montant,0);
+    const filename = "balance_periodique"+periodSuffix;
+    const totalRowExcel = ["","TOTAL","","","","","","",totalNum];
+    if (fmt==="excel") downloadExcelTable({ filename, title:"BALANCE PÉRIODIQUE", subtitle:periodSubtitle, headers, rows, totalRow:totalRowExcel });
+    else downloadPdfTable({ filename, title:"BALANCE PÉRIODIQUE", subtitle:periodSubtitle, headers,
+      rows: toPdfRows(rows,[2,3,4,5,6,7,8]), totalRow:["","TOTAL","","","","","","",fmtNumPdf(totalNum)] });
+  };
+  const exportLivreJournal = (fmt) => {
+    const headers = ["Date","Compte","Désignation","Bon Entrée","Qté Entrée","Bon Sortie","Qté Sortie","P.U.","Montant Entrée","Montant Sortie","Observations"];
+    const jRows = livreJournalRows();
+    const jReport = livreJournalReport();
+    const reportRow = ["","","Reports","",jReport.qtyEntree,"",jReport.qtySortie,"",jReport.montantEntree,jReport.montantSortie,""];
+    const rows = [reportRow, ...jRows.map(r=>[fmtDate(r.date),r.compteNumero,r.productName,r.type==="entree"?r.bon:"",r.type==="entree"?r.qty:"",r.type==="sortie"?r.bon:"",r.type==="sortie"?r.qty:"",r.pu,r.type==="entree"?r.qty*r.pu:"",r.type==="sortie"?r.qty*r.pu:"",r.observations])];
+    const filename = "livre_journal"+periodSuffix;
+    if (fmt==="excel") downloadExcelTable({ filename, title:"LIVRE-JOURNAL DES MOUVEMENTS DES MATIÈRES", subtitle:periodSubtitle, headers, rows });
+    else downloadPdfTable({ filename, title:"LIVRE-JOURNAL DES MOUVEMENTS DES MATIÈRES", subtitle:periodSubtitle, headers, rows: toPdfRows(rows,[4,6,7,8,9]) });
+  };
+
+
 
   return (
     <div style={{padding:0}}>
@@ -267,6 +398,7 @@ export function StatistiquesComptaPage({store,activeSupplier,currentUser}){
 
         <button onClick={()=>setShowTotaux(true)} style={{...btn(),background:"#0f766e",color:"white",fontSize:12,width:"100%",marginBottom:12,padding:11}}>💰 Voir les montants totaux (entrées / sorties)</button>
         <button onClick={()=>setShowBalance(true)} style={{...btn(),background:"#1e3a8a",color:"white",fontSize:12,width:"100%",marginBottom:12,padding:11}}>📊 Balance Périodique <span style={{fontWeight:400,fontSize:11}}>(tous les produits, valorisée)</span></button>
+        <button onClick={()=>setShowLivreJournal(true)} style={{...btn(),background:"#1e3a8a",color:"white",fontSize:12,width:"100%",marginBottom:12,padding:11}}>📖 Livre-Journal <span style={{fontWeight:400,fontSize:11}}>(tous les mouvements, chronologique)</span></button>
 
         {product?(
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -294,16 +426,22 @@ export function StatistiquesComptaPage({store,activeSupplier,currentUser}){
           <button onClick={()=>setShowConsoMatieres(true)} disabled={!serviceId} style={{...btn(),background:serviceId?"#0f766e":"#e2e8f0",color:serviceId?"white":"#94a3b8",width:"100%",padding:12,fontSize:13}}>
             📄 Générer le document
           </button>
+          {serviceId&&(
+            <div style={{display:"flex",gap:6,marginTop:6}}>
+              <button onClick={()=>exportConsommation("excel")} style={{...btn(),background:"#dcfce7",color:"#166534",fontSize:11,padding:"5px 10px",flex:1}}>⬇️ Excel</button>
+              <button onClick={()=>exportConsommation("pdf")} style={{...btn(),background:"#fef3c7",color:"#92400e",fontSize:11,padding:"5px 10px",flex:1}}>📄 PDF</button>
+            </div>
+          )}
         </div>
       </div>
 
-      <PrintModal open={showGrandLivre} onClose={()=>setShowGrandLivre(false)} title="Grand Livre des Comptes">
+      <PrintModal open={showGrandLivre} onClose={()=>setShowGrandLivre(false)} title="Grand Livre des Comptes" onExcel={()=>exportGrandLivre("excel")} onPdf={()=>exportGrandLivre("pdf")}>
         {product&&<GrandLivrePrint product={product} rows={grandLivreRows()} periodFrom={periodFrom} periodTo={periodTo}/>}
       </PrintModal>
-      <PrintModal open={showFicheStock} onClose={()=>setShowFicheStock(false)} title="Fiche de Stock">
+      <PrintModal open={showFicheStock} onClose={()=>setShowFicheStock(false)} title="Fiche de Stock" onExcel={()=>exportFicheStock("excel")} onPdf={()=>exportFicheStock("pdf")}>
         {product&&<FicheStockPrint product={product} rows={ficheStockRows()} periodFrom={periodFrom} periodTo={periodTo}/>}
       </PrintModal>
-      <PrintModal open={showConsoMatieres} onClose={()=>setShowConsoMatieres(false)} title="Consommation Matières" signatories={["L'Ordonnateur des Matières","Le Comptable des matières","Le réceptionnaire"]}>
+      <PrintModal open={showConsoMatieres} onClose={()=>setShowConsoMatieres(false)} title="Consommation Matières" onExcel={()=>exportConsommation("excel")} onPdf={()=>exportConsommation("pdf")} signatories={["L'Ordonnateur des Matières","Le Comptable des matières","Le réceptionnaire"]}>
         {serviceId&&<ConsommationMatieresPrint serviceName={store.services.find(s=>s.id===serviceId)?.name} rows={consommationMatieresRows()} periodFrom={periodFrom} periodTo={periodTo}/>}
       </PrintModal>
 
@@ -324,9 +462,12 @@ export function StatistiquesComptaPage({store,activeSupplier,currentUser}){
           </tbody>
         </table>
       </Modal>
-      <PrintModal open={showBalance} onClose={()=>setShowBalance(false)} title="Balance Périodique">
+      <PrintModal open={showBalance} onClose={()=>setShowBalance(false)} title="Balance Périodique" onExcel={()=>exportBalance("excel")} onPdf={()=>exportBalance("pdf")}>
         <BalancePeriodiquePrint rows={balancePeriodiqueRows()} periodFrom={periodFrom} periodTo={periodTo}
           scopeLabel={activeSupplier?activeSupplier.name:"Tous fournisseurs"}/>
+      </PrintModal>
+      <PrintModal open={showLivreJournal} onClose={()=>setShowLivreJournal(false)} title="Livre-Journal" onExcel={()=>exportLivreJournal("excel")} onPdf={()=>exportLivreJournal("pdf")}>
+        <LivreJournalPrint rows={livreJournalRows()} report={livreJournalReport()} periodFrom={periodFrom} periodTo={periodTo}/>
       </PrintModal>
     </div>
   );

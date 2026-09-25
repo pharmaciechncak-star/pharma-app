@@ -33,6 +33,106 @@ export function downloadExcel(filename, rows, headers) {
   }
 }
 
+// Export Excel avec en-tête officiel (République du Sénégal / Ministère /
+// CHNCAK) et mise en forme réelle de tableau — en-têtes de colonnes en
+// couleur, bordures, ligne de total distincte. Utilise ExcelJS (déjà
+// dépendance de l'app, cf. downloadSituationExcel dans InvoicesPage.jsx) :
+// contrairement à XLSX/SheetJS ci-dessus, il permet la mise en forme des
+// cellules — downloadExcel reste la version simple (données brutes, sans
+// habillage) pour les cas qui n'en ont pas besoin.
+export async function downloadExcelTable({ filename, title, subtitle, headers, rows, totalRow }) {
+  const { default: ExcelJS } = await import("exceljs");
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Données");
+  const nbCols = headers.length;
+  const navy = "FF1E3A8A";
+  const centerBold = { horizontal:"center", vertical:"middle" };
+  const thin = { style:"thin", color:{argb:"FFDDDDDD"} };
+  const border = { top:thin, bottom:thin, left:thin, right:thin };
+
+  ws.columns = headers.map(()=>({ width:20 }));
+
+  let r = 1;
+  [
+    ["République du Sénégal", true, 12],
+    ["Un peuple - un but - une foi", false, 8.5],
+    ["Ministère de la Santé et de l'Hygiène Publique", false, 8.5],
+    ["Direction Générale des Établissements de Santé", false, 8.5],
+    ["Direction des Établissements Publics de Santé", false, 8.5],
+    ["Centre Hospitalier National Cheikh Ahmadoul Khadim", true, 8.5],
+  ].forEach(([t,bold,size])=>{
+    ws.mergeCells(r,1,r,nbCols);
+    const cell = ws.getCell(r,1);
+    cell.value = t;
+    cell.alignment = centerBold;
+    cell.font = { bold, size };
+    r++;
+  });
+  r++; // ligne vide
+
+  ws.mergeCells(r,1,r,nbCols);
+  const titCell = ws.getCell(r,1);
+  titCell.value = title;
+  titCell.font = { bold:true, color:{argb:"FFFFFFFF"}, size:12 };
+  titCell.alignment = centerBold;
+  titCell.fill = { type:"pattern", pattern:"solid", fgColor:{argb:navy} };
+  ws.getRow(r).height = 20;
+  r++;
+
+  if (subtitle) {
+    ws.mergeCells(r,1,r,nbCols);
+    const subCell = ws.getCell(r,1);
+    subCell.value = subtitle;
+    subCell.font = { italic:true, size:9, color:{argb:"FF64748B"} };
+    subCell.alignment = centerBold;
+    r++;
+  }
+  r++; // ligne vide
+
+  headers.forEach((h,i)=>{
+    const cell = ws.getCell(r, i+1);
+    cell.value = h;
+    cell.font = { bold:true, color:{argb:"FFFFFFFF"} };
+    cell.alignment = centerBold;
+    cell.fill = { type:"pattern", pattern:"solid", fgColor:{argb:navy} };
+    cell.border = border;
+  });
+  ws.getRow(r).height = 18;
+  r++;
+
+  rows.forEach(row=>{
+    row.forEach((val,i)=>{
+      const cell = ws.getCell(r, i+1);
+      cell.value = typeof val==="number" ? val : (val ?? "");
+      cell.border = border;
+      if (typeof val === "number") cell.alignment = { horizontal:"right" };
+    });
+    ws.getRow(r).height = 15;
+    r++;
+  });
+
+  if (totalRow) {
+    totalRow.forEach((val,i)=>{
+      const cell = ws.getCell(r, i+1);
+      cell.value = typeof val==="number" ? val : (val ?? "");
+      cell.font = { bold:true, color:{argb:"FFFFFFFF"} };
+      cell.fill = { type:"pattern", pattern:"solid", fgColor:{argb:navy} };
+      cell.border = border;
+      if (typeof val === "number") cell.alignment = { horizontal:"right" };
+    });
+    r++;
+  }
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type:"application/octet-stream" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename.endsWith(".xlsx") ? filename : filename+".xlsx";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function downloadInvoiceCSV(inv){
   const rows=(inv.items||[]).map(it=>[it.productName,it.qty,Number(it.unitPrice||0),Number(it.total||0)]);
   downloadCSV(inv.reference+".csv",rows,["Produit","Quantité","Prix unit. FCFA","Total FCFA"]);
