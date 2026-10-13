@@ -8,9 +8,20 @@ import { can, visibleSuppliers, hasSupplierAccess, productVisibleInCircuit } fro
 import { Alert } from "../ui/FormControls";
 import { BarcodeScanner, ScanReviewModal } from "../ui/ScanReviewModal";
 import { Modal } from "../ui/Modal";
+import { PrintModal, EntreeComptaPrint } from "../print/PrintTemplates";
+import { getPrintModel } from "../../helpers/printModels";
 import { scanDocumentWithAI } from "../../hooks/useAI";
 import { getComptaCircuits, availableCircuits } from "../../helpers/circuitsConfig";
 import { CircuitSelector } from "../ui/CircuitSelector";
+
+// Nature de l'entrée (Instruction générale, art. 7 et 19) — détermine les
+// pièces justificatives et si un PV de réception est exigé.
+const ENTREE_TYPES = [
+  { id:"achat", short:"Achat", label:"Achat (facture)", hint:"PV de réception obligatoire si le montant dépasse le seuil (300 000 F) ; sinon facture et bordereau de livraison suffisent." },
+  { id:"don", short:"Don / legs", label:"Don / legs (acquisition à titre gratuit)", hint:"PV de réception toujours obligatoire, quel que soit le montant. Joindre l'acte de donation." },
+  { id:"balance", short:"Balance d'entrée", label:"Balance d'entrée (début de gestion)", hint:"Reprise de l'existant au dernier jour de la gestion précédente — reçoit le n°1 de la gestion. Pièce : PV de recensement." },
+  { id:"certificat", short:"Certificat administratif", label:"Régularisation par certificat administratif", hint:"Excédent constaté au recensement, changement de dénomination, unité collective… Pièces : relevé récapitulatif, PV de recensement, certificat administratif." },
+];
 
 export function EntreesComptaPage({store,activeSupplier,currentUser}){
   const COMPTA_CIRCUITS = getComptaCircuits(store);
@@ -27,7 +38,7 @@ export function EntreesComptaPage({store,activeSupplier,currentUser}){
   const [pvMsg,setPvMsg]=useState("");
   const [selected,setSelected]=useState(null);
   const [editing,setEditing]=useState(null);
-  const [form,setForm]=useState({reference:"",supplierId:"",supplierName:"",date:new Date().toISOString().split("T")[0],items:[],notes:"",attachmentUrl:"",attachmentName:"",attachmentType:""});
+  const [form,setForm]=useState({reference:"",supplierId:"",supplierName:"",date:new Date().toISOString().split("T")[0],items:[],notes:"",attachmentUrl:"",attachmentName:"",attachmentType:"",sourceRef:""});
   const [uploadingAttachment,setUploadingAttachment]=useState(false);
   const [attachError,setAttachError]=useState("");
   const [scanResult,setScanResult]=useState(null);
@@ -69,7 +80,7 @@ export function EntreesComptaPage({store,activeSupplier,currentUser}){
 
   const openNew=()=>{
     setEditing(null);
-    setForm({reference:`BON-ENT-${cfg.refPrefix}-`+genId(),supplierId:activeSupplier?.id||"",supplierName:activeSupplier?.name||"",date:new Date().toISOString().split("T")[0],items:[],notes:"",attachmentUrl:"",attachmentName:"",attachmentType:""});
+    setForm({reference:"",typeEntree:"achat",supplierId:activeSupplier?.id||"",supplierName:activeSupplier?.name||"",date:new Date().toISOString().split("T")[0],items:[],notes:"",attachmentUrl:"",attachmentName:"",attachmentType:"",sourceRef:""});
     setAttachError("");
     setShow(true); setSelected(null);
   };
@@ -99,12 +110,31 @@ export function EntreesComptaPage({store,activeSupplier,currentUser}){
     handleScan(file);
   };
 
+  // Le document scanné a-t-il déjà été importé ? On compare son numéro
+  // PROPRE (extrait par l'IA) à celui déjà enregistré sur un bon existant du
+  // même circuit et du même fournisseur — jamais bloquant en soi, juste un
+  // avertissement avant de continuer.
+  const [duplicateWarning,setDuplicateWarning] = useState(null); // { existing, result }
+  const findDuplicateByNumeroSource = (numeroSource) => {
+    if (!numeroSource?.trim()) return null;
+    const needle = numeroSource.trim().toLowerCase();
+    return (entreesData||[]).find(b=>
+      b.status!=="annule" && b.sourceRef?.trim().toLowerCase()===needle &&
+      (!activeSupplier || b.supplierId===activeSupplier.id)
+    ) || null;
+  };
+
   const handleScan = async(file) => {
     if(!file) return;
     setScanning(true); setScanMsg("📄 Analyse du document en cours...");
     try {
       const result = await scanDocumentWithAI(file, suppProds);
-      if(result.success && result.items?.length>0){ setScanMsg(""); setScanResult(result); setReviewOpen(true); }
+      if(result.success && result.items?.length>0){
+        setScanMsg("");
+        const dup = findDuplicateByNumeroSource(result.numeroSource);
+        if (dup) { setDuplicateWarning({ existing:dup, result }); setScanning(false); return; }
+        setScanResult(result); setReviewOpen(true);
+      }
       else setScanMsg("⚠️ "+(result.error||"Aucun article détecté dans ce document."));
     } catch(e){ setScanMsg("❌ Erreur scan : "+e.message); }
     setScanning(false);
@@ -132,7 +162,7 @@ export function EntreesComptaPage({store,activeSupplier,currentUser}){
         if(idx>=0) merged[idx]={...merged[idx],qty:String((Number(merged[idx].qty)||0)+(Number(ni.qty)||0))};
         else merged.push(ni);
       }
-      return {...f, items: merged.length>0?merged:f.items};
+      return {...f, sourceRef: scanResult?.numeroSource||f.sourceRef, items: merged.length>0?merged:f.items};
     });
     setScanMsg("✅ "+items.length+" article(s) importé(s) — vérifiez avant d'enregistrer"+(newProds.length>0?" · "+newProds.length+" nouveau(x) produit(s) créé(s)":""));
     setTimeout(()=>setScanMsg(""),8000);
@@ -186,84 +216,7 @@ export function EntreesComptaPage({store,activeSupplier,currentUser}){
     setSaving(false);
   };
 
-  const printReception=async(r)=>{
-    const [cardioB64, labelB64, chncakB64] = await Promise.all([
-      imageUrlToDataURL(IMG_CARDIO_SRC),
-      imageUrlToDataURL(IMG_LABEL_SRC),
-      imageUrlToDataURL(IMG_CHNCAK_SRC),
-    ]);
-    const rows=(r.items||[]).map((it,i)=>
-      "<tr style=\"background:"+(i%2===0?"#fff":"#f8fafc")+"\">" +
-      "<td>"+it.productName+"</td><td style=\"text-align:center\">"+it.qty+"</td>" +
-      "<td style=\"text-align:right\">"+Number(it.unitPrice||0).toLocaleString("fr-FR")+"</td>" +
-      "<td style=\"text-align:right;font-weight:600\">"+Number((it.qty||0)*(it.unitPrice||0)).toLocaleString("fr-FR")+"</td></tr>"
-    ).join("");
-    const total=r.items?.reduce((s,i)=>s+Number(i.qty||0)*Number(i.unitPrice||0),0)||0;
-    const totalUnites=r.items?.reduce((s,i)=>s+Number(i.qty||0),0)||0;
-    const html=
-      "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Bon d'entrée "+cfg.label+" "+r.reference+"</title>"+
-      "<style>@page{size:A4;margin:1.5cm}*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:10px}"+
-      ".ph{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #065f46;padding-bottom:8px;margin-bottom:6px}"+
-      ".ent{flex:1;text-align:center;font-size:8.5px;line-height:1.8;color:#111;padding:0 8px}"+
-      ".eln{display:inline-block;border-bottom:1px solid #999;padding-bottom:1px}"+
-      ".sub{background:#065f46;color:#fff;padding:5px;font-size:11px;font-weight:bold;text-align:center;letter-spacing:1px;margin-bottom:8px}"+
-      ".info{display:flex;justify-content:space-between;font-size:9px;color:#444;margin-bottom:8px}"+
-      "table{width:100%;border-collapse:collapse;font-size:10px}"+
-      "th{background:#065f46;color:#fff;padding:6px 8px;text-align:center;border:1px solid #064e3b}"+
-      "td{padding:5px 8px;border:1px solid #ddd}"+
-      ".tot{background:#065f46;color:#fff;font-weight:bold}"+
-      ".sig{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:30px}"+
-      ".sb{text-align:center}.sl{font-weight:bold;font-size:9px;color:#065f46;text-decoration:underline;margin-bottom:60px;display:block}"+
-      ".su{height:4px}"+
-      ".cert{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:24px}"+
-      ".certbox{border:1px solid #333;padding:10px;font-size:9px;line-height:1.9}"+
-      ".certtitle{font-weight:bold;text-decoration:underline;margin-bottom:8px;display:block}"+
-      ".certsig{font-weight:bold;text-decoration:underline;display:block;margin-top:10px}"+
-      ".certstamp{border:1px dashed #999;border-radius:4px;height:70px;margin-top:5px}"+
-      "</style></head><body>"+
-      "<div class=\"ph\">"+
-        "<div style=\"flex-shrink:0;width:85px\"><img src=\"" + cardioB64 + "\" style=\"width:80px;height:100px;object-fit:contain\"/></div>"+
-        "<div class=\"ent\">"+
-          "<div style=\"font-size:11px;font-weight:bold\">République du Sénégal</div>"+
-          "<div><span class=\"eln\">Un peuple - un but - une foi</span></div>"+
-          "<div><span class=\"eln\">Ministère de la Santé et de l'Hygiène Publique</span></div>"+
-          "<div><span class=\"eln\">Direction Générale des Établissements de Santé</span></div>"+
-          "<div><span class=\"eln\">Direction des Établissements Publics de Santé</span></div>"+
-          "<div style=\"font-weight:bold\"><span class=\"eln\">Centre Hospitalier National Cheikh Ahmadoul Khadim</span></div>"+
-        "</div>"+
-        "<div style=\"flex-shrink:0;display:flex;flex-direction:row;align-items:center;justify-content:center;gap:6px;width:145px\">"+
-          "<img src=\"" + labelB64 + "\" style=\"width:65px;height:65px;object-fit:contain\"/>"+
-          "<img src=\"" + chncakB64 + "\" style=\"width:65px;height:50px;object-fit:contain\"/>"+
-        "</div>"+
-      "</div>"+
-      "<div class=\"sub\">BON D'ENTRÉE ("+cfg.label.toUpperCase()+") — PHARMACIE CHNCAK</div>"+
-      "<div class=\"info\"><span>Réf : <strong>"+r.reference+"</strong></span><span>Fournisseur : <strong>"+r.supplierName+"</strong></span><span>Date : "+fmtDate(r.date)+"</span></div>"+
-      "<table><thead><tr><th style=\"width:45%\">DÉSIGNATION</th><th>QTÉ</th><th>PRIX UNIT. (FCFA)</th><th>TOTAL (FCFA)</th></tr></thead><tbody>"+
-      rows+"<tr class=\"tot\"><td colspan=\"3\" style=\"text-align:center\">TOTAL</td><td style=\"text-align:right\">"+total.toLocaleString("fr-FR")+"</td></tr></tbody></table>"+
-      (r.notes?"<div style=\"margin-top:8px;font-size:9px;color:#444;font-style:italic\">Observations : "+r.notes+"</div>":"")+
-      "<div class=\"cert\">"+
-      "<div class=\"certbox\"><span class=\"certtitle\">CERTIFICATION</span>"+
-      "Arrête le présent bon à <strong>"+totalUnites.toLocaleString("fr-FR")+"</strong> Unités<br/>"+
-      "représentant une valeur de <strong>"+total.toLocaleString("fr-FR")+"</strong> francs<br/><br/>"+
-      "dont je certifie la prise en charge<br/>"+
-      "A Touba, le "+fmtDate(r.date)+"<br/>"+
-      "<span class=\"certsig\">L'Ordonnateur des Matières</span>"+
-      "<div class=\"certstamp\"></div>"+
-      "</div>"+
-      "<div class=\"certbox\"><span class=\"certtitle\">AUGMENTATION DES PRISES EN CHARGE</span>"+
-      "le comptable des matières soussigné, déclare ce jour augmenter ses prises en charge de <strong>"+totalUnites.toLocaleString("fr-FR")+"</strong> unités,<br/>"+
-      "représentant une valeur de <strong>"+total.toLocaleString("fr-FR")+"</strong> Francs<br/><br/>"+
-      "A Touba, le "+fmtDate(r.date)+"<br/>"+
-      "<span class=\"certsig\">Le Comptable des Matières</span>"+
-      "<div class=\"certstamp\"></div>"+
-      "</div>"+
-      "</div>"+
-      "</body></html>";
-    const blob=new Blob([html],{type:"text/html;charset=utf-8"});
-    const url=URL.createObjectURL(blob);
-    const win=window.open(url,"_blank");
-    if(win) win.addEventListener("load",()=>{setTimeout(()=>{win.print();URL.revokeObjectURL(url);},400);});
-  };
+  const [printSel,setPrintSel]=useState(null);
 
   // Vue détail
   if(selected){
@@ -280,7 +233,8 @@ export function EntreesComptaPage({store,activeSupplier,currentUser}){
           </div>
           <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:"0 0 8px 8px",padding:"10px 14px",marginBottom:12}}>
             <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8,fontSize:12}}>
-              <div><b>Réf :</b> {r.reference}</div>
+              <div><b>N° :</b> {r.reference}</div>
+              <div><b>Nature :</b> {(ENTREE_TYPES.find(t=>t.id===(r.typeEntree||"achat"))||ENTREE_TYPES[0]).short}</div>
               <div><b>Fournisseur :</b> {r.supplierName}</div>
               <div><b>Date :</b> {fmtDate(r.date)}</div>
               <div><b>Par :</b> {r.receivedByName}</div>
@@ -324,7 +278,8 @@ export function EntreesComptaPage({store,activeSupplier,currentUser}){
           {(() => {
             const hasExistingPv = (store.procesVerbaux||[]).some(pv=>pv.entreeId===r.id);
             const circuitSeuil = Number((store.pvSettings||[]).find(s=>s.id===circuit||s.circuit===circuit)?.seuil)||0;
-            const qualifiesForPv = circuitSeuil>0 && total>=circuitSeuil;
+            const typeE = r.typeEntree||"achat";
+            const qualifiesForPv = typeE==="don" || (typeE==="achat" && circuitSeuil>0 && total>circuitSeuil);
             if (hasExistingPv || !qualifiesForPv || r.status==="annule") return null;
             return (
               <div style={{marginBottom:12}}>
@@ -335,16 +290,19 @@ export function EntreesComptaPage({store,activeSupplier,currentUser}){
                   catch(e){ setPvMsg("❌ "+e.message); }
                   setPvGenerating(false);
                   setTimeout(()=>setPvMsg(""),5000);
-                }} style={{...btn(),background:"#1e3a8a",color:"white",fontSize:12,padding:"8px 14px"}}>{pvGenerating?"⏳...":"🗂️ Générer le PV (ce bon atteint le seuil)"}</button>
+                }} style={{...btn(),background:"#1e3a8a",color:"white",fontSize:12,padding:"8px 14px"}}>{pvGenerating?"⏳...":(typeE==="don"?"🗂️ Générer le PV (don : PV obligatoire)":"🗂️ Générer le PV (ce bon dépasse le seuil)")}</button>
               </div>
             );
           })()}
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            {r.status!=="annule"&&can(currentUser,permSection,"w")&&<button onClick={()=>{setEditing(r.id);setForm({...r});setShow(true);setSelected(null);}} style={{...btn(),background:"#f0fdf4",color:"#059669",border:"1px solid #86efac",fontSize:12}}>✏️ Modifier</button>}
-            <button onClick={()=>printReception(r)} style={{...btn(),background:"#fef3c7",color:"#92400e",border:"1px solid #fcd34d",fontSize:12}}>🖨️ Imprimer</button>
+            {r.status!=="annule"&&r.typeEntree!=="balance"&&can(currentUser,permSection,"w")&&<button onClick={()=>{setEditing(r.id);setForm({...r});setShow(true);setSelected(null);}} style={{...btn(),background:"#f0fdf4",color:"#059669",border:"1px solid #86efac",fontSize:12}}>✏️ Modifier</button>}
+            <button onClick={()=>setPrintSel(r)} style={{...btn(),background:"#fef3c7",color:"#92400e",border:"1px solid #fcd34d",fontSize:12}}>🖨️ Imprimer</button>
             {r.status!=="annule"&&can(currentUser,permSection,"w")&&<button onClick={()=>{setCancelError("");setCancelling(r);}} style={{...btn(),background:"#fee2e2",color:"#ef4444",border:"1px solid #fca5a5",fontSize:12}}>🚫 Annuler</button>}
           </div>
         </div>
+        <PrintModal open={!!printSel} onClose={()=>setPrintSel(null)} title={"Bon d'Entrée — "+cfg.label} reference={"BON D'ENTREE N° "+(printSel?.reference||"")+" — "+cfg.label} landscape signatories={getPrintModel(store,"entree").signers}>
+          <EntreeComptaPrint r={printSel} products={store.products} circuitLabel={cfg.label} model={getPrintModel(store,"entree")}/>
+        </PrintModal>
         <Modal open={!!cancelling} onClose={()=>setCancelling(null)} title="🚫 Annuler ce bon d'entrée ?">
           {cancelling&&(
             <div>
@@ -380,8 +338,15 @@ export function EntreesComptaPage({store,activeSupplier,currentUser}){
           <div style={{...card,marginBottom:14,border:"2px solid #059669"}}>
             <div style={{fontWeight:700,fontSize:14,marginBottom:12,color:"#065f46"}}>📦 {editing?"Modifier":"Nouveau"} Bon d'Entrée ({cfg.label})</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
-              <div><label style={label}>Référence</label><input style={input} value={form.reference} onChange={e=>setForm(f=>({...f,reference:e.target.value}))}/></div>
+              <div><label style={label}>N° du bon</label><div style={{...input,background:"#f8fafc",color:editing?"#1e293b":"#94a3b8",fontSize:12}}>{editing?(form.reference||"—"):"Attribué à l'enregistrement (série de la gestion)"}</div></div>
               <div><label style={label}>Date</label><input style={{...input}} type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}/></div>
+            </div>
+            <div style={{marginBottom:10}}>
+              <label style={label}>Nature de l'entrée</label>
+              <select style={input} value={form.typeEntree||"achat"} disabled={!!editing} onChange={e=>setForm(f=>({...f,typeEntree:e.target.value}))}>
+                {ENTREE_TYPES.map(t=><option key={t.id} value={t.id}>{t.label}</option>)}
+              </select>
+              <div style={{fontSize:10.5,color:"#64748b",marginTop:3}}>{(ENTREE_TYPES.find(t=>t.id===(form.typeEntree||"achat"))||ENTREE_TYPES[0]).hint}</div>
             </div>
             <div style={{marginBottom:10}}>
               <label style={label}>Fournisseur</label>
@@ -563,6 +528,25 @@ export function EntreesComptaPage({store,activeSupplier,currentUser}){
       <ScanReviewModal open={reviewOpen} onClose={()=>{setReviewOpen(false);setScanResult(null);}}
         scanResult={scanResult} allProducts={store.products} activeSupplier={activeSupplier}
         onConfirm={handleConfirmScan} mode="bon"/>
+      <Modal open={!!duplicateWarning} onClose={()=>setDuplicateWarning(null)} title="⚠️ Ce document a peut-être déjà été importé">
+        {duplicateWarning&&(
+          <div>
+            <div style={{fontSize:13,color:"#374151",marginBottom:12}}>
+              Un Bon d'Entrée portant le même numéro de document (<b>{duplicateWarning.result.numeroSource}</b>) existe déjà :
+            </div>
+            <div style={{background:"#fef3c7",borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:12}}>
+              <div style={{fontWeight:700}}>{duplicateWarning.existing.reference}</div>
+              <div style={{color:"#92400e"}}>{fmtDate(duplicateWarning.existing.date)} · {(duplicateWarning.existing.items||[]).length} produit(s)</div>
+            </div>
+            <div style={{fontSize:12,color:"#64748b",marginBottom:14}}>Si c'est bien le même document, ne l'importez pas une seconde fois. Sinon (correction, deuxième page...), vous pouvez continuer.</div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>{ setScanResult(duplicateWarning.result); setReviewOpen(true); setDuplicateWarning(null); }}
+                style={{...btn(),background:"#fee2e2",color:"#ef4444",flex:1,padding:10}}>Continuer quand même</button>
+              <button onClick={()=>setDuplicateWarning(null)} style={{...btn(),background:"#f1f5f9",color:"#374151",padding:10}}>Annuler l'import</button>
+            </div>
+          </div>
+        )}
+      </Modal>
       <Modal open={!!barcodeChoices} onClose={()=>setBarcodeChoices(null)} title="📦 Plusieurs produits correspondent">
         {barcodeChoices&&(
           <div>

@@ -7,6 +7,7 @@ import { Alert } from "../ui/FormControls";
 import { BarcodeScanner } from "../ui/ScanReviewModal";
 import { getFonctPharmacyStock2, getNpPharmacyStock2 } from "../../helpers/stock2";
 import { PrintModal, RetourComptaPrint } from "../print/PrintTemplates";
+import { getPrintModel } from "../../helpers/printModels";
 import { Modal } from "../ui/Modal";
 import { getComptaCircuits, availableCircuits } from "../../helpers/circuitsConfig";
 import { CircuitSelector } from "../ui/CircuitSelector";
@@ -35,7 +36,7 @@ export function RetoursComptaPage({store,activeSupplier,currentUser}){
   const [showFilters,setShowFilters]=useState(false);
   const [filters,setFilters]=useState({dateFrom:"",dateTo:"",supplierId:"",createdBy:"",status:""});
   const hasActiveFilters = Object.values(filters).some(v=>v);
-  const emptyForm = () => ({reference:`BON-RET-${cfg.refPrefix}-`+genId(),supplierId:activeSupplier?.id||"",supplierName:activeSupplier?.name||"",date:new Date().toISOString().split("T")[0],items:[],notes:""});
+  const emptyForm = () => ({reference:"",supplierId:activeSupplier?.id||"",supplierName:activeSupplier?.name||"",date:new Date().toISOString().split("T")[0],items:[],notes:""});
   const [form,setForm]=useState(emptyForm());
   const [search,setSearch]=useState("");
   const [showResults,setShowResults]=useState(false);
@@ -135,7 +136,7 @@ export function RetoursComptaPage({store,activeSupplier,currentUser}){
         {show&&(
           <div style={{...card,marginBottom:14,border:"2px solid #7f1d1d"}}>
             <div style={{fontWeight:700,fontSize:14,marginBottom:4,color:"#7f1d1d"}}>↩️ {editingId?"Modifier le Bon de Retour":"Nouveau Bon de Retour"} ({cfg.label})</div>
-            <div style={{fontSize:11,color:"#94a3b8",marginBottom:12}}>Référence : {form.reference}</div>
+            <div style={{fontSize:11,color:"#94a3b8",marginBottom:12}}>N° : {form.reference||"attribué à l'enregistrement (série de la gestion)"}</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
               <div>
                 <label style={label}>Fournisseur</label>
@@ -302,8 +303,8 @@ export function RetoursComptaPage({store,activeSupplier,currentUser}){
         )}
       </Modal>
 
-      <PrintModal open={!!printSel} onClose={()=>setPrintSel(null)} title="Bon de Retour" signatories={["L'Ordonnateur des Matières","Le Comptable des Matières"]}>
-        <RetourComptaPrint r={printSel} products={store.products} circuitLabel={cfg.label}/>
+      <PrintModal open={!!printSel} onClose={()=>setPrintSel(null)} title="Bon de Retour" reference={"BON DE RETOUR N° "+(printSel?.reference||"")} signatories={getPrintModel(store,"retour").signers}>
+        <RetourComptaPrint r={printSel} products={store.products} circuitLabel={cfg.label} model={getPrintModel(store,"retour")}/>
       </PrintModal>
     </div>
   );

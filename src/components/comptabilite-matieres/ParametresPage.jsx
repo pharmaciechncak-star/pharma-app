@@ -4,6 +4,7 @@ import { card, label, input, btn } from "../../helpers/styles";
 import { Alert } from "../ui/FormControls";
 import { Modal, ConfirmDelete } from "../ui/Modal";
 import { getComptaCircuits } from "../../helpers/circuitsConfig";
+import { PRINT_MODEL_DOCS, PRINT_MODEL_PRESETS, getAllPrintModels } from "../../helpers/printModels";
 
 // Paramètres — regroupe tout ce qui est configurable : circuits (registre,
 // admin uniquement), types de produits, fonctions (liste partagée de
@@ -42,6 +43,13 @@ export function ParametresPage({store,currentUser}){
   const [editingTypeName,setEditingTypeName] = useState("");
   const [deletingType,setDeletingType] = useState(null);
 
+  // ── Bénéficiaires (autres structures destinataires de sorties) ──
+  const [newBenef,setNewBenef] = useState({name:"",contact:""});
+  const [benefError,setBenefError] = useState("");
+  const [editingBenefId,setEditingBenefId] = useState(null);
+  const [editingBenef,setEditingBenef] = useState({name:"",contact:""});
+  const [deletingBenef,setDeletingBenef] = useState(null);
+
   // ── Responsables (commission fixe du circuit affiché) ──
   const [newResp,setNewResp] = useState({fonctionName:"",personName:"",interimName:""});
   const [editingRespId,setEditingRespId] = useState(null);
@@ -70,6 +78,15 @@ export function ParametresPage({store,currentUser}){
   // dessus ouvre ses détails dans une modale — même principe que cliquer sur
   // un PV dans sa liste.
   const [openSection,setOpenSection] = useState(null);
+
+  // ── Modèles des imprimés (communs à tous les circuits) ──
+  const [modelsDraft,setModelsDraft] = useState(null);
+  const [savingModels,setSavingModels] = useState(false);
+  const modelsSaved = (store.printModels||[]).find(d=>d.id==="config");
+  const openModels = () => { setModelsDraft(JSON.parse(JSON.stringify(getAllPrintModels(store)))); setOpenSection("modeles"); };
+  const setModelField = (k,f,v) => setModelsDraft(d=>({...d,[k]:{...d[k],[f]:v}}));
+  const setSigner = (k,i,v) => setModelsDraft(d=>{ const s=[...(d[k].signers||[])]; s[i]=v; return {...d,[k]:{...d[k],signers:s}}; });
+  const applyPreset = (preset) => setModelsDraft(JSON.parse(JSON.stringify(preset.values)));
   const sectionRow = (key, icon, title, subtitle) => (
     <div onClick={()=>setOpenSection(key)} style={{...card,marginBottom:8,cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
       <div style={{flex:1}}>
@@ -96,8 +113,16 @@ export function ParametresPage({store,currentUser}){
         {sectionRow("circuit", "🔀", "Circuit — "+COMPTA_CIRCUITS[circuit].label, "Libellé, icône, seuil de déclenchement du PV, préfixe")}
         {isAdmin&&sectionRow("circuits-registre", "🔀", "Circuits supplémentaires", (store.circuitsRegistry||[]).length+" circuit(s) — ajouter, renommer, supprimer")}
         {sectionRow("types", "📦", "Types de produits", (store.productTypesFonct||[]).length+" type(s) créé(s)")}
+        {sectionRow("beneficiaires", "🤝", "Bénéficiaires", (store.beneficiaires||[]).length+" autre(s) structure(s) — destinataires des sorties")}
         {sectionRow("fonctions", "🏷️", "Fonctions", (store.pvFonctions||[]).length+" fonction(s) créée(s)")}
         {sectionRow("responsables", "👥", "Responsables — "+COMPTA_CIRCUITS[circuit].label, responsables.length+" membre(s) de la commission")}
+        <div onClick={openModels} style={{...card,marginBottom:8,cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:700,fontSize:13,color:"#1e293b"}}>🧾 Modèles des imprimés</div>
+            <div style={{fontSize:11,color:"#64748b"}}>N° de modèle, articles et signataires de chaque document{modelsSaved?" — personnalisés":" — valeurs en usage par défaut"}</div>
+          </div>
+          <div style={{color:"#cbd5e1",fontSize:18}}>›</div>
+        </div>
       </div>
 
       <Modal open={openSection==="circuit"} onClose={()=>setOpenSection(null)} title={"🔀 Circuit — "+COMPTA_CIRCUITS[circuit].label}>
@@ -114,7 +139,7 @@ export function ParametresPage({store,currentUser}){
         </div>
 
         <div style={{fontWeight:700,fontSize:12,color:"#1e293b",marginBottom:4}}>💰 Seuil de déclenchement du PV</div>
-        <div style={{fontSize:11,color:"#64748b",marginBottom:10}}>Tout Bon d'Entrée de ce circuit dont le montant atteint ce seuil génère automatiquement un PV de réception.</div>
+        <div style={{fontSize:11,color:"#64748b",marginBottom:10}}>Tout achat de ce circuit dont le montant DÉPASSE ce seuil génère automatiquement un PV de réception (art. 7 de l'Instruction générale : au-delà de 300 000 F). Les dons et legs reçoivent toujours un PV, quel que soit le montant.</div>
         {!currentSettings&&(
           <div style={{background:"#fee2e2",color:"#b91c1c",borderRadius:8,padding:"8px 10px",fontSize:11,marginBottom:10,fontWeight:600}}>
             ⚠️ Aucun réglage enregistré pour ce circuit — la valeur ci-dessous n'est qu'une suggestion, pas encore active. Tant que vous n'avez pas cliqué sur « Enregistrer », <u>aucun PV ne sera généré automatiquement</u>, quel que soit le montant du bon.
@@ -197,6 +222,44 @@ export function ParametresPage({store,currentUser}){
                 <button onClick={()=>{setEditingTypeId(t.id);setEditingTypeName(t.name);}} style={{...btn(),background:"#f0f9ff",color:"#0891b2",fontSize:11,padding:"4px 8px"}}>✏️</button>
                 <button onClick={()=>setDeletingType(t)} style={{...btn(),background:"#fee2e2",color:"#ef4444",fontSize:11,padding:"4px 8px"}}>🗑️</button>
               </>
+            )}
+          </div>
+        ))}
+      </Modal>
+
+      <Modal open={openSection==="beneficiaires"} onClose={()=>{setOpenSection(null);setBenefError("");}} title="🤝 Bénéficiaires">
+        <div style={{fontSize:11,color:"#64748b",marginBottom:10}}>Les autres structures (hors services de l'hôpital) vers lesquelles partent surtout les sorties provisoires. Elles apparaissent comme destinataire possible dans le Bon de Sortie.</div>
+        {benefError&&<div style={{background:"#fee2e2",color:"#b91c1c",borderRadius:8,padding:"6px 10px",fontSize:11,marginBottom:10}}>{benefError}</div>}
+        <div style={{background:"#f8fafc",borderRadius:8,padding:10,marginBottom:12}}>
+          <input style={{...input,marginBottom:8}} placeholder="Nom de la structure" value={newBenef.name} onChange={e=>setNewBenef(b=>({...b,name:e.target.value}))}/>
+          <input style={{...input,marginBottom:8}} placeholder="Contact / observations (optionnel)" value={newBenef.contact} onChange={e=>setNewBenef(b=>({...b,contact:e.target.value}))}/>
+          <button onClick={async()=>{
+            setBenefError("");
+            try{ await store.addBeneficiaire(newBenef.name,newBenef.contact); setNewBenef({name:"",contact:""}); }
+            catch(e){ setBenefError(e.message); }
+          }} style={{...btn(),background:"#334155",color:"white",width:"100%",padding:9,fontSize:12}}>+ Ajouter le bénéficiaire</button>
+        </div>
+        {(store.beneficiaires||[]).length===0&&<div style={{fontSize:12,color:"#94a3b8",textAlign:"center",padding:8}}>Aucun bénéficiaire créé.</div>}
+        {(store.beneficiaires||[]).map(b=>(
+          <div key={b.id} style={{padding:"7px 0",borderBottom:"1px solid #f1f5f9"}}>
+            {editingBenefId===b.id?(
+              <div>
+                <input style={{...input,padding:"5px 8px",marginBottom:6}} value={editingBenef.name} onChange={e=>setEditingBenef(x=>({...x,name:e.target.value}))} autoFocus/>
+                <input style={{...input,padding:"5px 8px",marginBottom:6}} placeholder="Contact (optionnel)" value={editingBenef.contact} onChange={e=>setEditingBenef(x=>({...x,contact:e.target.value}))}/>
+                <div style={{display:"flex",gap:6}}>
+                  <button onClick={async()=>{ setBenefError(""); try{ await store.updateBeneficiaire(b.id,editingBenef); setEditingBenefId(null); }catch(e){ setBenefError(e.message); } }} style={{...btn(),background:"#dcfce7",color:"#166534",fontSize:11,padding:"4px 10px",flex:1}}>✓ Enregistrer</button>
+                  <button onClick={()=>setEditingBenefId(null)} style={{...btn(),background:"#f1f5f9",color:"#64748b",fontSize:11,padding:"4px 10px"}}>✕</button>
+                </div>
+              </div>
+            ):(
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:12,fontWeight:700}}>{b.name}</div>
+                  {b.contact&&<div style={{fontSize:10,color:"#64748b"}}>{b.contact}</div>}
+                </div>
+                <button onClick={()=>{setEditingBenefId(b.id);setEditingBenef({name:b.name,contact:b.contact||""});}} style={{...btn(),background:"#f0f9ff",color:"#0891b2",fontSize:11,padding:"4px 8px"}}>✏️</button>
+                <button onClick={()=>setDeletingBenef(b)} style={{...btn(),background:"#fee2e2",color:"#ef4444",fontSize:11,padding:"4px 8px"}}>🗑️</button>
+              </div>
             )}
           </div>
         ))}
@@ -293,9 +356,58 @@ export function ParametresPage({store,currentUser}){
       <ConfirmDelete open={!!deletingCircuit} onClose={()=>setDeletingCircuit(null)}
         label={deletingCircuit?.label||""}
         onConfirm={async()=>{ await store.deleteCircuit(deletingCircuit.id); setDeletingCircuit(null); }}/>
+      <ConfirmDelete open={!!deletingBenef} onClose={()=>setDeletingBenef(null)}
+        label={deletingBenef?.name||""}
+        onConfirm={async()=>{ await store.deleteBeneficiaire(deletingBenef.id); setDeletingBenef(null); }}/>
       <ConfirmDelete open={!!deletingType} onClose={()=>setDeletingType(null)}
         label={deletingType?.name||""}
         onConfirm={async()=>{ await store.deleteProductTypeFonct(deletingType.id); setDeletingType(null); }}/>
+      <Modal open={openSection==="modeles"&&!!modelsDraft} onClose={()=>setOpenSection(null)} title="🧾 Modèles des imprimés">
+        {modelsDraft&&(
+          <div>
+            <div style={{fontSize:11,color:"#64748b",marginBottom:10}}>
+              Ces réglages s'appliquent à tous les circuits. Laissez un champ vide pour ne rien imprimer à cet endroit. Les intitulés des signataires apparaissent sur l'imprimé et dans la saisie des noms avant impression.
+            </div>
+            <div style={{fontSize:12,fontWeight:700,color:"#1e293b",marginBottom:6}}>Remplir avec :</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
+              {PRINT_MODEL_PRESETS.map(pr=>(
+                <button key={pr.id} onClick={()=>applyPreset(pr)} style={{...btn(),background:"#eef2ff",color:"#3730a3",border:"1px solid #c7d2fe",fontSize:11}}>↺ {pr.label}</button>
+              ))}
+            </div>
+            <div style={{maxHeight:"55vh",overflowY:"auto",paddingRight:4}}>
+              {PRINT_MODEL_DOCS.map(d=>{
+                const m = modelsDraft[d.key]||{};
+                return (
+                  <div key={d.key} style={{border:"1px solid #e2e8f0",borderRadius:8,padding:10,marginBottom:10}}>
+                    <div style={{fontWeight:800,fontSize:12.5,color:"#1e3a8a",marginBottom:8}}>{d.label}</div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                      <div><label style={label}>N° de modèle</label><input style={input} value={m.modele||""} placeholder="ex. Modèle n°1" onChange={e=>setModelField(d.key,"modele",e.target.value)}/></div>
+                      <div><label style={label}>Instruction</label><input style={input} value={m.instruction||""} placeholder="ex. Instruction générale" onChange={e=>setModelField(d.key,"instruction",e.target.value)}/></div>
+                    </div>
+                    <div style={{marginTop:8}}><label style={label}>Articles</label><input style={input} value={m.articles||""} placeholder="ex. Art. 12a, 12c, 19a" onChange={e=>setModelField(d.key,"articles",e.target.value)}/></div>
+                    {d.signerRoles.length>0&&(
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:8,marginTop:8}}>
+                        {d.signerRoles.map((role,i)=>(
+                          <div key={i}><label style={label}>Signataire — {role}</label><input style={input} value={(m.signers||[])[i]||""} onChange={e=>setSigner(d.key,i,e.target.value)}/></div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <button disabled={savingModels} onClick={async()=>{
+              setSavingModels(true);
+              try{
+                // un intitulé de signataire vide reprendrait la valeur par défaut à l'impression
+                await store.savePrintModels(modelsDraft);
+                setOpenSection(null); showMsg("✅ Modèles des imprimés enregistrés");
+              }catch(e){ alert("Erreur : "+e.message); }
+              setSavingModels(false);
+            }} style={{...btn(),background:"#334155",color:"white",width:"100%",padding:10,marginTop:10}}>{savingModels?"⏳ Enregistrement...":"💾 Enregistrer"}</button>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

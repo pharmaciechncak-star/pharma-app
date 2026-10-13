@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { signOut, createUserWithEmailAndPassword } from "firebase/auth";
-import { collection, doc, addDoc, getDoc, getDocs, updateDoc, deleteDoc, query, where, orderBy, limit, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
+import { collection, doc, addDoc, getDoc, getDocs, updateDoc, deleteDoc, query, where, orderBy, limit, onSnapshot, serverTimestamp, setDoc, runTransaction } from "firebase/firestore";
 import { db, authSecondary } from "../firebase";
 import { ROLES, DEFAULT_CAROUSEL_SLIDES } from "../constants";
 
@@ -57,8 +57,17 @@ function locService(serviceId) { return "service:" + serviceId; }
 function locFonctPharmacy() { return "fonct-pharmacy"; }
 function locFonctService(serviceId) { return "fonct-service:" + serviceId; }
 // Circuit "non pharmaceutique" — emplacements distincts, même logique.
+function locFonctBenef(beneficiaireId) { return "fonct-benef:" + beneficiaireId; }
 function locNpPharmacy() { return "np-pharmacy"; }
 function locNpService(serviceId) { return "np-service:" + serviceId; }
+function locNpBenef(beneficiaireId) { return "np-benef:" + beneficiaireId; }
+// Sorties définitives SANS destinataire (réforme, destruction de périmés,
+// perte/déficit) : les lots sortent de l'existant vers un emplacement « hors
+// existant » qui n'est compté dans aucun stock — mais restent traçables, ce qui
+// permet l'annulation (reverseBatchesOf) exactement comme pour les autres sorties.
+const SORTIE_MOTIFS_HORS = ["reforme","peremption","perte"];
+function destLocFonct(s) { return SORTIE_MOTIFS_HORS.includes(s?.motif) ? "fonct-hors:"+s.motif : (s.beneficiaireId ? locFonctBenef(s.beneficiaireId) : locFonctService(s.serviceId)); }
+function destLocNp(s) { return SORTIE_MOTIFS_HORS.includes(s?.motif) ? "np-hors:"+s.motif : (s.beneficiaireId ? locNpBenef(s.beneficiaireId) : locNpService(s.serviceId)); }
 
 export async function createBatch({ productId, productName, lot, expiry, qty, location, source, sourceRef, userId, userName }) {
   if (!productId || !Number(qty)) return null;
@@ -199,11 +208,17 @@ export function useStore(userId, userName, page) {
   const [retoursFonct, setRetoursFonct] = useState([]);
   const [stock2InventoriesFonct, setStock2InventoriesFonct] = useState([]);
   const [productTypesFonct, setProductTypesFonct] = useState([]);
+  const [beneficiaires, setBeneficiaires] = useState([]);
   const [circuitsRegistry, setCircuitsRegistry] = useState([]);
   const [demandes, setDemandes] = useState([]);
   const [pvFonctions, setPvFonctions] = useState([]);
   const [pvResponsables, setPvResponsables] = useState([]);
   const [pvSettings, setPvSettings] = useState([]);
+  const [printModels, setPrintModels] = useState([]);
+  const [clotures, setClotures] = useState([]);
+  const [fichesDetenteur, setFichesDetenteur] = useState([]);
+  const [affectations, setAffectations] = useState([]);
+  const [nomenclature, setNomenclature] = useState([]);
   const [procesVerbaux, setProcesVerbaux] = useState([]);
   const [entreesNp, setEntreesNp] = useState([]);
   const [retoursNp, setRetoursNp] = useState([]);
@@ -243,12 +258,18 @@ export function useStore(userId, userName, page) {
       safeLiveCol("retoursFonct", setRetoursFonct, orderBy("createdAt","desc")),
       safeLiveCol("stock2InventoriesFonct", setStock2InventoriesFonct, orderBy("createdAt","desc")),
       safeLiveCol("productTypesFonct", setProductTypesFonct, orderBy("name","asc")),
+      safeLiveCol("beneficiaires", setBeneficiaires, orderBy("name","asc")),
       safeLiveCol("circuitsRegistry", setCircuitsRegistry, orderBy("createdAt","asc")),
       safeLiveCol("demandes", setDemandes, orderBy("createdAt","desc")),
       safeLiveCol("sortiesDepot", setSortiesDepot, orderBy("createdAt","desc")),
       safeLiveCol("pvFonctions", setPvFonctions, orderBy("name","asc")),
       safeLiveCol("pvResponsables", setPvResponsables, orderBy("order","asc")),
       safeLiveCol("pvSettings", setPvSettings),
+      safeLiveCol("printModels", setPrintModels),
+      safeLiveCol("clotures", setClotures),
+      safeLiveCol("fichesDetenteur", setFichesDetenteur),
+      safeLiveCol("affectations", setAffectations),
+      safeLiveCol("nomenclature", setNomenclature),
       safeLiveCol("procesVerbaux", setProcesVerbaux, orderBy("createdAt","desc")),
       safeLiveCol("entreesNp", setEntreesNp, orderBy("createdAt","desc")),
       safeLiveCol("retoursNp", setRetoursNp, orderBy("createdAt","desc")),
@@ -338,10 +359,7 @@ export function useStore(userId, userName, page) {
     // passent par cette même vérification.)
     if ((procesVerbaux||[]).some(pv=>pv.entreeId===entreeId)) return;
     const settings = (pvSettings||[]).find(s=>s.id===circuit || s.circuit===circuit);
-    const seuil = Number(settings?.seuil)||0;
-    if (!seuil) return; // pas de seuil configuré pour ce circuit -> pas de PV automatique
-    const totalMontant = (entreeData.items||[]).reduce((s,it)=>s+(Number(it.qty)||0)*(Number(it.unitPrice)||0),0);
-    if (totalMontant < seuil) return;
+    if (!pvRequired(entreeData, settings)) return;
     await buildAndSavePv(circuit, entreeId, entreeData, settings, "PV de réception généré automatiquement");
   }
 
@@ -356,12 +374,59 @@ export function useStore(userId, userName, page) {
       : (entreesNp||[]).find(e=>e.id===entreeId);
     if (!entreeData) throw new Error("Bon d'entrée introuvable.");
     const settings = (pvSettings||[]).find(s=>s.id===circuit || s.circuit===circuit);
-    const seuil = Number(settings?.seuil)||0;
-    if (!seuil) throw new Error("Aucun seuil n'est configuré pour ce circuit (voir Paramètres).");
-    const totalMontant = (entreeData.items||[]).reduce((s,it)=>s+(Number(it.qty)||0)*(Number(it.unitPrice)||0),0);
-    if (totalMontant < seuil) throw new Error(`Ce bon (${totalMontant.toLocaleString("fr-FR")} FCFA) n'atteint pas le seuil configuré (${seuil.toLocaleString("fr-FR")} FCFA).`);
+    if (!pvRequired(entreeData, settings)) {
+      const seuil = Number(settings?.seuil)||0;
+      const totalMontant = (entreeData.items||[]).reduce((s,it)=>s+(Number(it.qty)||0)*(Number(it.unitPrice)||0),0);
+      if (entreeData.typeEntree==="balance" || entreeData.typeEntree==="certificat") throw new Error("Une balance d'entrée ou une entrée par certificat administratif ne donne pas lieu à un PV de réception.");
+      if (!seuil) throw new Error("Aucun seuil n'est configuré pour ce circuit (voir Paramètres).");
+      throw new Error(`Ce bon (${totalMontant.toLocaleString("fr-FR")} FCFA) ne dépasse pas le seuil de ${seuil.toLocaleString("fr-FR")} FCFA : la facture et le bordereau de livraison suffisent.`);
+    }
     await buildAndSavePv(circuit, entreeId, entreeData, settings, "PV de réception généré manuellement");
   }
+
+  // Règle de l'Instruction générale (art. 7) : PV de réception obligatoire
+  // pour tout achat d'un montant STRICTEMENT SUPÉRIEUR au seuil (300 000 F)
+  // et pour toute acquisition à titre gratuit (don, legs), quel qu'en soit le
+  // montant. Jamais pour la balance d'entrée ni pour une entrée justifiée par
+  // certificat administratif (qui relèvent du PV de recensement).
+  function pvRequired(entreeData, settings) {
+    const type = entreeData?.typeEntree || "achat";
+    if (type==="balance" || type==="certificat") return false;
+    if (type==="don") return true;
+    const seuil = Number(settings?.seuil)||0;
+    if (!seuil) return false;
+    const totalMontant = (entreeData.items||[]).reduce((s,it)=>s+(Number(it.qty)||0)*(Number(it.unitPrice)||0),0);
+    return totalMontant > seuil;
+  }
+
+  // Numérotation ininterrompue des titres de mouvement, par type de bon,
+  // circuit et gestion (année) — « Numérotation ininterrompue pour la
+  // gestion » (Instruction générale). Le Bon d'Entrée n°1 de chaque gestion
+  // est réservé à la balance d'entrée : les autres entrées commencent au n°2.
+  // Transaction Firestore : deux bons créés en même temps ne reçoivent jamais
+  // le même numéro. kind : BE (entrée), BSD (sortie définitive),
+  // BSP (sortie provisoire), BR (retour fournisseur).
+  async function allocateBonNumber(kind, circuit, dateStr, { balance=false, replaceBalance=false } = {}) {
+    const year = (dateStr && /^\d{4}/.test(String(dateStr))) ? Number(String(dateStr).slice(0,4)) : new Date().getFullYear();
+    const settings = (pvSettings||[]).find(s=>s.id===circuit || s.circuit===circuit);
+    const prefix = settings?.prefix || (circuit==="fonctionnement"?"PH":"NP");
+    const counterRef = doc(db,"bonCounters",`${kind}_${circuit}_${year}`);
+    const seq = await runTransaction(db, async tx => {
+      const snap = await tx.get(counterRef);
+      const d = snap.exists() ? snap.data() : {};
+      const cur = Number(d.seq||0);
+      if (kind==="BE" && balance) {
+        if (d.balanceDone && !replaceBalance) throw new Error(`La balance d'entrée de la gestion ${year} existe déjà (bon d'entrée n°1).`);
+        tx.set(counterRef, { kind, circuit, year, seq:Math.max(cur,1), balanceDone:true }, { merge:true });
+        return 1;
+      }
+      const next = (kind==="BE" ? Math.max(cur,1) : cur) + 1;
+      tx.set(counterRef, { kind, circuit, year, seq:next }, { merge:true });
+      return next;
+    });
+    return { numero:seq, gestion:year, reference:`${kind}-${prefix}-${String(seq).padStart(4,"0")}/${year}` };
+  }
+  const sortieKind = s => s?.nature==="provisoire" ? "BSP" : "BSD";
 
   async function buildAndSavePv(circuit, entreeId, entreeData, settings, activityLabel) {
     const totalMontant = (entreeData.items||[]).reduce((s,it)=>s+(Number(it.qty)||0)*(Number(it.unitPrice)||0),0);
@@ -415,7 +480,7 @@ export function useStore(userId, userName, page) {
     preparePvForPrint, validatePv, createPvManually,
     suppliers, depots, products, users,
     entries, returns, inventories, invoices, messages, activities,
-    services, transfers, consumptions, svcReturns, receptions, svcStock, batches, carouselSlides, stock2Inventories, entreesFonct, retoursFonct, sortiesFonct, stock2InventoriesFonct, productTypesFonct, circuitsRegistry, demandes, entreesNp, retoursNp, sortiesNp, stock2InventoriesNp, pvFonctions, pvResponsables, pvSettings, procesVerbaux,
+    services, transfers, consumptions, svcReturns, receptions, svcStock, batches, carouselSlides, stock2Inventories, entreesFonct, retoursFonct, sortiesFonct, stock2InventoriesFonct, productTypesFonct, beneficiaires, circuitsRegistry, demandes, entreesNp, retoursNp, sortiesNp, stock2InventoriesNp, pvFonctions, pvResponsables, pvSettings, printModels, clotures, fichesDetenteur, affectations, nomenclature, procesVerbaux,
     stock, sortiesDepot, loading,
 
     addSupplier:    s    => addDoc(collection(db,"suppliers"), { ...s, createdBy:userId, createdByName:userName, createdAt: serverTimestamp() }), // retourne Promise<DocumentReference>
@@ -1300,11 +1365,14 @@ export function useStore(userId, userName, page) {
     // ci-dessus, mais collection et emplacements de lots séparés (circuit
     // totalement indépendant du circuit vente).
     addEntreeFonct: async r => {
+      const num = await allocateBonNumber("BE", "fonctionnement", r.date, { balance: r.typeEntree==="balance", replaceBalance: !!r.replaceBalance });
+      r = { ...r, reference:num.reference, numero:num.numero, gestion:num.gestion, typeEntree:r.typeEntree||"achat" };
       const ref = await addDoc(collection(db,"entreesFonct"), {
         ...r, receivedBy:userId, receivedByName:userName,
         status:"reçu", createdAt:serverTimestamp(),
       });
-      for (const it of (r.items||[])) {
+      // Balance d'entrée : reprise de l'existant déjà en magasin — aucun lot créé.
+      if (r.typeEntree!=="balance") for (const it of (r.items||[])) {
         if (!it.productId || !Number(it.qty)) continue;
         await createBatch({
           productId: it.productId, productName: it.productName,
@@ -1345,6 +1413,7 @@ export function useStore(userId, userName, page) {
       if (!rSnap.exists()) throw new Error("Bon d'entrée introuvable");
       const r = rSnap.data();
       if (r.status === "annule") throw new Error("Ce bon d'entrée est annulé — impossible de le modifier.");
+      if (r.typeEntree === "balance") throw new Error("Une balance d'entrée ne se modifie pas : annulez-la et refaites la clôture de gestion.");
       const batches = await getBatchesFor("entreeFonct", entreeId);
       const newItems = newData.items||[];
       for (const b of batches) {
@@ -1386,6 +1455,8 @@ export function useStore(userId, userName, page) {
     // circuit vente). Le stock du service est donc crédité immédiatement.
     addSortieFonct: async s => {
       const itemsInit = (s.items||[]).map(it => ({ ...it, expiry:it.expiry||"", lot:it.lot||"" }));
+      const num = await allocateBonNumber(sortieKind(s), "fonctionnement", s.dateOperation||null);
+      s = { ...s, reference:num.reference, numero:num.numero, gestion:num.gestion };
       const ref = await addDoc(collection(db,"sortiesFonct"), {
         ...s, items:itemsInit, sentBy:userId, sentByName:userName, status:"envoye", createdAt:serverTimestamp(),
       });
@@ -1399,7 +1470,7 @@ export function useStore(userId, userName, page) {
           await createBatch({
             productId: it.productId, productName: it.productName,
             lot: c.lot, expiry: c.expiry, qty: c.qty,
-            location: locFonctService(s.serviceId), source: "sortieFonct", sourceRef: ref.id,
+            location: destLocFonct(s), source: "sortieFonct", sourceRef: ref.id,
             userId, userName,
           });
           if (!itemExpiries[it.productId] || (c.expiry && c.expiry < itemExpiries[it.productId].expiry)) {
@@ -1429,6 +1500,22 @@ export function useStore(userId, userName, page) {
       await addDoc(collection(db,"activities"), { action:"update", entity:"sortieFonct", entityId:sortieId, details:`Bon de sortie (fonctionnement) annulé : vers ${s.serviceName}`, userId, userName, createdAt:serverTimestamp() });
     },
 
+    // Une sortie PROVISOIRE reste "envoye" tant que le service ne l'a pas
+    // rendue — dès le retour, on restaure le stock (mêmes lots repris,
+    // exactement comme une annulation) mais avec un statut distinct
+    // ("retournee") : contrairement à une annulation, cette sortie a bien eu
+    // lieu et reste une donnée valide pour l'historique — juste refermée.
+    returnSortieProvisoireFonct: async (sortieId) => {
+      const sSnap = await getDoc(doc(db,"sortiesFonct",sortieId));
+      if (!sSnap.exists()) throw new Error("Bon de sortie introuvable");
+      const s = sSnap.data();
+      if (s.nature !== "provisoire") throw new Error("Seule une sortie provisoire peut être marquée comme retournée.");
+      if (s.status !== "envoye") throw new Error("Cette sortie n'est pas en attente de retour (déjà annulée ou déjà retournée).");
+      await reverseBatchesOf("sortieFonct", sortieId, locFonctPharmacy(), userId, userName);
+      await updateDoc(doc(db,"sortiesFonct",sortieId), { status:"retournee", returnedBy:userId, returnedByName:userName, returnedAt:serverTimestamp() });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"sortieFonct", entityId:sortieId, details:`Sortie provisoire (fonctionnement) retournée : de ${s.serviceName}`, userId, userName, createdAt:serverTimestamp() });
+    },
+
     updateSortieFonct: async (sortieId, newData) => {
       const sSnap = await getDoc(doc(db,"sortiesFonct",sortieId));
       if (!sSnap.exists()) throw new Error("Bon de sortie introuvable");
@@ -1444,7 +1531,7 @@ export function useStore(userId, userName, page) {
           await createBatch({
             productId: it.productId, productName: it.productName,
             lot: c.lot, expiry: c.expiry, qty: c.qty,
-            location: locFonctService(s.serviceId), source: "sortieFonct", sourceRef: sortieId,
+            location: destLocFonct(s), source: "sortieFonct", sourceRef: sortieId,
             userId, userName,
           });
           if (!itemExpiries[it.productId] || (c.expiry && c.expiry < itemExpiries[it.productId].expiry)) {
@@ -1461,11 +1548,14 @@ export function useStore(userId, userName, page) {
     // Copie fidèle du modèle Entrée Fonctionnement, collection et emplacements
     // de lots séparés (circuit totalement indépendant).
     addEntreeNp: async r => {
+      const num = await allocateBonNumber("BE", "non_pharmaceutique", r.date, { balance: r.typeEntree==="balance", replaceBalance: !!r.replaceBalance });
+      r = { ...r, reference:num.reference, numero:num.numero, gestion:num.gestion, typeEntree:r.typeEntree||"achat" };
       const ref = await addDoc(collection(db,"entreesNp"), {
         ...r, receivedBy:userId, receivedByName:userName,
         status:"reçu", createdAt:serverTimestamp(),
       });
-      for (const it of (r.items||[])) {
+      // Balance d'entrée : reprise de l'existant déjà en magasin — aucun lot créé.
+      if (r.typeEntree!=="balance") for (const it of (r.items||[])) {
         if (!it.productId || !Number(it.qty)) continue;
         await createBatch({
           productId: it.productId, productName: it.productName,
@@ -1506,6 +1596,7 @@ export function useStore(userId, userName, page) {
       if (!rSnap.exists()) throw new Error("Bon d'entrée introuvable");
       const r = rSnap.data();
       if (r.status === "annule") throw new Error("Ce bon d'entrée est annulé — impossible de le modifier.");
+      if (r.typeEntree === "balance") throw new Error("Une balance d'entrée ne se modifie pas : annulez-la et refaites la clôture de gestion.");
       const batches = await getBatchesFor("entreeNp", entreeId);
       const newItems = newData.items||[];
       for (const b of batches) {
@@ -1548,6 +1639,8 @@ export function useStore(userId, userName, page) {
     // compris les articles que le comptable a retirés (qtyEnvoyee:0).
     addSortieNp: async s => {
       const itemsInit = (s.items||[]).map(it => ({ ...it, expiry:it.expiry||"", lot:it.lot||"" }));
+      const num = await allocateBonNumber(sortieKind(s), "non_pharmaceutique", s.dateOperation||null);
+      s = { ...s, reference:num.reference, numero:num.numero, gestion:num.gestion };
       const ref = await addDoc(collection(db,"sortiesNp"), {
         ...s, items:itemsInit, sentBy:userId, sentByName:userName, status:"envoye", createdAt:serverTimestamp(),
       });
@@ -1559,7 +1652,7 @@ export function useStore(userId, userName, page) {
           await createBatch({
             productId: it.productId, productName: it.productName,
             lot: c.lot, expiry: c.expiry, qty: c.qty,
-            location: locNpService(s.serviceId), source: "sortieNp", sourceRef: ref.id,
+            location: destLocNp(s), source: "sortieNp", sourceRef: ref.id,
             userId, userName,
           });
           if (!itemExpiries[it.productId] || (c.expiry && c.expiry < itemExpiries[it.productId].expiry)) {
@@ -1608,6 +1701,17 @@ export function useStore(userId, userName, page) {
       await addDoc(collection(db,"activities"), { action:"update", entity:"sortieNp", entityId:sortieId, details:`Bon de sortie (non pharmaceutique) annulé : vers ${s.serviceName}`, userId, userName, createdAt:serverTimestamp() });
     },
 
+    returnSortieProvisoireNp: async (sortieId) => {
+      const sSnap = await getDoc(doc(db,"sortiesNp",sortieId));
+      if (!sSnap.exists()) throw new Error("Bon de sortie introuvable");
+      const s = sSnap.data();
+      if (s.nature !== "provisoire") throw new Error("Seule une sortie provisoire peut être marquée comme retournée.");
+      if (s.status !== "envoye") throw new Error("Cette sortie n'est pas en attente de retour (déjà annulée ou déjà retournée).");
+      await reverseBatchesOf("sortieNp", sortieId, locNpPharmacy(), userId, userName);
+      await updateDoc(doc(db,"sortiesNp",sortieId), { status:"retournee", returnedBy:userId, returnedByName:userName, returnedAt:serverTimestamp() });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"sortieNp", entityId:sortieId, details:`Sortie provisoire (non pharmaceutique) retournée : de ${s.serviceName}`, userId, userName, createdAt:serverTimestamp() });
+    },
+
     updateSortieNp: async (sortieId, newData) => {
       const sSnap = await getDoc(doc(db,"sortiesNp",sortieId));
       if (!sSnap.exists()) throw new Error("Bon de sortie introuvable");
@@ -1623,7 +1727,7 @@ export function useStore(userId, userName, page) {
           await createBatch({
             productId: it.productId, productName: it.productName,
             lot: c.lot, expiry: c.expiry, qty: c.qty,
-            location: locNpService(s.serviceId), source: "sortieNp", sourceRef: sortieId,
+            location: destLocNp(s), source: "sortieNp", sourceRef: sortieId,
             userId, userName,
           });
           if (!itemExpiries[it.productId] || (c.expiry && c.expiry < itemExpiries[it.productId].expiry)) {
@@ -1663,6 +1767,8 @@ export function useStore(userId, userName, page) {
         const { consumed } = await consumeFEFO(it.productId, Number(it.qty), locFonctPharmacy());
         consumedBatches.push(...consumed.map(c=>({ productId:it.productId, batchId:c.batchId, qty:c.qty })));
       }
+      const num = await allocateBonNumber("BR", "fonctionnement", r.date);
+      r = { ...r, reference:num.reference, numero:num.numero, gestion:num.gestion };
       const ref = await addDoc(collection(db,"retoursFonct"), {
         ...r, consumedBatches, returnedBy:userId, returnedByName:userName, status:"envoye", createdAt:serverTimestamp(),
       });
@@ -1712,6 +1818,8 @@ export function useStore(userId, userName, page) {
         const { consumed } = await consumeFEFO(it.productId, Number(it.qty), locNpPharmacy());
         consumedBatches.push(...consumed.map(c=>({ productId:it.productId, batchId:c.batchId, qty:c.qty })));
       }
+      const num = await allocateBonNumber("BR", "non_pharmaceutique", r.date);
+      r = { ...r, reference:num.reference, numero:num.numero, gestion:num.gestion };
       const ref = await addDoc(collection(db,"retoursNp"), {
         ...r, consumedBatches, returnedBy:userId, returnedByName:userName, status:"envoye", createdAt:serverTimestamp(),
       });
@@ -1824,6 +1932,59 @@ export function useStore(userId, userName, page) {
 
     // Réglages par circuit (seuil de déclenchement, préfixe du numéro de PV)
     // — un seul document par circuit, identifié par sa clé de circuit.
+    // Modèles des imprimés (n° de modèle, articles, signataires) — un seul
+    // document "config" : { docs: { entree:{modele,instruction,articles,signers[]}, ... } }.
+    // Numéro dans une série de la gestion (PV de recensement « PVR »,
+    // certificat administratif « CA »…) — même compteur que les bons.
+    allocateNumber: (kind, circuit, dateStr) => allocateBonNumber(kind, circuit, dateStr),
+
+    // Clôture de gestion : un document par circuit et par année
+    // (id "<circuit>_<année>"), complété étape par étape.
+    saveCloture: async (id, data, label) => {
+      await setDoc(doc(db,"clotures",id), { ...data, updatedBy:userId, updatedByName:userName, updatedAt:serverTimestamp() }, { merge:true });
+      if (label) await addDoc(collection(db,"activities"), { action:"update", entity:"cloture", entityId:id, details:label, userId, userName, createdAt:serverTimestamp() });
+    },
+
+    // ── Fiches d'inventaire individuel contradictoire (matériel du 1er
+    // groupe confié à un détenteur) — mouvement interne : n'affecte pas
+    // l'existant, mais le matériel remis n'est plus « en magasin ».
+    addFicheDetenteur: async (data) => {
+      const ref = await addDoc(collection(db,"fichesDetenteur"), { ...data, status:"active", createdBy:userId, createdByName:userName, createdAt:serverTimestamp() });
+      await addDoc(collection(db,"activities"), { action:"create", entity:"ficheDetenteur", entityId:ref.id, details:`Fiche d'inventaire individuel créée : ${data.detenteurNom} (${data.lieu||""})`, userId, userName, createdAt:serverTimestamp() });
+      return ref;
+    },
+    updateFicheDetenteur: async (id, data) => {
+      await updateDoc(doc(db,"fichesDetenteur",id), { ...data, updatedBy:userId, updatedByName:userName, updatedAt:serverTimestamp() });
+    },
+    addAffectation: async (a) => {
+      const ref = await addDoc(collection(db,"affectations"), { ...a, status:"valide", createdBy:userId, createdByName:userName, createdAt:serverTimestamp() });
+      await addDoc(collection(db,"activities"), { action:"create", entity:"affectation", entityId:ref.id, details:`${a.type==="reprise"?"Reprise":"Remise"} de ${a.qty} × ${a.productName} — ${a.detenteurNom}`, userId, userName, createdAt:serverTimestamp() });
+      return ref;
+    },
+    cancelAffectation: async (id) => {
+      await updateDoc(doc(db,"affectations",id), { status:"annule", cancelledBy:userId, cancelledByName:userName, cancelledAt:serverTimestamp() });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"affectation", entityId:id, details:"Mouvement de fiche détenteur annulé", userId, userName, createdAt:serverTimestamp() });
+    },
+
+    // ── Nomenclature des matières : comptes principaux (PP), divisionnaires
+    // (PP.DD) et sous-comptes (PP.DD.SS). Identifiant du document = code
+    // (unique). Les articles sont les produits, rattachés par leur n° de compte.
+    saveNomenclatureNode: async (node) => {
+      const code = String(node.code||"").trim();
+      if (!code) throw new Error("Code obligatoire.");
+      await setDoc(doc(db,"nomenclature",code), { ...node, code, updatedBy:userId, updatedByName:userName, updatedAt:serverTimestamp() }, { merge:true });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"nomenclature", entityId:code, details:`Nomenclature : ${code} — ${node.libelle||""}`, userId, userName, createdAt:serverTimestamp() });
+    },
+    deleteNomenclatureNode: async (code) => {
+      await deleteDoc(doc(db,"nomenclature",code));
+      await addDoc(collection(db,"activities"), { action:"delete", entity:"nomenclature", entityId:code, details:`Nomenclature : compte ${code} supprimé`, userId, userName, createdAt:serverTimestamp() });
+    },
+
+    savePrintModels: async (docs) => {
+      await setDoc(doc(db,"printModels","config"), { docs, updatedBy:userId, updatedByName:userName, updatedAt:serverTimestamp() });
+      await addDoc(collection(db,"activities"), { action:"update", entity:"printModels", entityId:"config", details:"Modèles des imprimés modifiés", userId, userName, createdAt:serverTimestamp() });
+    },
+
     setPvSettings: async (circuit, { seuil, prefix, label, icon }) => {
       const data = { circuit, updatedBy:userId, updatedByName:userName, updatedAt:serverTimestamp() };
       if (seuil !== undefined) data.seuil = Number(seuil)||0;
@@ -1949,6 +2110,24 @@ export function useStore(userId, userName, page) {
     // produits (Inventaire, Statistiques). Suppression réelle possible ici
     // (contrairement aux documents de mouvement) : ce n'est qu'une étiquette
     // de classement, pas un enregistrement comptable.
+    // Bénéficiaires : autres structures (hors services de l'hôpital) vers
+    // lesquelles partent surtout les sorties provisoires. Liste partagée par
+    // les deux circuits ; une sortie en garde le nom (copie), donc supprimer
+    // un bénéficiaire ne touche jamais à l'historique.
+    addBeneficiaire: async (name, contact) => {
+      const n = (name||"").trim();
+      if (!n) throw new Error("Le nom du bénéficiaire est obligatoire.");
+      if ((beneficiaires||[]).some(b=>b.name.trim().toLowerCase()===n.toLowerCase())) throw new Error("Ce bénéficiaire existe déjà.");
+      const ref = await addDoc(collection(db,"beneficiaires"), { name:n, contact:(contact||"").trim(), createdBy:userId, createdByName:userName, createdAt:serverTimestamp() });
+      return ref.id;
+    },
+    updateBeneficiaire: async (id, { name, contact }) => {
+      const n = (name||"").trim();
+      if (!n) throw new Error("Le nom du bénéficiaire est obligatoire.");
+      await updateDoc(doc(db,"beneficiaires",id), { name:n, contact:(contact||"").trim() });
+    },
+    deleteBeneficiaire: async (id) => { await deleteDoc(doc(db,"beneficiaires",id)); },
+
     addProductTypeFonct: async (name) => {
       const n = (name||"").trim();
       if (!n) throw new Error("Le nom du type est obligatoire.");

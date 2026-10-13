@@ -3,6 +3,7 @@ import { PageHeader } from "../ui/PageHeader";
 import { card, label, input, btn } from "../../helpers/styles";
 import { can } from "../../permissions";
 import { PrintModal, PvPrint } from "../print/PrintTemplates";
+import { getPrintModel } from "../../helpers/printModels";
 import { Modal } from "../ui/Modal";
 import { Alert } from "../ui/FormControls";
 import { getComptaCircuits } from "../../helpers/circuitsConfig";
@@ -283,8 +284,8 @@ export function PvPage({store,currentUser}){
         )}
       </Modal>
 
-      <PrintModal open={showPrint} onClose={()=>setShowPrint(false)} title={"PV "+(selected?.numero||"")}>
-        {selected&&<PvPrint pv={{...selected,bcNumero:bcDraft,blNumero:blDraft,factureNumero:factureDraft}} resolvedCommission={resolvedCommission} circuitLabel={CIRCUITS[selected.circuit]?.icon+" "+CIRCUITS[selected.circuit]?.label}/>}
+      <PrintModal open={showPrint} onClose={()=>setShowPrint(false)} title={"PV "+(selected?.numero||"")} reference={"PV N° "+(selected?.numero||"")}>
+        {selected&&<PvPrint pv={{...selected,bcNumero:bcDraft,blNumero:blDraft,factureNumero:factureDraft}} resolvedCommission={resolvedCommission} model={getPrintModel(store,"pv")} circuitLabel={CIRCUITS[selected.circuit]?.icon+" "+CIRCUITS[selected.circuit]?.label}/>}
       </PrintModal>
     </div>
   );

@@ -200,7 +200,7 @@ export function ReceptionsPage({store,activeSupplier,currentUser}){
       ".tot{background:#065f46;color:#fff;font-weight:bold}"+
       ".sig{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:30px}"+
       ".sb{text-align:center}.sl{font-weight:bold;font-size:9px;color:#065f46;text-decoration:underline;margin-bottom:6px;display:block}"+
-      ".su{height:65px;border:1px dashed #999;border-radius:4px}</style></head><body>"+
+      ".su{height:65px}</style></head><body>"+
       "<div class=\"ph\">"+
         "<div style=\"flex-shrink:0;width:85px\"><img src=\"" + cardioB64 + "\" style=\"width:80px;height:100px;object-fit:contain\"/></div>"+
         "<div class=\"ent\">"+

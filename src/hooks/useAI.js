@@ -5,11 +5,13 @@ import { can } from "../permissions";
 import { readExcelFile, readFileAsBase64 } from "../helpers/fileUtils";
 import { computeAge } from "../helpers/age";
 import { getPharmacyStock2, getServiceStock2 } from "../helpers/stock2";
+import { loadDoc, searchDocSlides, docPathOf, docTerms } from "../helpers/docSearch";
 
 export function buildAIContext(store, currentUser, activeSupplier, page) {
   const isAdmin = currentUser?.role === "admin";
   const accessiblePages = SECTIONS.filter(s => can(currentUser, s.id, "r")).map(s => s.id);
   accessiblePages.push("dashboard");
+  accessiblePages.push("documentation-compta"); // documentation ouverte à tous
 
   const ctx = {
     utilisateur: { nom: currentUser?.name||"—", role: ROLES[currentUser?.role]?.label||currentUser?.role, email: currentUser?.email },
@@ -177,7 +179,7 @@ export function buildAIContext(store, currentUser, activeSupplier, page) {
 }
 
 export function useAI() {
-  const [msgs, setMsgs] = useState([{role:"assistant",content:"Bonjour ! Je suis l'assistant IA de CHNCAK PharmaStock. Je connais vos stocks, inventaires, factures et bons en temps réel. Posez-moi n'importe quelle question sur vos données ou demandez-moi d'ouvrir une page !"}]);
+  const [msgs, setMsgs] = useState([{role:"assistant",content:"Bonjour ! Je suis l'assistant IA de CHNCAK PharmaStock. Je connais vos stocks, inventaires, factures et bons en temps réel, ainsi que la documentation de formation en comptabilité des matières. Posez-moi une question sur vos données ou sur une règle (ex. « comment traiter une sortie provisoire ? »), ou demandez-moi d'ouvrir une page !"}]);
   const [loading, setLoading] = useState(false);
 
   const send = useCallback(async(text, ctx, onNav, fileData=null)=>{
@@ -188,6 +190,26 @@ export function useAI() {
 
     const dataCtx = ctx.fullData ? JSON.stringify(ctx.fullData, null, 1) : "{}";
     const pagesAccess = (ctx.fullData?.pagesAccessibles || []);
+
+    // ── Documentation « Formation en comptabilité des matières » ──
+    // On cherche les diapositives les plus pertinentes pour la question (et,
+    // si elle est très courte, pour la question précédente : « et pour une
+    // sortie provisoire ? ») et on les transmet comme extraits à citer.
+    let docBlock = "";
+    try {
+      const doc = await loadDoc();
+      const prevUser = [...msgs].reverse().find(m=>m.role==="user")?.content || "";
+      const query = docTerms(text).length < 2 ? (text + " " + prevUser) : text;
+      const r = searchDocSlides(doc, query, { mode:"any", limit:6 });
+      const need = Math.min(2, r.terms.length);
+      let picked = r.slides.filter(s=>s.hits>=need).slice(0,5);
+      if (!picked.length) picked = r.slides.slice(0,3);   // aucun passage ne réunit les mots : on donne les plus proches
+      if (picked.length) {
+        docBlock = "\n\nDOCUMENTATION — « " + doc.DOC_META.title + " » (" + doc.DOC_META.author + "), extraits les plus pertinents :"
+          + picked.map(s=>"\n--- Diapositive " + s.n + " — " + (docPathOf(doc.DOC_TOC,s.n).join(" › ")||"") + " ---\n"
+            + doc.DOC_SLIDES[s.n-1].replace(/\s+/g," ").slice(0,1600)).join("");
+      }
+    } catch(e) { console.warn("Documentation indisponible pour l'IA:", e); }
 
     const system = "Tu es l'assistant IA intelligent de CHNCAK PharmaStock (Centre Hospitalier National Cheikh Ahmadoul Khadim)."
       + "\n\nUTILISATEUR : " + (ctx.fullData?.utilisateur?.nom||"—") + " | Rôle : " + (ctx.fullData?.utilisateur?.role||"—")
@@ -212,6 +234,7 @@ export function useAI() {
       + "\n- \"Produits en alerte\" : génère un fichier CSV des produits sous le seuil."
       + "\n- \"Transferts en attente\" ou \"non conformes\" : utilise ctx.transferts."
       + "\n\nDONNÉES EN TEMPS RÉEL :\n" + dataCtx
+      + docBlock
       + "\n\nINSTRUCTIONS :"
       + "\n1. Réponds en français, de façon précise et professionnelle."
       + "\n2. Utilise les données ci-dessus pour répondre sur stocks, quantités, dates, historiques, situations, consommations patients, péremptions, réapprovisionnement, activité des utilisateurs."
@@ -221,7 +244,8 @@ export function useAI() {
       + "\n6. Signale proactivement les stocks bas, péremptions proches ou anomalies pertinentes à la question posée."
       + "\n7. GÉNÉRATION DE FICHIERS : place TOUT le HTML dans [PDFCONTENT:...] et TOUT le JSON dans [DATA:[...]]. Ne répète JAMAIS le HTML ou JSON brut dans ta réponse."
       + "\n8. IMPORTANT - DONNÉES COMPLÈTES : quand on te demande une liste ou un rapport, tu DOIS inclure la TOTALITÉ des éléments sans exception. Ne tronque JAMAIS une liste. Écris uniquement un message de confirmation court après les balises."
-      + "\n9. Si une information demandée n'est pas dans les données fournies (ex : historique très ancien, patient introuvable), dis-le clairement plutôt que d'inventer.";
+      + "\n9. Si une information demandée n'est pas dans les données fournies (ex : historique très ancien, patient introuvable), dis-le clairement plutôt que d'inventer."
+      + "\n10. DOCUMENTATION : pour toute question de règle, de procédure ou de définition en comptabilité des matières (entrées, sorties définitives/provisoires, PV, commission de réception ou de réforme, nomenclature, livre-journal, grand livre, compte de gestion, etc.), appuie-toi d'abord sur les extraits de la DOCUMENTATION ci-dessus. Cite la source entre parenthèses (diapo. N) et ajoute à la fin de ta réponse la balise [DOC:N] pour chaque diapositive utile (au plus 3), afin que l'utilisateur puisse l'ouvrir. Si les extraits ne couvrent pas la question, dis-le clairement et n'invente pas de règle. N'utilise [DOC:N] qu'avec les numéros de diapositive fournis.";
 
     try {
       const res = await fetch("/api/chat", {
@@ -301,7 +325,11 @@ export function useAI() {
       }
 
       // Nettoyer les balises du message affiché
+      // Références à la documentation : converties en jeton protégé AVANT le
+      // nettoyage (qui supprime les lignes commençant par « [ ») ; l'AIPanel
+      // les affiche ensuite comme boutons « 📘 Diapo N ».
       let cleanText = aiText
+        .replace(/\[DOC:\s*(\d{1,3})\s*\]/g,(m,n)=> (Number(n)>=1&&Number(n)<=136) ? "⟦DOC:"+Number(n)+"⟧" : "")
         .replace(/\[NAVIGATE:[^\]]+\]/g,"")
         .replace(/\[EXCEL:[^\]]+\]/g,"✅ Fichier Excel généré et téléchargé.")
         .replace(/\[CSV:[^\]]+\]/g,"✅ Fichier CSV généré et téléchargé.")
@@ -473,9 +501,15 @@ RÈGLES STRICTES DE CORRESPONDANCE :
 - Si aucun produit ne correspond exactement, utilise le nom tel qu'il apparaît dans le document
 - Ne jamais substituer un produit par un autre qui commence par les mêmes lettres si le reste du nom est différent
 
+NUMÉRO DU DOCUMENT — pour repérer si ce même document a déjà été importé :
+- Cherche le numéro PROPRE à CE document précis (souvent après "N°", "Bon N°", "N° BR", "N° BI"...), généralement situé sous le titre du document (ex: "BON DE RÉCEPTION").
+- Ce n'est PAS le code client/compte du fournisseur (souvent affiché près du nom de l'établissement, ex: "Ref : C02500266" — un code qui reste identique sur tous les documents de ce fournisseur, à ne jamais utiliser ici).
+- Si le document affiche plusieurs numéros, choisis celui qui varierait forcément d'un document à l'autre (au fil des livraisons), pas un code fixe.
+- Si aucun numéro de document n'est visible, renvoie une chaîne vide.
+
 Réponds UNIQUEMENT avec du JSON valide, sans markdown, sans texte avant ou après.
 Format exact:
-{"reference":"BON-XXX","fournisseur":"Nom","items":[{"productName":"nom exact du produit de la liste ou tel que dans le document","qty":0,"unitPrice":0,"lot":"...","expiry":"AAAA-MM-JJ"}]}
+{"reference":"BON-XXX","fournisseur":"Nom","numeroSource":"le numéro propre à ce document, ou chaîne vide si absent","items":[{"productName":"nom exact du produit de la liste ou tel que dans le document","qty":0,"unitPrice":0,"lot":"...","expiry":"AAAA-MM-JJ"}]}
 Extrait TOUTES les lignes du document.`;
 
   try {
@@ -555,6 +589,7 @@ Extrait TOUTES les lignes du document.`;
 
     return { success:true, simulated:false,
       reference: parsed.reference || "",
+      numeroSource: parsed.numeroSource || "",
       items: enriched };
 
   } catch(e) {

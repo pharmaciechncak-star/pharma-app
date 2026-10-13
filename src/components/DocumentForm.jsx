@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { genId, fmtDate } from "../constants";
 import { scanDocumentWithAI } from "../hooks/useAI";
-import { ConfirmDelete } from "./ui/Modal";
+import { Modal, ConfirmDelete } from "./ui/Modal";
 import { ScanReviewModal, BarcodeScanner } from "./ui/ScanReviewModal";
 import { PageHeader } from "./ui/PageHeader";
 import { btn, card, label, input } from "../helpers/styles";
@@ -21,6 +21,7 @@ export function DocumentForm({type,store,activeSupplier,activeDepot,ai,onNav,cur
     depotId: suppDepots[0]?.id||"",
     date: new Date().toISOString().split("T")[0],
     notes:"",
+    sourceRef:"", // n° du document source (scanné), sert à repérer un import en double
     items:[],
   });
   const [form,setForm]=useState(blank);
@@ -77,13 +78,32 @@ export function DocumentForm({type,store,activeSupplier,activeDepot,ai,onNav,cur
   const [bonScanResult,setBonScanResult]=useState(null);
   const [bonReviewOpen,setBonReviewOpen]=useState(false);
   const [deletingBon,setDeletingBon]=useState(null);
+  const [duplicateWarning,setDuplicateWarning]=useState(null); // { existing, result }
+
+  // Le document scanné a-t-il déjà été importé ? On compare son numéro
+  // PROPRE (extrait par l'IA, distinct de notre référence interne) à celui
+  // déjà enregistré sur un bon existant, du même type et du même fournisseur
+  // — jamais bloquant en soi, juste un avertissement avant de continuer.
+  const findDuplicateByNumeroSource = (numeroSource) => {
+    if (!numeroSource?.trim()) return null;
+    const needle = numeroSource.trim().toLowerCase();
+    return (isEntry?store.entries:store.returns).find(b=>
+      b.status!=="annule" && b.sourceRef?.trim().toLowerCase()===needle &&
+      (!activeSupplier || b.supplierId===activeSupplier.id)
+    ) || null;
+  };
 
   const handleScan=async(file)=>{
     if(!file) return;
     setScanning(true); setScanMsg("📄 Analyse du document en cours...");
     try {
       const result=await scanDocumentWithAI(file,suppProds);
-      if(result.success&&result.items?.length>0){ setScanMsg(""); setBonScanResult(result); setBonReviewOpen(true); }
+      if(result.success&&result.items?.length>0){
+        setScanMsg("");
+        const dup = findDuplicateByNumeroSource(result.numeroSource);
+        if (dup) { setDuplicateWarning({ existing:dup, result }); setScanning(false); return; }
+        setBonScanResult(result); setBonReviewOpen(true);
+      }
       else setScanMsg("⚠️ "+(result.error||"Aucun article détecté."));
     } catch(e){ setScanMsg("❌ Erreur scan : "+e.message); }
     setScanning(false);
@@ -109,7 +129,7 @@ export function DocumentForm({type,store,activeSupplier,activeDepot,ai,onNav,cur
         if(idx>=0) merged[idx]={...merged[idx],qty:String((Number(merged[idx].qty)||0)+(Number(ni.qty)||0))};
         else merged.push(ni);
       }
-      return {...f,reference:bonScanResult?.reference||f.reference,notes:"Extrait du document scanné",items: merged.length>0?merged:f.items};
+      return {...f,reference:bonScanResult?.reference||f.reference,sourceRef:bonScanResult?.numeroSource||f.sourceRef,notes:"Extrait du document scanné",items: merged.length>0?merged:f.items};
     });
     setScanMsg("✅ "+items.length+" article(s) importé(s)"+(newProds.length>0?" · "+newProds.length+" nouveau(x) produit(s) créé(s)":""));
     setTimeout(()=>setScanMsg(""),8000);
@@ -126,6 +146,25 @@ export function DocumentForm({type,store,activeSupplier,activeDepot,ai,onNav,cur
       <ScanReviewModal open={bonReviewOpen} onClose={()=>{setBonReviewOpen(false);setBonScanResult(null);}}
         scanResult={bonScanResult} allProducts={store.products} activeSupplier={activeSupplier}
         onConfirm={handleConfirmBonScan} mode="bon"/>
+      <Modal open={!!duplicateWarning} onClose={()=>setDuplicateWarning(null)} title="⚠️ Ce document a peut-être déjà été importé">
+        {duplicateWarning&&(
+          <div>
+            <div style={{fontSize:13,color:"#374151",marginBottom:12}}>
+              Un {isEntry?"Bon d'Entrée":"Bon de Retour"} portant le même numéro de document (<b>{duplicateWarning.result.numeroSource}</b>) existe déjà :
+            </div>
+            <div style={{background:"#fef3c7",borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:12}}>
+              <div style={{fontWeight:700}}>{duplicateWarning.existing.reference}</div>
+              <div style={{color:"#92400e"}}>{fmtDate(duplicateWarning.existing.date)} · {(duplicateWarning.existing.items||[]).length} produit(s)</div>
+            </div>
+            <div style={{fontSize:12,color:"#64748b",marginBottom:14}}>Si c'est bien le même document, ne l'importez pas une seconde fois. Sinon (correction, deuxième page...), vous pouvez continuer.</div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>{ setBonScanResult(duplicateWarning.result); setBonReviewOpen(true); setDuplicateWarning(null); }}
+                style={{...btn(),background:"#fee2e2",color:"#ef4444",flex:1,padding:10}}>Continuer quand même</button>
+              <button onClick={()=>setDuplicateWarning(null)} style={{...btn(),background:"#f1f5f9",color:"#374151",padding:10}}>Annuler l'import</button>
+            </div>
+          </div>
+        )}
+      </Modal>
       <PageHeader pageId={isEntry?"entrees":"retours"}
         title={isEntry?"📥 Bon d'Entrée":"↩️ Bon de Retour"}
         subtitle={isEntry?"Réception · "+(activeSupplier?.name||""):"Retour · "+(activeSupplier?.name||"")}>

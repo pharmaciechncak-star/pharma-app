@@ -7,7 +7,7 @@
 
 export function sumItemsQty(docs, productId) {
   return (docs || []).reduce((s, d) => {
-    if (d.status === "annule") return s; // jamais compté, quel que soit son contenu
+    if (d.status === "annule" || d.status === "retournee") return s; // jamais comptées : annulée, ou sortie provisoire revenue (stock restauré)
     const it = (d.items || []).find(i => i.productId === productId);
     return s + (it ? Number(it.qty || 0) : 0);
   }, 0);
@@ -77,12 +77,24 @@ export function getServiceStock2(store, productId, serviceId) {
 
 // Stock fonctionnement pharmacie = Σ entrées − Σ sorties − Σ retours (au
 // fournisseur) + ajustements d'inventaire confirmés
+// Balance d'entrée (BE n°1) : reprise de l'existant déjà en magasin — jamais
+// recomptée. Matériel remis à un détenteur (fiche d'inventaire individuel
+// contradictoire) : toujours dans l'existant, mais plus en magasin.
+const horsBalance = docs => (docs||[]).filter(e=>e.typeEntree!=="balance");
+export function enServiceQty(affectations, circuit, productId, D=null) {
+  return (affectations||[]).reduce((s,a)=>{
+    if (a.status==="annule" || a.circuit!==circuit || a.productId!==productId) return s;
+    if (D && a.date && a.date > D) return s;
+    return s + (a.type==="reprise" ? -1 : 1) * (Number(a.qty)||0);
+  }, 0);
+}
+
 export function getFonctPharmacyStock2(store, productId) {
-  const entrees = sumItemsQty(store.entreesFonct, productId);
+  const entrees = sumItemsQty(horsBalance(store.entreesFonct), productId);
   const sorties = sumItemsQty(store.sortiesFonct, productId);
   const retours = sumItemsQty(store.retoursFonct, productId);
   const ajust   = sumInventoryAdjustments(store.stock2InventoriesFonct, productId, "fonct-pharmacy");
-  return entrees - sorties - retours + ajust;
+  return entrees - sorties - retours + ajust - enServiceQty(store.affectations, "fonctionnement", productId);
 }
 
 // Stock fonctionnement d'un service = Σ des sorties qui lui ont été remises +
@@ -99,11 +111,11 @@ export function getFonctServiceStock2(store, productId, serviceId) {
 // fonctionnement, collections dédiées (entreesNp/sortiesNp), autre comptable.
 
 export function getNpPharmacyStock2(store, productId) {
-  const entrees = sumItemsQty(store.entreesNp, productId);
+  const entrees = sumItemsQty(horsBalance(store.entreesNp), productId);
   const sorties = sumItemsQty(store.sortiesNp, productId);
   const retours = sumItemsQty(store.retoursNp, productId);
   const ajust   = sumInventoryAdjustments(store.stock2InventoriesNp, productId, "np-pharmacy");
-  return entrees - sorties - retours + ajust;
+  return entrees - sorties - retours + ajust - enServiceQty(store.affectations, "non_pharmaceutique", productId);
 }
 
 export function getNpServiceStock2(store, productId, serviceId) {

@@ -3,6 +3,7 @@ import { can } from "../permissions";
 import { btn } from "../helpers/styles";
 import { SECTIONS } from "../constants";
 import { buildAIContext, scanDocumentWithAI } from "../hooks/useAI";
+import { openDocSlide } from "../helpers/docSearch";
 
 export function AIPanel({open,onClose,ai,onNav,store,page,activeSupplier,currentUser}){
   const [input,setInput]=useState("");
@@ -117,7 +118,26 @@ export function AIPanel({open,onClose,ai,onNav,store,page,activeSupplier,current
     ai.send(summary, ctx, onNav);
   };
 
-  const quickBtns = ["Situation du stock","Produits en alerte","Dernier inventaire","Situations en attente","Total vendu ce mois","Ouvrir inventaire"];
+  // Références « ⟦DOC:N⟧ » produites par l'IA → boutons qui ouvrent la
+  // diapositive dans la page Documentation (doublons regroupés en fin de message).
+  const renderContent = (txt)=>{
+    const s = String(txt||"");
+    if(!s.includes("⟦DOC:")) return s;
+    const refs=[]; const body = s.replace(/⟦DOC:(\d+)⟧/g,(m,n)=>{ if(!refs.includes(Number(n))) refs.push(Number(n)); return ""; }).replace(/[ \t]+\n/g,"\n").trim();
+    return (
+      <>
+        <span style={{whiteSpace:"pre-wrap"}}>{body}</span>
+        <div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:8}}>
+          {refs.map(n=>(
+            <button key={n} onClick={()=>{ openDocSlide(n,onNav); onClose&&window.innerWidth<700&&onClose(); }}
+              style={{fontSize:11,background:"#eef2ff",color:"#3730a3",border:"1px solid #c7d2fe",borderRadius:99,padding:"3px 9px",cursor:"pointer",fontWeight:600}}>📘 Diapo {n}</button>
+          ))}
+        </div>
+      </>
+    );
+  };
+
+  const quickBtns = ["Situation du stock","Produits en alerte","Dernier inventaire","Situations en attente","Total vendu ce mois","Ouvrir inventaire","Règle : sortie provisoire ?"];
 
   return(
     <div style={{position:"fixed",right:0,top:0,bottom:0,width:340,background:"white",boxShadow:"-4px 0 20px rgba(0,0,0,0.15)",display:"flex",flexDirection:"column",zIndex:400}}>
@@ -140,7 +160,7 @@ export function AIPanel({open,onClose,ai,onNav,store,page,activeSupplier,current
               borderRadius:m.role==="user"?"12px 12px 4px 12px":"12px 12px 12px 4px",
               background:m.role==="user"?"#7c3aed":"#f1f5f9",
               color:m.role==="user"?"white":"#1e293b",
-            }}>{m.content}</div>
+            }}>{renderContent(m.content)}</div>
           </div>
         ))}
         {(ai.loading||scanning)&&(

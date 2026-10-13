@@ -140,6 +140,10 @@ export const PAGE_LABELS = {
   "statistiques-np": "Statistiques Non Pharmaceutique",
   "demandes": "Demandes",
   "parametres-pv": "Paramètres",
+  "documentation-compta": "Documentation",
+  "cloture-compta": "Clôture de gestion",
+  "fiches-detenteurs": "Fiches détenteurs",
+  "nomenclature": "Nomenclature",
   "statistiques":    "Statistiques",
 };
 
@@ -204,6 +208,10 @@ export const PAGE_COLORS = {
   "inventaire-np": { bg:"linear-gradient(135deg,#083344,#155e75)", accent:"#67e8f9", icon:"🗒️" },
   "statistiques-np": { bg:"linear-gradient(135deg,#374151,#4b5563)", accent:"#67e8f9", icon:"📚" },
   "demandes": { bg:"linear-gradient(135deg,#4c1d95,#6d28d9)", accent:"#c4b5fd", icon:"📝" },
+  "nomenclature": { bg:"linear-gradient(135deg,#065f46,#14532d)", accent:"#bbf7d0", icon:"🗂️" },
+  "fiches-detenteurs": { bg:"linear-gradient(135deg,#0e7490,#155e75)", accent:"#a5f3fc", icon:"🪑" },
+  "cloture-compta": { bg:"linear-gradient(135deg,#0f766e,#134e4a)", accent:"#99f6e4", icon:"🔒" },
+  "documentation-compta": { bg:"linear-gradient(135deg,#312e81,#1e3a8a)", accent:"#c7d2fe", icon:"📘" },
   "parametres-pv": { bg:"linear-gradient(135deg,#334155,#1e293b)", accent:"#94a3b8", icon:"⚙️" },
   "statistiques":    { bg:"linear-gradient(135deg,#312e81,#4f46e5)", accent:"#a5b4fc", icon:"📈" },
   "fournisseurs": { bg:"linear-gradient(135deg,#0f172a,#1e293b)", accent:"#94a3b8", icon:"🏢" },

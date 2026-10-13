@@ -11,6 +11,7 @@ import { Modal, ConfirmDelete } from "./ui/Modal";
 import { PrintModal } from "./print/PrintTemplates";
 import { LOGO_B64 } from "../images";
 import { monthLabel } from "../constants";
+import { GROUPES, groupeFromCompte, checkCompte, comptePrincipalOf } from "../helpers/nomenclature";
 
 export function ProductsPage({store,activeSupplier,currentUser}){
   // Un gestionnaire/pharmacien (circuit vente) ne doit pas pouvoir marquer un
@@ -22,7 +23,14 @@ export function ProductsPage({store,activeSupplier,currentUser}){
   const canEditVenteCircuit = currentUser?.role==="admin" || (!isFonctRole && !isNpRole);
   const canEditFonctCircuit = currentUser?.role==="admin" || isFonctRole;
   const canEditNpCircuit = currentUser?.role==="admin" || isNpRole;
-  const defaultCircuit = isFonctRole?"fonctionnement":isNpRole?"non_pharmaceutique":"vente";
+  // Séparation Dépôt Vente / Comptabilité Matières : cette page ne gère que
+  // les produits du Dépôt Vente (et des circuits additionnels). Les articles
+  // de la comptabilité matières (Fonctionnement, Non pharmaceutique) se gèrent
+  // dans Comptabilité Matières › Nomenclature.
+  const defaultCircuit = "vente";
+  const COMPTA_KEYS = ["fonctionnement","non_pharmaceutique"];
+  const registryKeys = (store.circuitsRegistry||[]).map(c=>c.key);
+  const isVenteProduct = p => { const c = p.circuits||[]; return !c.length || c.includes("vente") || c.some(k=>registryKeys.includes(k)); };
   const [showAdd,setShowAdd]=useState(false);
   const [editing,setEditing]=useState(null);
   const [form,setForm]=useState({name:"",price:"",unit:"Boîte",supplierId:""});
@@ -33,15 +41,11 @@ export function ProductsPage({store,activeSupplier,currentUser}){
   const CIRCUITS = getComptaCircuits(store);
   const filterableCircuits = [
     { key:"vente", label:"💊 Vente" },
-    { key:"fonctionnement", label:CIRCUITS.fonctionnement.icon+" "+CIRCUITS.fonctionnement.label },
-    { key:"non_pharmaceutique", label:CIRCUITS.non_pharmaceutique.icon+" "+CIRCUITS.non_pharmaceutique.label },
     ...(store.circuitsRegistry||[]).map(c=>({ key:c.key, label:(c.icon||"📁")+" "+c.label })),
   ];
   const [scanMsg,setScanMsg]=useState("");
   const editableCircuits = [
     canEditVenteCircuit && {key:"vente", label:"💊 Vente"},
-    canEditFonctCircuit && {key:"fonctionnement", label:CIRCUITS.fonctionnement.icon+" "+CIRCUITS.fonctionnement.label},
-    canEditNpCircuit && {key:"non_pharmaceutique", label:CIRCUITS.non_pharmaceutique.icon+" "+CIRCUITS.non_pharmaceutique.label},
   ].filter(Boolean);
   const [importCircuit,setImportCircuit]=useState(defaultCircuit);
   const [deletingProd,setDeletingProd]=useState(null);
@@ -51,9 +55,9 @@ export function ProductsPage({store,activeSupplier,currentUser}){
   // fournisseurs auxquels l'utilisateur a accès (visibleSuppliers côté "tous"),
   // pour éviter qu'un utilisateur restreint contourne sa restriction en
   // désélectionnant simplement le fournisseur actif.
-  const products=activeSupplier
+  const products=(activeSupplier
     ? store.products.filter(p=>p.supplierId===activeSupplier.id)
-    : store.products.filter(p=>hasSupplierAccess(currentUser,p.supplierId));
+    : store.products.filter(p=>hasSupplierAccess(currentUser,p.supplierId))).filter(isVenteProduct);
   const byCircuit = filterCircuit ? products.filter(p=>productVisibleInCircuit(p,filterCircuit,store.suppliers)) : products;
   const filtered=search ? byCircuit.filter(p=>
     p.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -66,17 +70,17 @@ export function ProductsPage({store,activeSupplier,currentUser}){
 
   const openAdd=()=>{
     setEditing(null);
-    setForm({name:"",price:"",unit:"",supplierId:activeSupplier?.id||"",barcode1:"",barcode2:"",barcode3:"",reorderThreshold:"",circuits:[defaultCircuit],compteNumero:"",typeFonct:"",conditionnement:""});
+    setForm({name:"",price:"",unit:"",supplierId:activeSupplier?.id||"",barcode1:"",barcode2:"",barcode3:"",reorderThreshold:"",circuits:[defaultCircuit],compteNumero:"",groupe:"",typeFonct:"",conditionnement:""});
     setShowAdd(true);
   };
   const openEdit=(p)=>{
     setEditing(p.id);
-    setForm({name:p.name,price:String(p.price||""),unit:p.unit||"",supplierId:p.supplierId,barcode1:p.barcode1||"",barcode2:p.barcode2||"",barcode3:p.barcode3||"",reorderThreshold:p.reorderThreshold!=null?String(p.reorderThreshold):"",circuits:(p.circuits&&p.circuits.length)?p.circuits:["vente"],compteNumero:p.compteNumero||"",typeFonct:p.typeFonct||"",conditionnement:p.conditionnement||""});
+    setForm({name:p.name,price:String(p.price||""),unit:p.unit||"",supplierId:p.supplierId,barcode1:p.barcode1||"",barcode2:p.barcode2||"",barcode3:p.barcode3||"",reorderThreshold:p.reorderThreshold!=null?String(p.reorderThreshold):"",circuits:(p.circuits&&p.circuits.length)?p.circuits:["vente"],compteNumero:p.compteNumero||"",groupe:p.groupe||"",typeFonct:p.typeFonct||"",conditionnement:p.conditionnement||""});
     setShowAdd(true);
   };
   const openDuplicate=(p)=>{
     setEditing(null);
-    setForm({name:p.name,price:String(p.price||""),unit:p.unit||"",supplierId:activeSupplier?.id||p.supplierId,barcode1:"",barcode2:"",barcode3:"",reorderThreshold:p.reorderThreshold!=null?String(p.reorderThreshold):"",circuits:(p.circuits&&p.circuits.length)?p.circuits:["vente"],compteNumero:p.compteNumero||"",typeFonct:p.typeFonct||"",conditionnement:p.conditionnement||""});
+    setForm({name:p.name,price:String(p.price||""),unit:p.unit||"",supplierId:activeSupplier?.id||p.supplierId,barcode1:"",barcode2:"",barcode3:"",reorderThreshold:p.reorderThreshold!=null?String(p.reorderThreshold):"",circuits:(p.circuits&&p.circuits.length)?p.circuits:["vente"],compteNumero:p.compteNumero||"",groupe:p.groupe||"",typeFonct:p.typeFonct||"",conditionnement:p.conditionnement||""});
     setShowAdd(true);
   };
   const toggleCircuit = (c) => {
@@ -93,6 +97,10 @@ export function ProductsPage({store,activeSupplier,currentUser}){
   };
   const save=()=>{
     const data={...form,price:Number(form.price)||0,unit:form.unit||"Boîte",supplierId:form.supplierId||activeSupplier?.id||"",reorderThreshold:form.reorderThreshold===""?null:Number(form.reorderThreshold)};
+    // Un produit aussi présent en comptabilité matières garde ses circuits comptables.
+    const prev = editing ? store.products.find(p=>p.id===editing) : null;
+    const keep = (prev?.circuits||[]).filter(c=>COMPTA_KEYS.includes(c));
+    data.circuits = [...new Set([...((form.circuits&&form.circuits.length)?form.circuits:["vente"]).filter(c=>!COMPTA_KEYS.includes(c)), ...keep])];
     if(editing) store.updateProduct(editing,data); else store.addProduct(data);
     setShowAdd(false);
   };
@@ -163,7 +171,7 @@ export function ProductsPage({store,activeSupplier,currentUser}){
 
   return(
     <div style={{padding:16}}>
-      <PageHeader pageId="produits" title="💊 Produits"
+      <PageHeader pageId="produits" title="💊 Produits — Dépôt Vente"
         subtitle={activeSupplier?.name || "Tous fournisseurs"}>
         <button onClick={()=>setPrintModal(true)} style={{...btn(),background:"rgba(255,255,255,0.15)",color:"white",border:"1px solid rgba(255,255,255,0.3)",fontSize:11}}>🖨️</button>
         <button onClick={exportXLS} style={{...btn(),background:"rgba(255,255,255,0.15)",color:"white",border:"1px solid rgba(255,255,255,0.3)",fontSize:11}}>⬇️ Excel</button>
@@ -308,8 +316,6 @@ export function ProductsPage({store,activeSupplier,currentUser}){
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             {[
               ["vente","💊 Vente",canEditVenteCircuit],
-              ["fonctionnement",CIRCUITS.fonctionnement.icon+" "+CIRCUITS.fonctionnement.label,canEditFonctCircuit],
-              ["non_pharmaceutique",CIRCUITS.non_pharmaceutique.icon+" "+CIRCUITS.non_pharmaceutique.label,canEditNpCircuit],
               // Circuits additionnels (préparation pour de futures comptabilités)
               // — éditables par l'admin principal uniquement pour l'instant.
               ...(store.circuitsRegistry||[]).map(c=>[c.key, c.icon+" "+c.label, currentUser?.role==="admin"]),
@@ -323,30 +329,9 @@ export function ProductsPage({store,activeSupplier,currentUser}){
           </div>
         </div>
 
-        <div style={{marginBottom:16}}>
-          <label style={label}>N° Compte <span style={{fontWeight:400,color:"#94a3b8",fontSize:10}}>(nomenclature comptable — optionnel, ex: 28.01.408)</span></label>
-          <input style={input} value={form.compteNumero||""} onChange={e=>setForm(f=>({...f,compteNumero:e.target.value}))} placeholder="Ex: 28.01.408"/>
+        <div style={{fontSize:11,color:"#64748b",background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:8,padding:"8px 10px",marginBottom:16}}>
+          Les articles de la comptabilité matières (n° de compte, groupe, spécification, type) se gèrent dans <b>Comptabilité Matières › Nomenclature</b>.
         </div>
-
-        {(form.circuits||[]).includes("fonctionnement")&&(
-          <div style={{marginBottom:16}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <label style={label}>Type <span style={{fontWeight:400,color:"#94a3b8",fontSize:10}}>(classement — optionnel)</span></label>
-              {isFonctRole&&<span style={{fontSize:10,color:"#94a3b8"}}>Gérable dans Paramètres</span>}
-            </div>
-            <select style={input} value={form.typeFonct||""} onChange={e=>setForm(f=>({...f,typeFonct:e.target.value}))}>
-              <option value="">— Aucun —</option>
-              {(store.productTypesFonct||[]).map(t=><option key={t.id} value={t.name}>{t.name}</option>)}
-            </select>
-          </div>
-        )}
-
-        {(form.circuits||[]).some(c=>c==="fonctionnement"||c==="non_pharmaceutique")&&(
-          <div style={{marginBottom:16}}>
-            <label style={label}>Conditionnement <span style={{fontWeight:400,color:"#94a3b8",fontSize:10}}>(optionnel, ex: B/50, B/1 — utilisé sur les PV)</span></label>
-            <input style={input} value={form.conditionnement||""} onChange={e=>setForm(f=>({...f,conditionnement:e.target.value}))} placeholder="Ex: B/50"/>
-          </div>
-        )}
 
         <div style={{marginBottom:16}}>
           <label style={label}>Seuil de réapprovisionnement <span style={{fontWeight:400,color:"#94a3b8",fontSize:10}}>(optionnel)</span></label>
@@ -469,7 +454,7 @@ export function ProductsPage({store,activeSupplier,currentUser}){
                   <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{p.unit||"Boîte"} · {Number(p.price||0).toLocaleString("fr-FR")} FCFA</div>
                   <div style={{fontSize:11,color:"#94a3b8"}}>{getSupplierName(p.supplierId)}</div>
                   <div style={{fontSize:10,color:"#b45309",fontWeight:600}}>
-                    {(p.circuits&&p.circuits.length?p.circuits:["vente"]).map(c=>c==="vente"?"💊 Vente":"📦 Fonctionnement").join(" · ")}
+                    {(p.circuits&&p.circuits.length?p.circuits:["vente"]).map(c=>c==="vente"?"💊 Vente":c==="fonctionnement"?"📦 aussi en Fonctionnement":c==="non_pharmaceutique"?"🧰 aussi en Non pharmaceutique":"📁 "+c).join(" · ")}
                   </div>
                   {p.createdByName&&<div style={{fontSize:10,color:"#cbd5e1"}}>👤 {p.createdByName}</div>}
                 </div>

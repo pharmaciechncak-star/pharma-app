@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { PageHeader } from "../ui/PageHeader";
 import { card, label, input, btn } from "../../helpers/styles";
-import { getFonctPharmacyStock2, getFonctServiceStock2, getNpPharmacyStock2, getNpServiceStock2, sumItemsQty } from "../../helpers/stock2";
+import { getFonctPharmacyStock2, getFonctServiceStock2, getNpPharmacyStock2, getNpServiceStock2, sumItemsQty, enServiceQty } from "../../helpers/stock2";
 import { visibleServices, productAllowedForService, productVisibleInCircuit } from "../../permissions";
 import { BarcodeScanner } from "../ui/ScanReviewModal";
 import { getComptaCircuits, availableCircuits } from "../../helpers/circuitsConfig";
@@ -15,7 +15,7 @@ export function StockComptaPage({store,currentUser}){
   const available = availableCircuits(currentUser,"stock");
   const [circuit,setCircuit] = useState(available[0]||"fonctionnement");
   const cfg = COMPTA_CIRCUITS[circuit];
-  const entreesData = circuit==="fonctionnement" ? store.entreesFonct : store.entreesNp;
+  const entreesData = (circuit==="fonctionnement" ? store.entreesFonct : store.entreesNp)?.filter(e=>e.typeEntree!=="balance"); // balance d'entrée : existant repris, pas une entrée
   const sortiesData = circuit==="fonctionnement" ? store.sortiesFonct : store.sortiesNp;
   const retoursData = circuit==="fonctionnement" ? store.retoursFonct : store.retoursNp;
   const getPharmacyStock2 = circuit==="fonctionnement" ? getFonctPharmacyStock2 : getNpPharmacyStock2;
@@ -36,6 +36,12 @@ export function StockComptaPage({store,currentUser}){
     : allProds;
 
   const isPharmacieView = filterService==="pharmacie";
+
+  // Sorties provisoires encore dehors : le matériel n'est pas en magasin, mais
+  // il reste dans l'existant comptable (une sortie provisoire n'affecte pas
+  // l'existant — Instruction générale). Existant = en magasin + en sortie provisoire.
+  const sortiesDefinitives = (sortiesData||[]).filter(s=>s.nature!=="provisoire");
+  const sortiesProvEnCours = (sortiesData||[]).filter(s=>s.nature==="provisoire" && s.status==="envoye");
 
   return(
     <div style={{padding:0}}>
@@ -79,6 +85,7 @@ export function StockComptaPage({store,currentUser}){
         <div style={{...card,overflowX:"auto"}}>
           <div style={{fontWeight:700,fontSize:13,color:"#1e293b",marginBottom:10}}>
             {isPharmacieView?"📦 Stock Pharmacie":"🏥 Stock "+((store.services||[]).find(s=>s.id===filterService)?.name||"")}
+            {isPharmacieView&&<div style={{fontSize:10.5,color:"#64748b",fontWeight:400,marginTop:3}}>Existant = en magasin + en service (fiches détenteurs) + en sortie provisoire (ni la remise à un détenteur ni la sortie provisoire n'affectent l'existant). « Sorti » ne compte que les sorties définitives.</div>}
             <span style={{fontSize:11,color:"#64748b",fontWeight:400,marginLeft:8}}>— {filteredProds.length} produit(s)</span>
           </div>
           {filteredProds.length===0?<div style={{textAlign:"center",padding:30,color:"#94a3b8"}}>Aucun produit.</div>:(
@@ -91,20 +98,26 @@ export function StockComptaPage({store,currentUser}){
                     <th style={{background:"#065f46",color:"white",padding:"7px 10px",textAlign:"center",border:"1px solid #065f46"}}>Entré</th>
                     <th style={{background:"#7f1d1d",color:"white",padding:"7px 10px",textAlign:"center",border:"1px solid #7f1d1d"}}>Sorti</th>
                     <th style={{background:"#7c2d12",color:"white",padding:"7px 10px",textAlign:"center",border:"1px solid #7c2d12"}}>Retourné</th>
+                    <th style={{background:"#6d28d9",color:"white",padding:"7px 10px",textAlign:"center",border:"1px solid #6d28d9"}} title="Matériel sorti provisoirement (réparation, prêt…), toujours compté dans l'existant">En sortie prov.</th>
+                    <th style={{background:"#0e7490",color:"white",padding:"7px 10px",textAlign:"center",border:"1px solid #0e7490"}} title="Matériel du 1er groupe remis à un détenteur (fiche d'inventaire individuel)">En service</th>
+                    <th style={{background:"#9a3412",color:"white",padding:"7px 10px",textAlign:"center",border:"1px solid #9a3412"}}>En magasin</th>
                   </>:<>
                     <th style={{background:"#065f46",color:"white",padding:"7px 10px",textAlign:"center",border:"1px solid #065f46"}}>Reçu</th>
                   </>}
-                  <th style={{background:"#9a3412",color:"white",padding:"7px 10px",textAlign:"center",border:"1px solid #9a3412"}}>STOCK</th>
+                  <th style={{background:"#7c2d12",color:"white",padding:"7px 10px",textAlign:"center",border:"1px solid #7c2d12"}}>{isPharmacieView?"EXISTANT":"STOCK"}</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredProds.map((p,i)=>{
-                  let stockVal,col1,col2,col3;
+                  let stockVal,col1,col2,col3,prov=0,magasin=0,svc=0;
                   if(isPharmacieView){
                     const entre = sumItemsQty(entreesData, p.id);
-                    const sorti = sumItemsQty(sortiesData, p.id);
+                    const sorti = sumItemsQty(sortiesDefinitives, p.id);
                     const retour = sumItemsQty(retoursData, p.id);
-                    stockVal=getPharmacyStock2(store,p.id); col1=entre; col2=sorti; col3=retour;
+                    prov = sumItemsQty(sortiesProvEnCours, p.id);
+                    magasin = getPharmacyStock2(store,p.id);
+                    svc = enServiceQty(store.affectations, circuit, p.id);
+                    stockVal = magasin + prov + svc; col1=entre; col2=sorti; col3=retour;
                   } else {
                     stockVal=getServiceStock2(store,p.id,filterService); col1=stockVal;
                   }
@@ -116,6 +129,9 @@ export function StockComptaPage({store,currentUser}){
                       <td style={{padding:"6px 10px",border:"1px solid #e2e8f0",textAlign:"center",color:"#059669",fontWeight:600}}>{col1}</td>
                       {isPharmacieView&&<td style={{padding:"6px 10px",border:"1px solid #e2e8f0",textAlign:"center",color:"#dc2626",fontWeight:600}}>{col2}</td>}
                       {isPharmacieView&&<td style={{padding:"6px 10px",border:"1px solid #e2e8f0",textAlign:"center",color:"#9a3412",fontWeight:600}}>{col3}</td>}
+                      {isPharmacieView&&<td style={{padding:"6px 10px",border:"1px solid #e2e8f0",textAlign:"center",color:"#6d28d9",fontWeight:600}}>{prov||""}</td>}
+                      {isPharmacieView&&<td style={{padding:"6px 10px",border:"1px solid #e2e8f0",textAlign:"center",color:"#0e7490",fontWeight:600}}>{svc||""}</td>}
+                      {isPharmacieView&&<td style={{padding:"6px 10px",border:"1px solid #e2e8f0",textAlign:"center",fontWeight:700}}>{magasin}</td>}
                       <td style={{padding:"6px 10px",border:"1px solid #e2e8f0",textAlign:"center",fontWeight:800,
                         background:isAlert?"#fee2e2":"#f0fdf4",color:isAlert?"#dc2626":"#059669",fontSize:13}}>
                         {stockVal}

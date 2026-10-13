@@ -54,6 +54,10 @@ export function Sidebar({open,onClose,page,onNav,user,unread,activeSupplier,onCh
       { id:"inventaire-compta", label:"Inventaire", icon:"🗒️", anyPerm:["inventaire-fonct","inventaire-np"] },
       { id:"statistiques-compta", label:"Statistiques", icon:"📚", anyPerm:["statistiques-fonct","statistiques-np"] },
       { id:"pv", label:"Procès-Verbaux", icon:"🗂️", anyPerm:["entrees-fonct","entrees-np"] },
+      { id:"nomenclature", label:"Nomenclature", icon:"🗂️", perm:"produits" },
+      { id:"fiches-detenteurs", label:"Fiches détenteurs", icon:"🪑", anyPerm:["inventaire-fonct","inventaire-np"] },
+      { id:"cloture-compta", label:"Clôture de gestion", icon:"🔒", anyPerm:["inventaire-fonct","inventaire-np"] },
+      { id:"documentation-compta", label:"Documentation", icon:"📘" },
     ]},
     { id:"admin", label:"Administration", icon:"⚙️", items:[
       { id:"utilisateurs", label:"Utilisateurs",      icon:"👥", perm:"utilisateurs" },

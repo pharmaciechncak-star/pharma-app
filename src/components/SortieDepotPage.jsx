@@ -312,7 +312,7 @@ export function SortieDepotPage({store,activeSupplier,currentUser}){
         )}
       </Modal>
 
-      <PrintModal open={!!printSel} onClose={()=>setPrintSel(null)} title="Bon de Sortie (Dépôt Vente)" signatories={["Le Responsable","Le Gestionnaire de stock"]}>
+      <PrintModal open={!!printSel} onClose={()=>setPrintSel(null)} title="Bon de Sortie (Dépôt Vente)" reference={"BON DE SORTIE DEPOT VENTE N° "+(printSel?.reference||"")} signatories={["Le Responsable","Le Gestionnaire de stock"]}>
         <SortieDepotPrint s={printSel} products={store.products}/>
       </PrintModal>
     </div>
